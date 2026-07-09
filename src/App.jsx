@@ -87,6 +87,9 @@ export default function App() {
           theme: q.theme,
           difficulty: q.difficulty,
           ownerId: q.owner_id,
+          // 🤝 FIX: Conservation des données collaboratives après actualisation de la page
+          is_collaborative: q.is_collaborative,
+          required_partners: q.required_partners,
           sharing: { type: q.visibility || 'private', allowedUsers: [q.owner_id] }
         }));
         setQuests(formattedQuests);
@@ -101,6 +104,8 @@ export default function App() {
             name: t.name,
             ownerId: t.owner_id,
             floors: t.floors || [],
+            // 🤝 FIX: Conservation de la contrainte maximale d'équipe sur l'arbre après actualisation
+            max_team_constraint: t.max_team_constraint || 1,
             sharing: { type: t.visibility === 'public' ? 'global' : 'private', allowedUsers: [t.owner_id] }
           };
         });
@@ -172,7 +177,7 @@ export default function App() {
         </div>
       )}
 
-      {/* HEADER DE NAVIGATION GLOBAL (Structure d'origine conservée) */}
+      {/* HEADER DE NAVIGATION GLOBAL */}
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 sticky top-0 z-40 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="text-xl">🌳</span>
@@ -197,7 +202,6 @@ export default function App() {
             <button onClick={() => setCurrentScreen('admin')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'admin' ? 'bg-red-600 text-white shadow-sm' : 'text-slate-600'}`}>👑 Admin</button>
           )}
 
-          {/* Affichage de l'e-mail connecté + confirmation de changement de compte */}
           {activeUser?.email && (
             <>
               <div className="w-[1px] h-4 bg-slate-200 mx-1" />
