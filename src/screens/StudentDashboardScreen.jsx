@@ -633,81 +633,95 @@ export default function StudentDashboardScreen({ trees, quests }) {
         </div>
       )}
 
-      {/* PORTFOLIO FILTRABLE */}
-      {activeTab === 'portfolio' && user && (
-        <div className="space-y-8">
-          <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-md">
-            <div className="space-y-0.5">
-              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">🎛️ Centre de Tri</h3>
-              <p className="text-[11px] text-slate-400">Filtrez vos travaux en temps réel.</p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer">
-                <option value="all">🌍 Toutes les catégories</option>
-                <option value="env">🌱 RSE & Environnement</option>
-                <option value="tech">⚙️ Code & Tech</option>
-              </select>
-              <select value={filterPoints} onChange={(e) => setFilterPoints(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer">
-                <option value="all">✨ Tous les scores</option>
-                <option value="100">⭐ 100 XP</option>
-                <option value="250">⭐⭐ 250 XP</option>
-                <option value="500">⭐⭐⭐ 500 XP</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="border-b border-slate-200 pb-2">
-              <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide">
-                🏆 Mes Réussites uniques <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-xs font-mono font-bold">{uniqueLivrables.length}</span>
-              </h3>
-            </div>
-            {uniqueLivrables.length === 0 ? (
-              <div className="bg-white border rounded-2xl p-8 text-center text-xs text-slate-400 italic font-medium">Aucun rendu trouvé en base de données.</div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {uniqueLivrables.filter(p => {
-                  const originalQuest = quests.find(q => q.id === p.questId);
-                  if (!originalQuest) return true;
-                  const pts = getPointsByDifficulty(originalQuest.difficulty);
-                  const matchTheme = filterTheme === 'all' || originalQuest.theme === filterTheme;
-                  const matchPoints = filterPoints === 'all' || pts === parseInt(filterPoints, 10);
-                  return matchTheme && matchPoints;
-                }).map(p => {
-                  const originalQuest = quests.find(q => q.id === p.questId);
-                  const pts = originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100;
-                  const isCurrentlyValidated = completedQuestIds.has(p.questId);
-                  
-                  return (
-                    <div key={p.id} className="bg-white border-2 border-slate-100 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-emerald-500" />
-                      <div>
-                        <div className="flex justify-between items-center text-[10px] font-mono font-bold text-slate-400">
-                          <span className="uppercase bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{p.questId}</span>
-                          {p.file_url && (
-                            <a href={p.file_url} target="_blank" rel="noreferrer" className="bg-sky-100 text-sky-800 px-2 py-0.5 rounded border border-sky-300/40">📄 Fichier ➔</a>
-                          )}
-                          <span className={`${isCurrentlyValidated ? 'text-emerald-600' : 'text-amber-600'} font-black ml-auto`}>
-                            {isCurrentlyValidated ? `+${pts} XP` : '⏳ Partenaire requis'}
-                          </span>
-                        </div>
-                        <h4 className="font-black text-xs text-slate-800 mt-3.5 leading-snug">
-                          {p.questName} {originalQuest?.is_collaborative && "🤝"}
-                        </h4>
-                        <p className="text-[11px] text-slate-500 line-clamp-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100 mt-3 font-medium italic">"{p.content}"</p>
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-medium flex justify-between font-mono">
-                        <span>{isCurrentlyValidated ? '✅ Validée' : '⏳ En attente'}</span>
-                        <span>Soumis le {p.date}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* 📂 EXPLORATEUR DE QUÊTES & PORTFOLIO COMPLET */}
+{activeTab === 'portfolio' && user && (
+  <div className="space-y-6">
+    {/* BARRE DE FILTRES AVANCÉE */}
+    <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+      <div className="space-y-0.5">
+        <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">🎛️ Filtres de Recherche Globale</h3>
+        <p className="text-[11px] text-slate-400">Affiche tout ce que vos paliers débloqués vous laissent apercevoir.</p>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <select 
+          value={filterTheme} 
+          onChange={(e) => setFilterTheme(e.target.value)} 
+          className="bg-slate-800 text-xs font-bold text-white rounded-xl px-3 py-1.5 cursor-pointer focus:outline-none"
+        >
+          <option value="all">🌍 Toutes les thématiques</option>
+          <option value="env">🌱 Thème RSE</option>
+          <option value="tech">⚙️ Thème Tech</option>
+        </select>
+        <select 
+          value={filterStatus} 
+          onChange={(e) => setFilterStatus(e.target.value)} 
+          className="bg-slate-800 text-xs font-bold text-white rounded-xl px-3 py-1.5 cursor-pointer focus:outline-none"
+        >
+          <option value="all">🔍 Statut : Tout voir</option>
+          <option value="done">✅ Validées uniquement</option>
+          <option value="todo">⏳ À faire / En cours</option>
+        </select>
+      </div>
     </div>
-  );
-}
+
+    {/* LISTE DES QUÊTES APERÇUES ET LEUR ÉTAT */}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {discoveredQuestsList
+        .filter(q => {
+          const isDone = completedQuestIds.has(q.id);
+          const matchTheme = filterTheme === 'all' || q.theme === filterTheme;
+          const matchStatus = filterStatus === 'all' || (filterStatus === 'done' && isDone) || (filterStatus === 'todo' && !isDone);
+          return matchTheme && matchStatus;
+        })
+        .map(quest => {
+          const isDone = completedQuestIds.has(quest.id);
+          const myProduction = productions.find(p => p.questId === quest.id);
+
+          return (
+            <div 
+              key={quest.id} 
+              className={`border-2 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 transition-all bg-white ${
+                isDone ? 'border-emerald-500/20 bg-emerald-50/10' : 'border-slate-100 hover:border-purple-300'
+              }`}
+            >
+              <div>
+                <div className="flex justify-between items-center text-[10px] font-mono font-bold">
+                  <span className={quest.theme === 'env' ? 'text-emerald-600' : 'text-blue-600'}>
+                    {quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {quest.is_collaborative && '🤝 COLLAB'}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[9px] ${isDone ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                    {isDone ? 'Validée ✅' : 'À réaliser ⏳'}
+                  </span>
+                </div>
+                
+                <h4 className="font-black text-xs text-slate-800 mt-2.5">{quest.name}</h4>
+                <p className="text-[11px] text-slate-500 italic mt-1 line-clamp-2">"{quest.desc}"</p>
+                
+                {myProduction && (
+                  <div className="mt-3 bg-slate-50 border border-slate-100 p-2 rounded-xl text-[10px] text-slate-600 font-medium truncate">
+                    💾 Votre dernier dépôt : <span className="font-normal italic text-slate-500">"{myProduction.content}"</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 border-t flex items-center justify-between">
+                <span className="text-[10px] font-mono font-bold text-slate-400">Session: {quest.sessionCode}</span>
+                <button 
+                  onClick={() => handleNavigateToQuest(quest)} 
+                  className="bg-slate-900 hover:bg-purple-700 text-white font-black text-[10px] px-3 py-1.5 rounded-lg tracking-wide uppercase transition-colors cursor-pointer"
+                >
+                  🎯 S'y rendre ➔
+                </button>
+              </div>
+            </div>
+          );
+        })}
+    </div>
+
+    {discoveredQuestsList.length === 0 && (
+      <div className="bg-slate-50 border-2 border-dashed p-12 rounded-3xl text-center text-xs text-slate-400 italic font-medium">
+        Aucune quête n'a encore été aperçue. Entrez dans une session active et débloquez des paliers pour peupler cet écran !
+      </div>
+    )}
+  </div>
+)}
