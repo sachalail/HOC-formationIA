@@ -12,7 +12,6 @@ async function calculateFileHash(file) {
 
 export default function StudentDashboardScreen({ trees, quests }) {
   const [user, setUser] = useState(null);
-  // On stocke la liste sous forme de tableau standard (qui sera sérialisé en JSON en BDD)
   const [sessionCodesList, setSessionCodesList] = useState([]); 
   const [mySessionsData, setMySessionsData] = useState([]); 
   const [selectedSessionCode, setSelectedSessionCode] = useState(null); 
@@ -25,8 +24,8 @@ export default function StudentDashboardScreen({ trees, quests }) {
   const [filterTheme, setFilterTheme] = useState('all');
   const [filterPoints, setFilterPoints] = useState('all');
 
-  // ÉTATS DE SUIVI UNIQUE
-  const [unlockedFloorIndex, setUnlockedFloorIndex] = useState(0); 
+  // ÉTATS DE SUIVI UNIQUE (Correction 1 : Utilisation d'un objet pour ne pas écraser les arbres)
+  const [unlockedFloorsObj, setUnlockedFloorsObj] = useState({}); 
   const [currentFloorIndex, setCurrentFloorIndex] = useState(0); 
   
   // 🛡️ ÉTAT ANTI-SPAM
@@ -63,6 +62,16 @@ export default function StudentDashboardScreen({ trees, quests }) {
         if (profile?.session_codes && Array.isArray(profile.session_codes) && !profileError) {
           setSessionCodesList(profile.session_codes);
           fetchSessionsDetails(profile.session_codes);
+        }
+
+        // Chargement initial de la persistance globale de l'utilisateur
+        const savedFloors = localStorage.getItem(`ecolearn_floors_map_${session.user.id}`);
+        if (savedFloors) {
+          try {
+            setUnlockedFloorsObj(JSON.parse(savedFloors));
+          } catch(e) {
+            setUnlockedFloorsObj({});
+          }
         }
       }
     };
@@ -122,14 +131,12 @@ export default function StudentDashboardScreen({ trees, quests }) {
     }
 
     const fetchCollaborativeData = async () => {
-      // Extraction des productions de toute la session pour analyser la redondance des hashs/textes
       const { data: prods } = await supabase
         .from('productions')
         .select('*')
         .eq('session_code', selectedSessionCode);
       if (prods) setAllSessionsProductions(prods);
 
-      // Extraction des profiles appartenant à la même session active
       const { data: profiles } = await supabase.from('profiles').select('id, email, session_codes');
       if (profiles) {
         setAllStudentsInSession(profiles.filter(p => Array.isArray(p.session_codes) && p.session_codes.includes(selectedSessionCode)));
@@ -138,7 +145,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
 
     fetchCollaborativeData();
 
-    // Inscription aux flux de modifications de la table productions pour rafraîchir l'UI à la volée
     const channel = supabase
       .channel(`session-realtime-${selectedSessionCode}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'productions' }, () => {
@@ -160,10 +166,8 @@ export default function StudentDashboardScreen({ trees, quests }) {
     const myProd = productions.find(p => p.questId === questId);
     if (!myProd) return false;
 
-    // Quête individuelle : le dépôt fait foi immédiatement
     if (!originalQuest.is_collaborative) return true;
 
-    // Quête collaborative : calcul du nombre d'équipiers ayant partagé un livrable identique
     const requiredPartners = originalQuest.required_partners || 2;
     const matches = allSessionsProductions.filter(p => {
       if (p.quest_id !== questId) return false;
@@ -187,25 +191,19 @@ export default function StudentDashboardScreen({ trees, quests }) {
     setCompletedQuestIds(validatedSet);
   }, [productions, allSessionsProductions]);
 
-  // PERSISTANCE DES ÉTAGES EN LOCALSTORAGE (Par utilisateur et par arbre)
+  // PERSISTANCE DES ÉTAGES EN LOCALSTORAGE (Correction 1 : Sauvegarde de l'objet complet indexé par TreeId)
   useEffect(() => {
-    if (selectedTreeId && user) {
-      localStorage.setItem(
-        `ecolearn_floor_${user.id}_${selectedTreeId}`, 
-        unlockedFloorIndex.toString()
-      );
+    if (user && Object.keys(unlockedFloorsObj).length > 0) {
+      localStorage.setItem(`ecolearn_floors_map_${user.id}`, JSON.stringify(unlockedFloorsObj));
     }
-  }, [unlockedFloorIndex, user, selectedTreeId]);
+  }, [unlockedFloorsObj, user]);
 
   useEffect(() => {
     if (selectedTreeId && user) {
-      const savedFloor = localStorage.getItem(`ecolearn_floor_${user.id}_${selectedTreeId}`);
-      const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
-      setUnlockedFloorIndex(floorIdx);
       setCurrentFloorIndex(0); 
       setActiveQuest(null);
     }
-  }, [user, selectedTreeId]);
+  }, [selectedTreeId, user]);
 
   // 💾 4. COUPLAGE ET ENREGISTREMENT JSON DANS SUPABASE
   const handleJoinSession = async (e) => {
@@ -285,7 +283,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
 
   const globalCompletedQuestIds = productions.map(p => p.questId);
 
-  // Score calculé à la volée sur les quêtes validées ou dont le consensus d'équipe est complété
   const studentPoints = productions.reduce((sum, prod) => { 
     if (!isQuestFullyValidated(prod.questId)) return sum;
     const originalQuest = quests.find(q => q.id === prod.questId);
@@ -366,6 +363,9 @@ export default function StudentDashboardScreen({ trees, quests }) {
       return String(myProd.content).trim() === String(p.content).trim();
     }).length;
   };
+
+  // Récupération de l'index du palier débloqué pour l'arbre sélectionné courant
+  const currentUnlockedFloorIndex = selectedTreeId ? (unlockedFloorsObj[selectedTreeId] || 0) : 0;
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
@@ -475,7 +475,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
               const totalPaliers = allFloors.length;
               if (totalPaliers === 0) return null;
 
-              const safeUnlockedIndex = Math.min(unlockedFloorIndex, totalPaliers - 1);
+              const safeUnlockedIndex = Math.min(currentUnlockedFloorIndex, totalPaliers - 1);
               const safeCurrentIndex = Math.min(currentFloorIndex, safeUnlockedIndex);
               const activeFloor = allFloors[safeCurrentIndex];
               
@@ -524,7 +524,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
                     {safeCurrentIndex === safeUnlockedIndex && safeCurrentIndex < totalPaliers - 1 && (
                       <div className="pt-3 border-t flex items-center justify-between text-[11px]">
                         <div>{!assezDePointsPourSuivant ? <span>🔒 Il manque <strong className="text-slate-600">{pointsManquants} XP</strong></span> : <span className="text-emerald-600 font-bold">🌟 Prêt !</span>}</div>
-                        <button disabled={!assezDePointsPourSuivant} onClick={() => { setTriggerDropAnimation(true); setTimeout(() => setTriggerDropAnimation(false), 600); setUnlockedFloorIndex(safeCurrentIndex + 1); setCurrentFloorIndex(safeCurrentIndex + 1); setActiveQuest(null); }} className={`font-black px-4 py-2 rounded-xl transition-all cursor-pointer ${assezDePointsPourSuivant ? 'bg-slate-950 text-white scale-105 shadow-md' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>Débloquer le palier suivant ➔</button>
+                        <button disabled={!assezDePointsPourSuivant} onClick={() => { setTriggerDropAnimation(true); setTimeout(() => setTriggerDropAnimation(false), 600); setUnlockedFloorsObj(prev => ({ ...prev, [selectedTreeId]: safeCurrentIndex + 1 })); setCurrentFloorIndex(safeCurrentIndex + 1); setActiveQuest(null); }} className={`font-black px-4 py-2 rounded-xl transition-all cursor-pointer ${assezDePointsPourSuivant ? 'bg-slate-950 text-white scale-105 shadow-md' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>Débloquer le palier suivant ➔</button>
                       </div>
                     )}
                   </div>
@@ -540,6 +540,11 @@ export default function StudentDashboardScreen({ trees, quests }) {
                 {(() => {
                   const isDoneHere = completedQuestIds.has(activeQuest.id);
                   const isDoneElsewhere = globalCompletedQuestIds.includes(activeQuest.id) && !isDoneHere;
+                  
+                  // Vérification si l'étudiant a personnellement déjà déposé un livrable pour cette quête
+                  const hasMySubmission = productions.some(p => p.questId === activeQuest.id);
+                  const partnersCount = countTeamPartners(activeQuest.id);
+                  const requiredPartners = activeQuest.required_partners || 2;
 
                   return (
                     <>
@@ -557,7 +562,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
 
                       {activeQuest.is_collaborative && (
                         <div className="bg-purple-50 text-purple-900 text-[10px] p-2.5 rounded-xl border border-purple-100 font-medium">
-                          👥 **Mission collaborative** : Au moins **{activeQuest.required_partners || 2} équipiers** doivent soumettre un travail ou document certifié identique pour qu'elle passe au vert.
+                          👥 **Mission collaborative** : Au moins **{requiredPartners} équipiers** doivent soumettre un travail ou document certifié identique pour qu'elle passe au vert.
                         </div>
                       )}
 
@@ -567,14 +572,25 @@ export default function StudentDashboardScreen({ trees, quests }) {
                         </div>
                       )}
 
-                      {isDoneElsewhere && !isActiveQuestDone && (
+                      {/* Correction 2 : Indicateur visuel dynamique d'attente de partenaires post-dépôt */}
+                      {!isDoneHere && activeQuest.is_collaborative && hasMySubmission && (
+                        <div className="bg-purple-50 text-purple-800 border-2 border-dashed border-purple-300 rounded-xl p-4 text-center space-y-2">
+                          <p className="text-xs font-black">⏳ Votre livrable a bien été enregistré !</p>
+                          <p className="text-[11px] font-medium text-slate-600 leading-snug">
+                            En attente de vos coéquipiers : <strong className="text-purple-700 bg-purple-100 px-2 py-0.5 rounded font-mono">{partnersCount} / {requiredPartners}</strong> fichiers identiques reçus.
+                          </p>
+                          <p className="text-[10px] text-slate-400 italic">L'interface se mettra à jour automatiquement en temps réel dès qu'ils auront déposé le document.</p>
+                        </div>
+                      )}
+
+                      {isDoneElsewhere && !isActiveQuestDone && !hasMySubmission && (
                         <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 text-center space-y-3">
                           <p className="text-xs text-amber-900 font-medium leading-snug">💡 Vous avez déjà résolu cet exercice dans une autre de vos sessions ! L'importer ?</p>
                           <button onClick={handleImportPreviousProduction} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-2 rounded-xl text-xs uppercase tracking-wide transition-all shadow cursor-pointer">🔄 Importer mon travail (+{getPointsByDifficulty(activeQuest.difficulty)} XP)</button>
                         </div>
                       )}
 
-                      {!isDoneHere && !isDoneElsewhere && (
+                      {!isDoneHere && !isDoneElsewhere && !hasMySubmission && (
                         <form onSubmit={handleSubmitLivrable} className="space-y-3">
                           <textarea required rows="4" value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder="Collez votre réponse ou lien..." className="w-full bg-slate-50 border rounded-xl p-3 text-xs focus:border-purple-500 focus:outline-none" />
                           
