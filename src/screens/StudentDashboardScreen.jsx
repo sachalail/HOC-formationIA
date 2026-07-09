@@ -272,16 +272,16 @@ export default function StudentDashboardScreen({ trees, quests }) {
     }
   };
 
-  // 🎯 FONCTION LOGIQUE POUR LE POINT 2 & 3 : Redirection depuis le portfolio
+  // Redirection depuis le portfolio vers une quête
   const handleNavigateToQuest = (sessionCode, treeId, floorIdx, questObj) => {
     setSelectedSessionCode(sessionCode);
     setSelectedTreeId(treeId);
     setCurrentFloorIndex(floorIdx);
     setActiveQuest(questObj);
-    setActiveTab('parcours'); // On rebascule sur l'onglet de jeu
+    setActiveTab('parcours'); 
   };
 
-  // Calcul dynamique des quêtes découvertes (paliers débloqués mais pas encore faites)
+  // Calcul dynamique des quêtes découvertes
   const discoveredQuests = [];
   mySessionsData.forEach(sessionItem => {
     const linkedTree = trees[sessionItem.tree_id];
@@ -344,7 +344,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
         <button onClick={() => { setActiveTab('portfolio'); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400'}`}>📂 Mon Portfolio ({uniqueLivrables.length})</button>
       </div>
 
-      {/* PARCOURS */}
+      {/* PARCOURS ACCESSIBLES */}
       {activeTab === 'parcours' && !selectedSessionCode && (
         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
@@ -510,19 +510,16 @@ export default function StudentDashboardScreen({ trees, quests }) {
                         </div>
                       )}
 
-                      {/* 🛠️ COEXISTENCE UNIQUE (POINT 4) : SI FAITE AILLEURS, ON DONNE LES DEUX OPTIONS */}
                       {isDoneElsewhere && !isDoneHere && (
                         <div className="space-y-4 border-t pt-3">
                           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center space-y-2">
                             <p className="text-[11px] text-amber-900 font-medium leading-snug">💡 Mission déjà validée sur un autre parcours ! Vous pouvez l'importer en 1 clic :</p>
                             <button onClick={handleImportPreviousProduction} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-2 rounded-xl text-[11px] uppercase tracking-wide transition-all shadow cursor-pointer">🔄 Importer mon ancien livrable</button>
                           </div>
-                          
                           <div className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">— OU ALORS —</div>
                         </div>
                       )}
 
-                      {/* LE FORMULAIRE RESTE DISPONIBLE SI NON FAIT ICI (MÊME SI FAIT AILLEURS) */}
                       {!isDoneHere && (
                         <form onSubmit={handleSubmitLivrable} className="space-y-3">
                           <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Rédiger un nouveau livrable pour cette session :</label>
@@ -550,11 +547,11 @@ export default function StudentDashboardScreen({ trees, quests }) {
         </div>
       )}
 
-      {/* PORTFOLIO TECHNIQUE FILTRABLE */}
+      {/* PORTFOLIO TECHNIQUE */}
       {activeTab === 'portfolio' && user && (
         <div className="space-y-8">
           
-          {/* 🛠️ POINT 2 & 3 : SECTION "MISSIONS DECOUVERTES" (EN COURS) */}
+          {/* MISSIONS DÉCOUVERTES (EN COURS) */}
           <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm">
             <div className="border-b pb-2">
               <h3 className="font-black text-xs text-purple-700 uppercase tracking-widest flex items-center gap-2">
@@ -592,7 +589,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
             )}
           </div>
 
-          {/* SÉLECTEURS DE FILTRES POUR LES RÉUSSITES */}
+          {/* FILTRES DU PORTFOLIO */}
           <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-md">
             <div className="space-y-0.5">
               <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">🎛️ Centre de Tri</h3>
@@ -613,7 +610,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
             </div>
           </div>
 
-          {/* MES RÉUSSITES SÉCURISÉES */}
+          {/* LES RÉUSSITES DE L'APPRENANT AVEC SUIVI DE COMPOSANT DE FICHIER CLIQUABLE */}
           <div className="space-y-4">
             <div className="border-b border-slate-200 pb-2">
               <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide">
@@ -638,11 +635,30 @@ export default function StudentDashboardScreen({ trees, quests }) {
                     <div key={p.id} className="bg-white border-2 border-slate-100 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden">
                       <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-emerald-500" />
                       <div>
-                        <div className="flex justify-between items-center text-[10px] font-mono font-bold text-slate-400">
-                          <span className="uppercase bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{p.questId}</span>
-                          <span className="text-emerald-600 font-black">+{pts} XP</span>
+                        {/* SUIVI ET VISUALISATION DU LIVRABLE (S'IL EST LIVRÉ OU NON) */}
+                        <div className="flex justify-between items-center text-[10px] font-mono font-bold gap-2">
+                          <span className="uppercase bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold">{p.questId}</span>
+                          
+                          {p.file_url ? (
+                            <a 
+                              href={p.file_url} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              title="Cliquez pour visualiser ou télécharger le document joint"
+                              className="bg-sky-100 hover:bg-sky-200 text-sky-800 px-2 py-0.5 rounded flex items-center gap-1 transition-colors border border-sky-300/40"
+                            >
+                              📄 Document livré ➔
+                            </a>
+                          ) : (
+                            <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200/50">
+                              📝 Texte uniquement
+                            </span>
+                          )}
+                          
+                          <span className="text-emerald-600 font-black ml-auto">+{pts} XP</span>
                         </div>
-                        <h4 className="font-black text-xs text-slate-800 mt-2.5 leading-snug">{p.questName}</h4>
+                        
+                        <h4 className="font-black text-xs text-slate-800 mt-3.5 leading-snug">{p.questName}</h4>
                         <p className="text-[11px] text-slate-500 line-clamp-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100 mt-3 font-medium italic">"{p.content}"</p>
                       </div>
                       <div className="text-[10px] text-slate-400 font-medium text-right font-mono">Soumis le {p.date}</div>
