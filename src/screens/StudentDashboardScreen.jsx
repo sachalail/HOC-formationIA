@@ -40,7 +40,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
       if (session?.user) {
         setUser(session.user);
 
-        // Récupération de 'session_codes' et 'unlocked_floors'
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('session_codes, unlocked_floors')
@@ -52,7 +51,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
             setSessionCodesList(profile.session_codes);
             fetchSessionsDetails(profile.session_codes);
           }
-          // On injecte l'objet JSONB des paliers (si null ou inexistant, on met {})
           setUnlockedFloorsObj(profile.unlocked_floors || {});
         }
       }
@@ -60,7 +58,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
     getUserData();
   }, []);
 
-  // Charger les arbres correspondants aux codes de sessions
   const fetchSessionsDetails = async (codes) => {
     if (!codes || codes.length === 0) return;
 
@@ -106,7 +103,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
     }
   }, [user]);
 
-  // Réinitialisation du palier de consultation dès qu'on change d'arbre
   useEffect(() => {
     if (selectedTreeId) {
       setCurrentFloorIndex(0); 
@@ -114,7 +110,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
     }
   }, [selectedTreeId]);
 
-  // 💾 3. REJOINDRE UNE SESSION (JSON EN BDD)
+  // 💾 3. REJOINDRE UNE SESSION
   const handleJoinSession = async (e) => {
     e.preventDefault();
     const inputCode = accessCode.trim().toUpperCase();
@@ -147,17 +143,15 @@ export default function StudentDashboardScreen({ trees, quests }) {
       .eq('id', user.id);
 
     if (updateError) {
-      console.error("Détails erreur Supabase:", updateError.message);
       alert("❌ Erreur de sauvegarde BDD.");
     } else {
       setSessionCodesList(updatedSessionCodes);
       setMySessionsData([...mySessionsData, { id: targetSession.id, session_code: targetSession.session_code, tree_id: targetSession.tree_id }]);
-      
       setSelectedSessionCode(targetSession.session_code);
       setSelectedTreeId(targetSession.tree_id);
       setCurrentFloorIndex(0);
       setAccessCode('');
-      alert(`🎉 Session "${targetSession.session_code}" ajoutée ad aeternam !`);
+      alert(`🎉 Session "${targetSession.session_code}" ajoutée !`);
     }
   };
 
@@ -168,27 +162,21 @@ export default function StudentDashboardScreen({ trees, quests }) {
     const nextIndex = currentUnlockedIdx + 1;
     if (nextIndex >= totalPaliers) return;
 
-    // On prépare le nouvel objet JSONB mis à jour
     const updatedFloorsObj = {
       ...unlockedFloorsObj,
       [selectedTreeId]: nextIndex
     };
 
-    // Sauvegarde en base de données
     const { error } = await supabase
       .from('profiles')
       .update({ unlocked_floors: updatedFloorsObj })
       .eq('id', user.id);
 
     if (error) {
-      console.error("Erreur lors de la sauvegarde du palier :", error.message);
       alert("❌ Impossible de sauvegarder votre progression sur le serveur.");
     } else {
-      // Animation graphique locale
       setTriggerDropAnimation(true); 
       setTimeout(() => setTriggerDropAnimation(false), 600);
-      
-      // Mise à jour de l'état
       setUnlockedFloorsObj(updatedFloorsObj);
       setCurrentFloorIndex(nextIndex);
       setActiveQuest(null);
@@ -228,7 +216,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
   }, 0);
 
   const handleSubmitLivrable = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!livrableContent.trim()) return;
     if (completedQuestIds.has(activeQuest.id)) return;
     if (!user) return;
@@ -284,6 +272,44 @@ export default function StudentDashboardScreen({ trees, quests }) {
     }
   };
 
+  // 🎯 FONCTION LOGIQUE POUR LE POINT 2 & 3 : Redirection depuis le portfolio
+  const handleNavigateToQuest = (sessionCode, treeId, floorIdx, questObj) => {
+    setSelectedSessionCode(sessionCode);
+    setSelectedTreeId(treeId);
+    setCurrentFloorIndex(floorIdx);
+    setActiveQuest(questObj);
+    setActiveTab('parcours'); // On rebascule sur l'onglet de jeu
+  };
+
+  // Calcul dynamique des quêtes découvertes (paliers débloqués mais pas encore faites)
+  const discoveredQuests = [];
+  mySessionsData.forEach(sessionItem => {
+    const linkedTree = trees[sessionItem.tree_id];
+    if (linkedTree && linkedTree.floors) {
+      const savedFloorValue = unlockedFloorsObj[sessionItem.tree_id];
+      const maxUnlockedIdx = savedFloorValue !== undefined ? parseInt(savedFloorValue, 10) : 0;
+      
+      linkedTree.floors.forEach((floor, fIdx) => {
+        if (fIdx <= maxUnlockedIdx) {
+          const floorQuests = quests.filter(q => (floor.quests || []).includes(q.id));
+          floorQuests.forEach(q => {
+            const isDoneHere = completedQuestIds.has(q.id);
+            if (!isDoneHere) {
+              discoveredQuests.push({
+                quest: q,
+                sessionCode: sessionItem.session_code,
+                treeId: sessionItem.tree_id,
+                floorIndex: fIdx,
+                floorId: floor.floorId,
+                treeName: linkedTree.name
+              });
+            }
+          });
+        }
+      });
+    }
+  });
+
   const uniqueLivrables = productions.filter(p => !p.content.startsWith("[Importé"));
   const isActiveQuestDone = activeQuest ? completedQuestIds.has(activeQuest.id) : false;
 
@@ -318,11 +344,10 @@ export default function StudentDashboardScreen({ trees, quests }) {
         <button onClick={() => { setActiveTab('portfolio'); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400'}`}>📂 Mon Portfolio ({uniqueLivrables.length})</button>
       </div>
 
-      {/* LISTE DES SESSIONS ACCESSIBLES */}
+      {/* PARCOURS */}
       {activeTab === 'parcours' && !selectedSessionCode && (
         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-            
             <div className="lg:col-span-2 space-y-4">
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">🧠 Vos sessions actives</h3>
               {mySessionsData.length === 0 ? (
@@ -376,7 +401,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
                 </button>
               </form>
             </div>
-
           </div>
         </div>
       )}
@@ -395,7 +419,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
               const totalPaliers = allFloors.length;
               if (totalPaliers === 0) return null;
 
-              // Extraction du palier débloqué pour cet arbre spécifique depuis l'objet JSONB
               const savedFloorValue = unlockedFloorsObj[selectedTreeId];
               const unlockedFloorIndex = savedFloorValue !== undefined ? parseInt(savedFloorValue, 10) : 0;
 
@@ -472,7 +495,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
                       <div className="flex justify-between items-start">
                         <div>
                           <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-100 text-emerald-800' : isDoneElsewhere ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'}`}>
-                            {isDoneHere ? 'Validée' : isDoneElsewhere ? 'Dans vos archives' : 'Mission Active'}
+                            {isDoneHere ? 'Validée' : isDoneElsewhere ? 'Fait ailleurs (Double choix)' : 'Mission Active'}
                           </span>
                           <h3 className="font-black text-slate-900 text-sm mt-1">{activeQuest.name}</h3>
                         </div>
@@ -483,19 +506,26 @@ export default function StudentDashboardScreen({ trees, quests }) {
 
                       {isDoneHere && (
                         <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-4 text-center text-xs font-bold">
-                          ✅ Mission accomplie !
+                          ✅ Mission accomplie dans cette session !
                         </div>
                       )}
 
-                      {isDoneElsewhere && !isActiveQuestDone && (
-                        <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 text-center space-y-3">
-                          <p className="text-xs text-amber-900 font-medium leading-snug">💡 Vous avez déjà résolu cet exercice dans une autre de vos sessions ! L'importer ?</p>
-                          <button onClick={handleImportPreviousProduction} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-2 rounded-xl text-xs uppercase tracking-wide transition-all shadow cursor-pointer">🔄 Importer mon travail (+{getPointsByDifficulty(activeQuest.difficulty)} XP)</button>
+                      {/* 🛠️ COEXISTENCE UNIQUE (POINT 4) : SI FAITE AILLEURS, ON DONNE LES DEUX OPTIONS */}
+                      {isDoneElsewhere && !isDoneHere && (
+                        <div className="space-y-4 border-t pt-3">
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center space-y-2">
+                            <p className="text-[11px] text-amber-900 font-medium leading-snug">💡 Mission déjà validée sur un autre parcours ! Vous pouvez l'importer en 1 clic :</p>
+                            <button onClick={handleImportPreviousProduction} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-2 rounded-xl text-[11px] uppercase tracking-wide transition-all shadow cursor-pointer">🔄 Importer mon ancien livrable</button>
+                          </div>
+                          
+                          <div className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">— OU ALORS —</div>
                         </div>
                       )}
 
-                      {!isDoneHere && !isDoneElsewhere && (
+                      {/* LE FORMULAIRE RESTE DISPONIBLE SI NON FAIT ICI (MÊME SI FAIT AILLEURS) */}
+                      {!isDoneHere && (
                         <form onSubmit={handleSubmitLivrable} className="space-y-3">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Rédiger un nouveau livrable pour cette session :</label>
                           <textarea required rows="4" value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder="Collez votre réponse ou lien..." className="w-full bg-slate-50 border rounded-xl p-3 text-xs focus:border-purple-500 focus:outline-none" />
                           
                           <div className="space-y-1.5 border-t pt-3">
@@ -504,8 +534,8 @@ export default function StudentDashboardScreen({ trees, quests }) {
                             {attachedFile && <p className="text-[10px] text-emerald-600 font-bold">✓ {attachedFile.name} chargé</p>}
                           </div>
 
-                          <button type="submit" disabled={isActiveQuestDone} className={`w-full font-bold py-2 rounded-xl text-xs uppercase mt-2 text-white transition-all cursor-pointer ${isActiveQuestDone ? 'bg-slate-300 cursor-not-allowed' : 'bg-purple-700 hover:bg-purple-600'}`}>
-                            {isActiveQuestDone ? "✅ Déjà validée" : "💾 Déposer le livrable"}
+                          <button type="submit" className="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-2.5 rounded-xl text-xs uppercase shadow cursor-pointer">
+                            💾 Déposer ce nouveau rendu
                           </button>
                         </form>
                       )}
@@ -523,10 +553,50 @@ export default function StudentDashboardScreen({ trees, quests }) {
       {/* PORTFOLIO TECHNIQUE FILTRABLE */}
       {activeTab === 'portfolio' && user && (
         <div className="space-y-8">
+          
+          {/* 🛠️ POINT 2 & 3 : SECTION "MISSIONS DECOUVERTES" (EN COURS) */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm">
+            <div className="border-b pb-2">
+              <h3 className="font-black text-xs text-purple-700 uppercase tracking-widest flex items-center gap-2">
+                🎯 Mes Missions Découvertes / En cours ({discoveredQuests.length})
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">Ces missions appartiennent à vos paliers débloqués. Cliquez pour vous y rendre instantanément.</p>
+            </div>
+            
+            {discoveredQuests.length === 0 ? (
+              <div className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-dashed">
+                Aucune mission en cours. Vous avez terminé toutes les quêtes de vos paliers actuels !
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {discoveredQuests.map(({ quest, sessionCode, treeId, floorIndex, floorId, treeName }) => (
+                  <button 
+                    key={`${sessionCode}-${quest.id}`}
+                    onClick={() => handleNavigateToQuest(sessionCode, treeId, floorIndex, quest)}
+                    className="bg-purple-50/40 hover:bg-purple-50 border-2 border-purple-100/60 hover:border-purple-400 p-4 rounded-2xl text-left shadow-sm transition-all flex flex-col justify-between gap-4 group cursor-pointer relative"
+                  >
+                    <div>
+                      <div className="flex justify-between items-center text-[9px] font-mono font-bold text-purple-500">
+                        <span>{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                        <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-mono text-[8px]">SESSION: {sessionCode}</span>
+                      </div>
+                      <h4 className="font-black text-xs text-slate-800 mt-2 group-hover:text-purple-900 leading-tight">{quest.name}</h4>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-semibold border-t pt-2 flex justify-between items-center">
+                      <span>{treeName} • P.{floorId}</span>
+                      <span className="text-purple-600 font-bold group-hover:underline">S'y rendre ➔</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* SÉLECTEURS DE FILTRES POUR LES RÉUSSITES */}
           <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-md">
             <div className="space-y-0.5">
               <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">🎛️ Centre de Tri</h3>
-              <p className="text-[11px] text-slate-400">Filtrez vos travaux en temps réel.</p>
+              <p className="text-[11px] text-slate-400">Filtrez vos réussites enregistrées.</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer">
@@ -543,6 +613,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
             </div>
           </div>
 
+          {/* MES RÉUSSITES SÉCURISÉES */}
           <div className="space-y-4">
             <div className="border-b border-slate-200 pb-2">
               <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide">
