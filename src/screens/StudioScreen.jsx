@@ -17,7 +17,7 @@ const getQuestBadgeStyle = (quest) => {
 export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
-  // Navigation par onglet interne au Studio
+  // Navigation par onglet interne au Studio (Arbre d'abord, Sessions en discret)
   const [activeTab, setActiveTab] = useState('tree'); // 'tree' ou 'sessions'
   
   // États de sélection
@@ -37,7 +37,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [newTreeName, setNewTreeName] = useState('');
   const [newFloorMode, setNewFloorMode] = useState('static');
 
-  // 🤝 ÉTATS POUR LE MODE COLLABORATIF DURABLE
+  // 🤝 AJOUT DES ÉTATS POUR LE MODE COLLABORATIF
   const [isCollaborative, setIsCollaborative] = useState(false);
   const [requiredPartners, setRequiredPartners] = useState(2);
 
@@ -138,25 +138,31 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return matchesSearch && matchesTheme && matchesDifficulty;
   }).sort((a, b) => (a.theme || '').localeCompare(b.theme || ''));  
 
-  // CALCUL AUTOMATIQUE DE LA CONTRAINTE MAXIMALE D'ÉQUIPE SUR L'ARBRE
+  // 🔥 ULTRA BONUS : Calcul automatique de la contrainte maximale d'équipe sur l'arbre
   const recalculateAndSaveMaxTeamConstraint = async (treeId, floorsArray) => {
     if (!treeId || !floorsArray) return;
 
+    // Récupérer tous les IDs de quêtes rattachés aux paliers de l'arbre actif
     const attachedQuestIds = floorsArray.flatMap(f => f.quests || []);
+    
+    // Récupérer la liste complète des quêtes correspondantes
     const linkedQuests = safeQuestsList.filter(q => attachedQuestIds.includes(q.id));
 
+    // Déterminer la contrainte maximale requise (par défaut 1 si tout est solo)
     const maxConstraint = linkedQuests.reduce((max, q) => {
-      if (q.is_collaborative) {
-        return Math.max(max, q.required_partners || 2);
+      if (q.is_collaborative || q.is_collaborative === 'true') {
+        return Math.max(max, Number(q.required_partners) || 2);
       }
       return max;
     }, 1);
 
+    // Mettre à jour dans Supabase
     await supabase
       .from('trees')
       .update({ max_team_constraint: maxConstraint })
       .eq('id', treeId);
 
+    // Mettre à jour l'état local
     if (typeof setTrees === 'function') {
       setTrees(prev => {
         if (!prev[treeId]) return prev;
@@ -168,7 +174,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // LOGIQUE DE SAUVEGARDE ET SYNCHRONISATION SUPABASE
+  // 2. LOGIQUE DE SAUVEGARDE ET SYNCHRONISATION SUPABASE
   const handleSaveChanges = async () => {
     if (activeTab === 'tree' && currentTree) {
       const { error } = await supabase
@@ -179,8 +185,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       if (error) {
         alert(`❌ Erreur sauvegarde Arbre : ${error.message}`);
       } else {
+        // Déclencher le recalcul automatique au moment de la sauvegarde générale de l'arbre
         await recalculateAndSaveMaxTeamConstraint(currentTree.id, currentTree.floors);
-        alert(`🎉 Arbre "${currentTree.name}" et ses paliers synchronisés sur Supabase !`);
+        alert(`🎉 Arbre "${currentTree.name}" et ses paliers synchronisés sur Supabase (Contrainte d'équipe recalculée) !`);
       }
     } 
     
@@ -198,6 +205,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
+  // MODIFICATION DE L'ARBRE DANS LE STATE LOCAL
   const updateCurrentTreeInState = (updatedFields) => {
     if (!currentTree) return;
     if (typeof setTrees === 'function') {
@@ -212,6 +220,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, ...updatedFields } : s));
   };
 
+  // LOGIQUE INTERACTIVE DES PALIERS (FLOORS) SUR L'ARBRE ACTIF
   const handleAddFloor = () => {
     if (!currentTree) return;
     const floors = currentTree.floors ? [...currentTree.floors] : [];
@@ -281,9 +290,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     });
 
     updateCurrentTreeInState({ floors: updatedFloors });
+    // Déclencheur immédiat d'Ultra Bonus dès qu'on check/uncheck une mission dans un palier
     recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
   };
 
+  // ACTIONS DE CRÉATION (MODALES)
   const handleCreateTree = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!newTreeName.trim()) return;
@@ -308,6 +319,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (!newQuestName || !newQuestDesc) return;
     const calculatedDifficulty = newQuestType === 'boss' ? 3 : newQuestType === 'miniboss' ? 2 : 1;
 
+    // Insertion avec prise en compte des nouveaux champs collaboratifs
     const { data, error } = await supabase
       .from('quests')
       .insert([{ 
@@ -317,14 +329,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         difficulty: String(calculatedDifficulty), 
         owner_id: currentUserId, 
         visibility: 'private',
-        is_collaborative: isCollaborative, 
-        required_partners: isCollaborative ? Number(requiredPartners) : 2
+        is_collaborative: isCollaborative,
+        required_partners: isCollaborative ? (requiredPartners || 2) : 2
       }])
       .select().single(); 
 
     if (error) { alert(`⚠️ Erreur : ${error.message}`); return; }
     if (typeof setQuests === 'function') setQuests(prev => [...(prev || []), data]);
 
+    // Reset états du formulaire
     setNewQuestName(''); 
     setNewQuestDesc(''); 
     setIsCollaborative(false);
@@ -348,6 +361,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setNewSessionCode(''); setActiveModal(null);
   };
 
+  // GESTION DES RECHERCHES ET AJOUTS DE GESTIONNAIRES
   const handleAddDRH = (drhUser) => {
     if (!currentSession) return;
     const currentDrhIds = currentSession.drh_ids || [];
@@ -365,7 +379,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   const handleRemoveDRH = (drhId) => {
     if (!currentSession) return;
-    updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
+    updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== id) });
   };
 
   return (
@@ -391,8 +405,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         {activeTab === 'tree' && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-xs font-bold w-full sm:w-auto">
             {currentTree && (
-              <span className="text-purple-600 font-black bg-purple-50 px-2 py-1 rounded-md border border-purple-100">
-                🤝 Contrainte Max d'Équipe : {currentTree.max_team_constraint || 1} pers.
+              <span className="text-purple-700 font-black bg-purple-100/80 px-3 py-1.5 rounded-lg border border-purple-200 shadow-2xs">
+                🤝 Taille max. requise du groupe : <span className="text-sm font-black text-purple-900">{currentTree.max_team_constraint || 1}</span> { (currentTree.max_team_constraint || 1) > 1 ? 'apprenants' : 'apprenant (Solo)' }
               </span>
             )}
             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -400,7 +414,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <select 
                 value={activeTreeId} 
                 onChange={(e) => setActiveTreeId(e.target.value)}
-                className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-purple-900 focus:outline-none w-full sm:w-48"
+                className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-purple-900 focus:outline-none w-full sm:w-48 font-bold"
               >
                 {Object.values(trees).map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
@@ -413,9 +427,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* ESPACE DE TRAVAIL */}
+        {/* ESPACE DE TRAVAIL (GAUCHE & CENTRE) */}
         <div className="lg:col-span-2 space-y-6">
           
+          {/* ONGLET A : ÉDITEUR D'ARBRE ET DE SES PALIERS */}
           {activeTab === 'tree' && (
             currentTree ? (
               <div className="space-y-4">
@@ -439,7 +454,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             {floor.mode === 'static' ? '📌 Statique' : '🎲 Aléatoire'}
                           </button>
 
-                          <div className="flex items-center bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 gap-1.5">
+                          <div className="flex items-center bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 gap-1.5" title="Difficultés autorisées">
                             {[1, 2, 3].map(level => {
                               const isChecked = allowedDiffs.includes(Number(level));
                               return (
@@ -482,15 +497,28 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             .filter(q => q && allowedDiffs.includes(Number(q.difficulty)))
                             .map(quest => {
                               const isSelected = (floor.quests || []).includes(quest.id);
+                              const isQuestCollab = quest.is_collaborative || quest.is_collaborative === 'true' || quest.is_collaborative === true;
                               return (
                                 <button 
                                   key={quest.id} 
                                   onClick={() => handleToggleQuestInFloor(floor.floorId, quest.id)} 
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                                    isSelected ? 'bg-purple-700 text-white border-purple-800 shadow-sm font-bold' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1.5 ${
+                                    isSelected 
+                                      ? isQuestCollab 
+                                        ? 'bg-purple-800 text-white border-purple-950 shadow-sm font-bold ring-2 ring-purple-300 ring-offset-1' 
+                                        : 'bg-purple-700 text-white border-purple-800 shadow-sm font-bold' 
+                                      : isQuestCollab 
+                                        ? 'bg-purple-5 text-purple-800 border-purple-200 hover:bg-purple-100 font-semibold' 
+                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                                   }`}
                                 >
-                                  {quest.name} {quest.is_collaborative && "🤝"} <span className="text-[10px] opacity-60">({quest.difficulty}★)</span>
+                                  <span>{quest.name}</span>
+                                  {isQuestCollab && (
+                                    <span className={`px-1 rounded text-[10px] uppercase font-black ${isSelected ? 'bg-purple-950 text-purple-300' : 'bg-purple-200 text-purple-900'}`}>
+                                      🤝 {quest.required_partners || 2}p
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] opacity-60">({quest.difficulty}★)</span>
                                 </button>
                               );
                             })}
@@ -517,6 +545,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             )
           )}
 
+          {/* ONGLET B : GESTION DES SESSIONS */}
           {activeTab === 'sessions' && (
             <div className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm space-y-4">
               <h2 className="text-md font-black text-blue-900 uppercase tracking-wide">🔗 Paramètres de distribution (Sessions)</h2>
@@ -553,6 +582,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   </select>
                 </div>
               </div>
+
+              {currentSession?.tree_id && trees[currentSession.tree_id] && (
+                <div className="p-3 bg-slate-50 border rounded-xl text-xs flex items-center justify-between text-slate-700 font-medium">
+                  <span>ℹ️ L'arbre lié possède des quêtes collaboratives.</span>
+                  <span className="font-bold text-purple-800">
+                    👥 Groupe recommandé : {trees[currentSession.tree_id].max_team_constraint || 1} pers. minimum
+                  </span>
+                </div>
+              )}
 
               <div className="pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                 
@@ -664,20 +702,25 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             </div>
 
             <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1">
-              {filteredQuests.map(q => (
-                <div key={q.id} className={`p-3 border rounded-lg text-xs space-y-1 transition-all ${getQuestBadgeStyle(q)}`}>
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-bold truncate">{q.name}</span>
-                    <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded border bg-white/50 shrink-0">
-                      {Number(q.difficulty) === 3 ? '3★ Boss' : Number(q.difficulty) === 2 ? '2★ Miniboss' : '1★ Standard'}
-                    </span>
+              {filteredQuests.map(q => {
+                const isQuestCollab = q.is_collaborative || q.is_collaborative === 'true' || q.is_collaborative === true;
+                return (
+                  <div key={q.id} className={`p-3 border rounded-lg text-xs space-y-1 transition-all ${getQuestBadgeStyle(q)}`}>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold truncate">{q.name}</span>
+                      <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded border bg-white/50 shrink-0">
+                        {Number(q.difficulty) === 3 ? '3★ Boss' : Number(q.difficulty) === 2 ? '2★ Miniboss' : '1★ Standard'}
+                      </span>
+                    </div>
+                    {isQuestCollab && (
+                      <div className="text-[11px] text-purple-900 font-black bg-purple-200/60 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-purple-300">
+                        🤝 Collaborative ({q.required_partners || 2} partenaires requis)
+                      </div>
+                    )}
+                    <div className="opacity-80 italic text-[11px] pt-1">"{q.desc}"</div>
                   </div>
-                  {q.is_collaborative && (
-                    <div className="text-[10px] text-purple-700 font-extrabold">🤝 Collaborative ({q.required_partners} partenaires)</div>
-                  )}
-                  <div className="opacity-80 italic text-[11px]">"{q.desc}"</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
