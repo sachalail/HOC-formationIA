@@ -33,7 +33,12 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
   const POINTS_REQUIRED_PER_FLOOR = 300;
 
-  // 🔑 1. RÉCUPÉRATION DE L'UTILISATEUR ET DE SES SESSIONS
+  // 🔑 Fonction simple de hachage/génération de clé unique pour livrable collaboratif
+  const generateLivrableHash = (questId, sessionCode, filename = '') => {
+    return `collab_${questId}_${sessionCode}_${filename.replace(/[^a-zA-Z0-9]/g, '')}`.toLowerCase();
+  };
+
+  // 1. RÉCUPÉRATION DE L'UTILISATEUR ET DE SES SESSIONS
   useEffect(() => {
     const getUserData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -88,7 +93,8 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         questName: p.quest_name,
         content: p.content,
         date: new Date(p.created_at).toLocaleDateString('fr-FR'),
-        file_url: p.file_url
+        file_url: p.file_url,
+        file_name: p.file_name // Assure-toi que cette colonne existe ou est simulée
       }));
       setProductions(formattedProds);
     }
@@ -174,7 +180,11 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      setAttachedFile({ name: file.name, size: (file.size / 1024).toFixed(1) + " KB", data: reader.result });
+      setAttachedFile({ 
+        name: file.name, 
+        size: (file.size / 1024).toFixed(1) + " KB", 
+        data: reader.result 
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -192,7 +202,31 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
     if (completedQuestIds.has(activeQuest.id)) return;
     if (!user) return;
 
+    const isQuestCollab = activeQuest.is_collaborative === true || activeQuest.is_collaborative === 'true';
+
+    // 🔒 VÉRIFICATION HACHAGE / DOUBLON COLLABORATIF DANS CETTE SESSION
+    if (isQuestCollab) {
+      if (!attachedFile) {
+        alert("⚠️ Un livrable (fichier justificatif) est requis pour valider cette mission collaborative.");
+        return;
+      }
+
+      const currentHash = generateLivrableHash(activeQuest.id, selectedSessionCode, attachedFile.name);
+
+      // On scanne la table des productions globales pour voir si ce fichier a déjà été importé pour cette quête & session
+      const { data: duplicateCheck } = await supabase
+        .from('productions')
+        .select('id, student_email')
+        .eq('quest_id', activeQuest.id)
+        .ilike('content', `%${currentHash}%`);
+
+      if (duplicateCheck && duplicateCheck.length > 0) {
+        alert(`🤝 Ce livrable d'équipe a déjà été déposé dans cette session par un de vos collaborateurs (${duplicateCheck[0].student_email}). Validation croisée synchronisée !`);
+      }
+    }
+
     const pointsGagnes = getPointsByDifficulty(activeQuest.difficulty);
+    const generatedHashNote = isQuestCollab ? `\n[Hash unique d'équipe : ${generateLivrableHash(activeQuest.id, selectedSessionCode, attachedFile?.name)}]` : '';
 
     const { error } = await supabase
       .from('productions')
@@ -202,7 +236,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
           student_email: user.email,    
           quest_id: activeQuest.id,     
           quest_name: activeQuest.name,
-          content: livrableContent,     
+          content: livrableContent + generatedHashNote,     
           file_url: attachedFile ? attachedFile.data : null 
         }
       ]);
@@ -242,7 +276,6 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
   };
 
   const uniqueLivrables = productions.filter(p => !p.content.startsWith("[Importé"));
-  const isActiveQuestDone = activeQuest ? completedQuestIds.has(activeQuest.id) : false;
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
@@ -297,7 +330,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                             Arbre : {linkedTree ? linkedTree.name : `Chargement (${sessionItem.tree_id})`}
                           </h4>
                         </div>
-                        <button onClick={() => { setSelectedSessionCode(sessionItem.session_code); setSelectedTreeId(sessionItem.tree_id); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition-all cursor-pointer">
+                        <button onClick={() => { setSelectedSessionCode(sessionItem.session_code); setSelectedTreeId(sessionItem.tree_id); }} className="w-full bg-emerald-600 hover:bg-emerald-50 text-white font-black py-3 rounded-xl text-xs transition-all cursor-pointer">
                           🚀 Entrer dans la session
                         </button>
                       </div>
@@ -355,7 +388,6 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
               const assezDePointsPourSuivant = studentPoints >= nextFloorRequirement;
               const pointsManquants = nextFloorRequirement - studentPoints;
 
-              // Filtrer les quêtes du palier
               const filteredQuestsOnFloor = (quests.filter(q => (activeFloor.quests || []).includes(q.id))).filter(quest => {
                 const matchTheme = filterTheme === 'all' || quest.theme === filterTheme;
                 const isQuestCollab = quest.is_collaborative === true || quest.is_collaborative === 'true';
@@ -398,24 +430,27 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                               onClick={() => setActiveQuest(quest)} 
                               className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                                 isSelected 
-                                  ? 'bg-slate-100 border-slate-400 ring-2 ring-slate-900/5' 
+                                  ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-500/10' 
                                   : isDoneHere 
                                     ? 'bg-emerald-50/40 border-emerald-200' 
-                                    : 'bg-slate-50/80 border-slate-200/60 hover:bg-white'
+                                    : isQuestCollab 
+                                      ? 'bg-purple-50/40 border-purple-100 hover:bg-purple-50/80' 
+                                      : 'bg-slate-50/80 border-slate-200/60 hover:bg-white'
                               }`}
                             >
                               <div className="flex justify-between items-center text-[10px] font-black">
-                                <span className="text-slate-400 uppercase">{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                                <span className={isQuestCollab ? "text-purple-600 uppercase" : "text-slate-400 uppercase"}>
+                                  {quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}
+                                </span>
                                 {isDoneHere && <span className="text-emerald-600">Validée ✅</span>}
                                 {isDoneElsewhere && <span className="text-amber-600">Historique 🔄</span>}
                                 {!isDoneHere && !isDoneElsewhere && (
-                                  <span className="text-slate-500 font-mono">
-                                    {/* 🤝 Intégration du symbole main / étoiles de façon sobre */}
+                                  <span className={isQuestCollab ? "text-purple-600 font-mono" : "text-slate-500 font-mono"}>
                                     {isQuestCollab ? `🤝 x${quest.required_partners || 2}` : `${quest.difficulty}★`}
                                   </span>
                                 )}
                               </div>
-                              <h4 className="text-xs font-bold mt-1 text-slate-800 truncate">
+                              <h4 className={`text-xs font-bold mt-1 truncate ${isQuestCollab ? 'text-purple-950' : 'text-slate-800'}`}>
                                 {isQuestCollab && <span className="mr-1">🤝</span>}
                                 {quest.name}
                               </h4>
@@ -440,7 +475,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
           {/* COLONNE DE TRAVAIL */}
           <div className="space-y-4">
             {activeQuest ? (
-              <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-4 sticky top-24">
+              <div className={`bg-white border p-5 rounded-2xl shadow-sm space-y-4 sticky top-24 ${(activeQuest.is_collaborative === true || activeQuest.is_collaborative === 'true') ? 'border-purple-200 shadow-purple-100/40' : 'border-slate-200'}`}>
                 {(() => {
                   const isDoneHere = completedQuestIds.has(activeQuest.id);
                   const isDoneElsewhere = globalCompletedQuestIds.includes(activeQuest.id) && !isDoneHere;
@@ -450,7 +485,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                     <>
                       <div className="flex justify-between items-start">
                         <div>
-                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-100 text-emerald-800' : isQuestCollab ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'}`}>
                             {isDoneHere ? 'Validée' : isQuestCollab ? '🤝 Mission Équipe' : '👤 Solo'}
                           </span>
                           <h3 className="font-black text-slate-900 text-sm mt-1">{activeQuest.name}</h3>
@@ -459,9 +494,9 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                       </div>
 
                       {isQuestCollab && (
-                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                          <p className="text-[11px] text-slate-600 leading-tight">
-                            🤝 **Mission collaborative requise**. Travaillez à **{activeQuest.required_partners || 2} apprenants** et spécifiez vos coéquipiers dans la réponse.
+                        <div className="p-3 bg-purple-50/50 border border-purple-100 rounded-xl">
+                          <p className="text-[11px] text-purple-900 leading-tight">
+                            🤝 **Mission collaborative**. Le dépôt d'un livrable (fichier joint) est nécessaire pour lier votre réussite à celle de votre équipe de **{activeQuest.required_partners || 2} personnes**.
                           </p>
                         </div>
                       )}
@@ -470,7 +505,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
                       {isDoneHere && <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-3 text-center text-xs font-bold">✅ Mission accomplie !</div>}
 
-                      {isDoneElsewhere && !isActiveQuestDone && (
+                      {isDoneElsewhere && !isDoneHere && (
                         <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 text-center space-y-3">
                           <p className="text-xs text-amber-900 font-medium">💡 Exercice déjà résolu ailleurs. L'importer ?</p>
                           <button onClick={handleImportPreviousProduction} className="w-full bg-amber-600 text-white font-black py-2 rounded-xl text-xs cursor-pointer">🔄 Importer mon travail</button>
@@ -479,9 +514,12 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
                       {!isDoneHere && !isDoneElsewhere && (
                         <form onSubmit={handleSubmitLivrable} className="space-y-3">
-                          <textarea required rows="4" value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder={isQuestCollab ? "Votre livrable d'équipe + mentions des coéquipiers..." : "Votre réponse ici..."} className="w-full bg-slate-50 border rounded-xl p-3 text-xs focus:outline-none focus:border-slate-400" />
-                          <input type="file" onChange={handleFileChange} className="text-xs text-slate-500 block cursor-pointer" />
-                          <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs cursor-pointer">💾 Déposer le livrable</button>
+                          <textarea required rows="4" value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder={isQuestCollab ? "Décrivez votre livrable d'équipe ici..." : "Votre réponse ici..."} className="w-full bg-slate-50 border rounded-xl p-3 text-xs focus:outline-none focus:border-slate-400" />
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">📁 Justificatif {isQuestCollab && <span className="text-purple-600">(Obligatoire pour hachage d'équipe)</span>}</label>
+                            <input type="file" required={isQuestCollab} onChange={handleFileChange} className="text-xs text-slate-500 block cursor-pointer" />
+                          </div>
+                          <button type="submit" className={`w-full font-bold py-2 rounded-xl text-xs cursor-pointer text-white ${isQuestCollab ? 'bg-purple-700 hover:bg-purple-600' : 'bg-slate-900 hover:bg-slate-800'}`}>💾 Déposer le livrable</button>
                         </form>
                       )}
                     </>
@@ -495,32 +533,76 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         </div>
       )}
 
-      {/* PORTFOLIO TECHNIQUE FILTRABLE */}
+      {/* PORTFOLIO COMPLET AVEC DEUX SECTIONS */}
       {activeTab === 'portfolio' && user && (
-        <div className="space-y-4">
-          <div className="border-b pb-2 flex justify-between items-center">
-            <h3 className="font-black text-sm text-slate-800 uppercase">🏆 Mes Réussites ({uniqueLivrables.length})</h3>
+        <div className="space-y-8">
+          
+          {/* 1ère SECTION : LES RÉUSSITES VALIDÉES */}
+          <div className="space-y-4">
+            <div className="border-b pb-2">
+              <h3 className="font-black text-sm text-emerald-800 uppercase tracking-wide">🏆 Mes Réussites Validées ({uniqueLivrables.length})</h3>
+            </div>
+            {uniqueLivrables.length === 0 ? (
+              <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-2xl text-center text-xs text-slate-400 italic">Aucun rendu validé pour le moment. Récupérez vos premières étoiles sur le terrain !</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {uniqueLivrables.map(p => {
+                  const originalQuest = quests.find(q => q.id === p.questId);
+                  const isQuestCollab = originalQuest?.is_collaborative === true || originalQuest?.is_collaborative === 'true';
+
+                  return (
+                    <div key={p.id} className={`bg-white border p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden ${isQuestCollab ? 'border-purple-200' : 'border-slate-100'}`}>
+                      <div className={`absolute top-0 left-0 bottom-0 w-1 ${isQuestCollab ? 'bg-purple-600' : 'bg-emerald-500'}`} />
+                      <div>
+                        <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                          <span>Code : {p.questId} {isQuestCollab && '🤝'}</span>
+                          <span className="text-emerald-600">+{originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP</span>
+                        </div>
+                        <h4 className="font-black text-xs text-slate-800 mt-2">{p.questName}</h4>
+                        <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border mt-2 italic">"{p.content}"</p>
+                      </div>
+                      <div className="text-[10px] text-slate-400 text-right">Soumis le {p.date}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {uniqueLivrables.map(p => {
-              const originalQuest = quests.find(q => q.id === p.questId);
-              const isQuestCollab = originalQuest?.is_collaborative === true || originalQuest?.is_collaborative === 'true';
+
+          {/* 2ème SECTION : TOUTES LES AUTRES QUÊTES (NON VALIDÉES OU EN ATTENTE) */}
+          <div className="space-y-4">
+            <div className="border-b pb-2">
+              <h3 className="font-black text-sm text-slate-400 uppercase tracking-wide">⏳ Catalogue des Missions Restantes</h3>
+            </div>
+            {(() => {
+              const pendingQuests = quests.filter(q => !completedQuestIds.has(q.id));
+              if (pendingQuests.length === 0) {
+                return <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété 100 % des missions disponibles !</div>;
+              }
 
               return (
-                <div key={p.id} className="bg-white border p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4">
-                  <div>
-                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
-                      <span>{p.questId} {isQuestCollab && '🤝'}</span>
-                      <span className="text-emerald-600">+{originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP</span>
-                    </div>
-                    <h4 className="font-black text-xs text-slate-800 mt-2">{p.questName}</h4>
-                    <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border mt-2 italic">"{p.content}"</p>
-                  </div>
-                  <div className="text-[10px] text-slate-400 text-right">Soumis le {p.date}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-75">
+                  {pendingQuests.map(q => {
+                    const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
+                    return (
+                      <div key={q.id} className={`bg-slate-50 border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-3 ${isQuestCollab ? 'border-purple-200 bg-purple-50/10' : 'border-slate-200'}`}>
+                        <div>
+                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                            <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
+                            <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
+                          </div>
+                          <h4 className={`font-black text-xs mt-1.5 ${isQuestCollab ? 'text-purple-900' : 'text-slate-700'}`}>{q.name}</h4>
+                          <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">"{q.desc}"</p>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider italic">Non initiée</div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
-            })}
+            })()}
           </div>
+
         </div>
       )}
     </div>
