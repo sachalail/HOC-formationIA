@@ -662,3 +662,5 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
     </div>
   )}
+ );
+}
