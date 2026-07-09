@@ -691,7 +691,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
                 <textarea 
                   required
                   rows="4"
-                  placeholder="Rédigez votre démonstration ou copiez le texte partagé avec votre équipe..."
+                  placeholder="Rédigez votre demonstration ou copiez le texte partagé avec votre équipe..."
                   value={submissionText}
                   onChange={(e) => setSubmissionText(e.target.value)}
                   className="w-full border rounded-xl p-3 bg-slate-50 text-slate-800 font-medium leading-relaxed focus:outline-none focus:bg-white focus:border-purple-500 transition-all shadow-inner"
