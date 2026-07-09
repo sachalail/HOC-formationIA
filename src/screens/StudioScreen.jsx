@@ -91,7 +91,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const currentTree = trees[activeTreeId];
   const currentSession = sessions.find(s => s.id === activeSessionId);
 
-  // RECHERCHE DYNAMIQUE DE DRH AVEC FILTRAGE DES DOUBLONS
+  // RECHERCHE DYNAMIQUE DE DRH AVEC FILTRAGE DES DOUBLONS (CORRIGÉ & BLINDÉ EN SÉCURITÉ)
   useEffect(() => {
     const searchDRH = async () => {
       if (drhSearchQuery.trim().length < 2) {
@@ -99,19 +99,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         return;
       }
       
-      let query = supabase
-        .from('profiles')
-        .select('id, email, role')
-        .ilike('email', `%${drhSearchQuery}%`);
+      try {
+        let query = supabase
+          .from('profiles')
+          .select('id, email, role')
+          .ilike('email', `%${drhSearchQuery}%`);
 
-      // Exclusion des DRH déjà affectés à la session en cours
-      const currentDrhIds = currentSession?.drh_ids || [];
-      if (currentDrhIds.length > 0) {
-        query = query.not('id', 'in', `(${currentDrhIds.join(',')})`);
+        // SÉCURITÉ : Nettoyage strict du tableau pour éliminer les valeurs null, undefined ou vides
+        const currentDrhIds = Array.isArray(currentSession?.drh_ids) 
+          ? currentSession.drh_ids.filter(id => id && String(id).trim() !== "")
+          : [];
+
+        if (currentDrhIds.length > 0) {
+          query = query.not('id', 'in', `(${currentDrhIds.join(',')})`);
+        }
+
+        const { data, error } = await query.limit(5);
+        if (data && !error) setDrhSuggestions(data);
+      } catch (err) {
+        console.error("Erreur lors de la recherche des DRH :", err);
       }
-
-      const { data, error } = await query.limit(5);
-      if (data && !error) setDrhSuggestions(data);
     };
 
     const delayDebounce = setTimeout(() => searchDRH(), 300);
@@ -456,7 +463,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             )
           )}
 
-          {/* ONGLET B : GESTION DES SESSIONS ET DES MANAGERS */}
+          {/* ONGLET B : GESTION DES SESSIONS ET DES MANAGERS (DÉFAILLANCE CORRIGÉE DÉFINITIVEMENT) */}
           {activeTab === 'sessions' && (
             <div className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm space-y-4">
               <h2 className="text-md font-black text-blue-900 uppercase tracking-wide">🔗 Paramètres de distribution (Sessions)</h2>
@@ -464,59 +471,84 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
                 <div>
                   <label className="block text-slate-700 mb-1">Sélectionner la session :</label>
-                  <select value={activeSessionId} onChange={(e) => setActiveSessionId(e.target.value)} className="w-full bg-slate-100 border p-2.5 rounded-xl text-slate-800 focus:outline-none">
-                    {sessions.map(s => <option key={s.id} value={s.id}>Session : {s.session_code}</option>)}
+                  <select 
+                    value={activeSessionId || ''} 
+                    onChange={(e) => setActiveSessionId(e.target.value)} 
+                    className="w-full bg-slate-100 border p-2.5 rounded-xl text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value="" disabled>-- Choisir une session --</option>
+                    {sessions.map(s => (
+                      <option key={s.id} value={s.id}>
+                        Session : {s.session_code || `Sans Code (${s.id.substring(0, 5)})`}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
-                {currentSession && (
-                  <div>
-                    <label className="block text-slate-700 mb-1">Relier à l'Arbre pédagogique :</label>
-                    <select value={currentSession.tree_id || ""} onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value })} className="w-full bg-emerald-50 border border-emerald-300 p-2.5 rounded-xl text-emerald-800 focus:outline-none">
-                      <option value="">-- Aucun arbre lié --</option>
-                      {Object.values(trees).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                )}
+                {/* SÉCURISÉ : Reste structuré même si currentSession met du temps à se charger */}
+                <div>
+                  <label className="block text-slate-700 mb-1">Relier à l'Arbre pédagogique :</label>
+                  <select 
+                    value={currentSession?.tree_id || ""} 
+                    disabled={!currentSession}
+                    onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value })} 
+                    className={`w-full p-2.5 rounded-xl focus:outline-none border transition-all ${
+                      currentSession ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    <option value="">-- Aucun arbre lié --</option>
+                    {Object.values(trees || {}).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
               </div>
 
-              {currentSession && (
-                <div className="pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                  <div className="bg-purple-50 text-purple-800 p-3.5 rounded-xl border border-purple-100 space-y-1">
-                    <span className="text-[10px] uppercase font-black text-purple-500 block">Code unique Apprenant</span>
-                    <p className="text-[11px] text-slate-600 leading-tight">Distribuez ce code pour arrimer vos élèves à cette session.</p>
-                    <div className="text-sm font-mono font-black tracking-widest bg-white border rounded-lg p-2 text-center text-purple-900 mt-2 select-all">{currentSession.session_code}</div>
+              {/* SÉCURISÉ : Conteneur global persistant pour préserver la mise en page de gauche */}
+              <div className="pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                
+                {/* CODE UNIQUE */}
+                <div className="bg-purple-50 text-purple-800 p-3.5 rounded-xl border border-purple-100 space-y-1">
+                  <span className="text-[10px] uppercase font-black text-purple-500 block">Code unique Apprenant</span>
+                  <p className="text-[11px] text-slate-600 leading-tight">Distribuez ce code pour arrimer vos élèves à cette session.</p>
+                  <div className="text-sm font-mono font-black tracking-widest bg-white border rounded-lg p-2 text-center text-purple-900 mt-2 select-all">
+                    {currentSession ? (currentSession.session_code || "CODE VIDE ⚠️") : "Sélectionnez une session..."}
                   </div>
+                </div>
 
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-2 relative">
-                    <span className="text-[10px] uppercase font-black text-slate-500 block">Observateurs DRH rattachés</span>
-                    <input 
-                      type="text" 
-                      placeholder="Chercher par email..." 
-                      value={drhSearchQuery} 
-                      onChange={(e) => setDrhSearchQuery(e.target.value)} 
-                      className="w-full bg-white border text-xs rounded-lg p-2 focus:outline-none focus:border-purple-500" 
-                    />
-                    
-                    {drhSuggestions.length > 0 && (
-                      <div className="absolute left-0 right-0 mt-1 bg-white border rounded-xl shadow-xl max-h-32 overflow-y-auto z-50 text-xs divide-y">
-                        {drhSuggestions.map(u => (
-                          <button 
-                            key={u.id} 
-                            type="button" 
-                            onClick={() => handleAddDRH(u)} 
-                            className="w-full text-left px-3 py-2 hover:bg-purple-50 font-medium flex justify-between items-center"
-                          >
-                            <span>{u.email}</span>
-                            <span className="text-[10px] bg-slate-100 px-1 rounded text-slate-400">{u.role || 'DRH'}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                {/* OBSERVATEURS DRH */}
+                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-2 relative">
+                  <span className="text-[10px] uppercase font-black text-slate-500 block">Observateurs DRH rattachés</span>
+                  <input 
+                    type="text" 
+                    placeholder={currentSession ? "Chercher par email..." : "En attente de session..."} 
+                    disabled={!currentSession}
+                    value={drhSearchQuery} 
+                    onChange={(e) => setDrhSearchQuery(e.target.value)} 
+                    className="w-full bg-white border text-xs rounded-lg p-2 focus:outline-none focus:border-purple-500 disabled:bg-slate-100 disabled:text-slate-400" 
+                  />
+                  
+                  {drhSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white border rounded-xl shadow-xl max-h-32 overflow-y-auto z-50 text-xs divide-y">
+                      {drhSuggestions.map(u => (
+                        <button 
+                          key={u.id} 
+                          type="button" 
+                          onClick={() => handleAddDRH(u)} 
+                          className="w-full text-left px-3 py-2 hover:bg-purple-50 font-medium flex justify-between items-center"
+                        >
+                          <span>{u.email}</span>
+                          <span className="text-[10px] bg-slate-100 px-1 rounded text-slate-400">{u.role || 'DRH'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {(currentSession.drh_ids || []).map(id => {
-                        const cachedEmails = JSON.parse(localStorage.getItem('drh_emails') || '{}');
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {currentSession && Array.isArray(currentSession.drh_ids) && currentSession.drh_ids.length > 0 ? (
+                      currentSession.drh_ids.map(id => {
+                        let cachedEmails = {};
+                        try {
+                          cachedEmails = JSON.parse(localStorage.getItem('drh_emails') || '{}');
+                        } catch(e) { cachedEmails = {}; }
                         const displayName = cachedEmails[id] || `Manager (${id.substring(0, 5)})`;
 
                         return (
@@ -532,14 +564,16 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             </button>
                           </span>
                         );
-                      })}
-                      {(currentSession.drh_ids || []).length === 0 && (
-                        <span className="text-[11px] text-slate-400 italic">Aucun manager assigné à cette session.</span>
-                      )}
-                    </div>
+                      })
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">
+                        {currentSession ? "Aucun manager assigné à cette session." : "Veuillez choisir une session."}
+                      </span>
+                    )}
                   </div>
                 </div>
-              )}
+
+              </div>
             </div>
           )}
 
@@ -606,7 +640,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         <button onClick={handleSaveChanges} className="bg-emerald-600 hover:bg-emerald-500 text-white w-12 h-12 rounded-xl flex flex-col items-center justify-center text-sm font-black shadow-lg uppercase tracking-tight" title="Enregistrer les modifications sur Supabase">💾</button>
       </div>
 
-      {/* TOUTES LES MODALES REFACTORISÉES */}
+      {/* MODALES */}
       {activeModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-100 relative space-y-4">
