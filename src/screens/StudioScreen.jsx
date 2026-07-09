@@ -89,8 +89,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const currentTree = trees[activeTreeId];
-  const currentSession = sessions.find(s => s.id === activeSessionId);
-
+  const currentSession = sessions.find(s => String(s.id) === String(activeSessionId));
   // RECHERCHE DYNAMIQUE DE DRH AVEC FILTRAGE DES DOUBLONS (CORRIGÉ & BLINDÉ EN SÉCURITÉ)
   useEffect(() => {
     const searchDRH = async () => {
