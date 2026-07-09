@@ -242,7 +242,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (!currentTree || !currentTree.floors) return;
     const updatedFloors = currentTree.floors.filter(f => f.floorId !== floorId);
     
-    updateCurrentTreeInState({ floors: updatedFloors });
+    updateCurrentTreeInState({ updatedFloors });
     recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
   };
 
