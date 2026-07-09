@@ -33,7 +33,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
   const POINTS_REQUIRED_PER_FLOOR = 300;
 
-  // 🔑 Fonction simple de hachage/génération de clé unique pour livrable collaboratif
+  // 🔑 Fonction de hachage/génération de clé unique pour livrable collaboratif
   const generateLivrableHash = (questId, sessionCode, filename = '') => {
     return `collab_${questId}_${sessionCode}_${filename.replace(/[^a-zA-Z0-9]/g, '')}`.toLowerCase();
   };
@@ -93,8 +93,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         questName: p.quest_name,
         content: p.content,
         date: new Date(p.created_at).toLocaleDateString('fr-FR'),
-        file_url: p.file_url,
-        file_name: p.file_name // Assure-toi que cette colonne existe ou est simulée
+        file_url: p.file_url
       }));
       setProductions(formattedProds);
     }
@@ -204,29 +203,40 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
     const isQuestCollab = activeQuest.is_collaborative === true || activeQuest.is_collaborative === 'true';
 
-    // 🔒 VÉRIFICATION HACHAGE / DOUBLON COLLABORATIF DANS CETTE SESSION
+    let generatedHashNote = '';
+
+    // 🔒 VERROU STRICT CO-OP & HACHAGE DE FICHIER
     if (isQuestCollab) {
       if (!attachedFile) {
-        alert("⚠️ Un livrable (fichier justificatif) est requis pour valider cette mission collaborative.");
+        alert("⚠️ Action impossible. Un livrable d'équipe (fichier joint) est requis pour prouver la collaboration.");
         return;
       }
 
       const currentHash = generateLivrableHash(activeQuest.id, selectedSessionCode, attachedFile.name);
+      generatedHashNote = `\n[Hash unique d'équipe : ${currentHash}]`;
 
-      // On scanne la table des productions globales pour voir si ce fichier a déjà été importé pour cette quête & session
-      const { data: duplicateCheck } = await supabase
+      // Scan de la base de données globale pour trouver le même hash dans la même session
+      const { data: duplicateCheck, error: checkError } = await supabase
         .from('productions')
-        .select('id, student_email')
+        .select('id, student_email, student_id')
         .eq('quest_id', activeQuest.id)
         .ilike('content', `%${currentHash}%`);
 
+      if (checkError) {
+        alert("❌ Erreur de communication réseau lors du check d'équipe.");
+        return;
+      }
+
       if (duplicateCheck && duplicateCheck.length > 0) {
-        alert(`🤝 Ce livrable d'équipe a déjà été déposé dans cette session par un de vos collaborateurs (${duplicateCheck[0].student_email}). Validation croisée synchronisée !`);
+        // Validation croisée réussie : le fichier correspond à un travail d'équipe existant
+        alert(`🤝 Liaison d'équipe validée ! Votre collaborateur (${duplicateCheck[0].student_email}) a déjà partagé ce livrable. Vos points vont être synchronisés.`);
+      } else {
+        // C'est le premier dépôt de l'équipe
+        alert(`ℹ️ Vous êtes le premier membre de l'équipe à soumettre ce livrable. Vos coéquipiers devront importer exactement le même fichier ("${attachedFile.name}") pour valider à leur tour.`);
       }
     }
 
     const pointsGagnes = getPointsByDifficulty(activeQuest.difficulty);
-    const generatedHashNote = isQuestCollab ? `\n[Hash unique d'équipe : ${generateLivrableHash(activeQuest.id, selectedSessionCode, attachedFile?.name)}]` : '';
 
     const { error } = await supabase
       .from('productions')
@@ -246,6 +256,8 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
       alert(`🎉 Livrable envoyé ! +${pointsGagnes} XP.`);
       setLivrableContent('');
       setAttachedFile(null);
+    } else {
+      alert("❌ Une erreur est survenue lors de l'enregistrement de votre production.");
     }
   };
 
