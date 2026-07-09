@@ -32,7 +32,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
           setSelectedSession(sessionsData[0]);
         }
 
-        // 3. Récupérer l'intégralité des livrables
+        // 3. Récupérer l'intégralité des livrables pour pouvoir filtrer localement par la suite
         const { data: prods, error: prodsError } = await supabase
           .from('productions')
           .select('*')
@@ -63,7 +63,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
     fetchHRData();
   }, []);
 
-  // 4. Dès que la session sélectionnée change, on récupère AUTOMATIQUEMENT ses étudiants
+  // 4. Dès que la session sélectionnée change, on récupère AUTOMATIQUEMENT ses étudiants via leur profil Supabase
   useEffect(() => {
     if (!selectedSession || !selectedSession.session_code) {
       setSessionStudents([]);
@@ -72,7 +72,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
 
     const fetchStudentsProfiles = async () => {
       try {
-        // On cherche tous les profils d'étudiants dont le tableau 'session_codes' contient le code de cette session
         const { data: profiles, error } = await supabase
           .from('profiles')
           .select('id, email')
@@ -81,12 +80,11 @@ export default function ClientDashboardScreen({ trees, quests }) {
         if (error) throw error;
 
         if (profiles) {
-          // On map pour garder la structure attendue par le reste de ton écran
           const formattedStudents = profiles.map(p => ({
             uid: p.id,
-            name: p.email.split('@')[0], // Fallback sur le début du mail en attendant un champ 'name'
+            name: p.email ? p.email.split('@')[0] : "Apprenant", // Fallback visuel sympa
             email: p.email,
-            joinedTrees: selectedSession.tree_id ? [selectedSession.tree_id] : [] // Utilise la colonne tree_id de ta table sessions
+            joinedTrees: selectedSession.tree_id ? [selectedSession.tree_id] : [] // L'unique arbre lié à cette session
           }));
           setSessionStudents(formattedStudents);
         }
@@ -98,11 +96,13 @@ export default function ClientDashboardScreen({ trees, quests }) {
     fetchStudentsProfiles();
   }, [selectedSession]);
 
-  // Handler de changement de session dans le menu déroulant
+  // Handler de changement de session dans le menu déroulant (Sécurisé en comparaison String)
   const handleSessionChange = (e) => {
     const sessionDocId = e.target.value;
-    const found = sessions.find(s => s.id === sessionDocId);
-    if (found) setSelectedSession(found);
+    const found = sessions.find(s => String(s.id) === String(sessionDocId));
+    if (found) {
+      setSelectedSession(found);
+    }
   };
 
   if (loading) {
@@ -113,54 +113,68 @@ export default function ClientDashboardScreen({ trees, quests }) {
     );
   }
 
-  // S'il n'est DRH d'aucune session
+  // Si le DRH n'a absolument aucune session assignée
   if (sessions.length === 0) {
     return (
       <div className="max-w-7xl mx-auto px-8 py-12 text-center bg-white border rounded-2xl shadow-sm">
         <h2 className="text-sm font-black text-slate-700 uppercase tracking-wider">Aucune session affectée</h2>
-        <p className="text-xs text-slate-400 mt-1">Votre compte n'est actuellement déclaré comme DRH sur aucune session.</p>
+        <p className="text-xs text-slate-400 mt-1">Votre compte n'est actuellement déclaré comme DRH sur aucune session active.</p>
       </div>
     );
   }
 
-  // FILTRAGE DYNAMIQUE SELON LA SESSION SÉLECTIONNÉE
-  // On ne garde que les productions des étudiants de la session en cours
+  // Parer au cas où le state selectedSession soit temporairement null pendant un rafraîchissement
+  const currentSessionSafe = selectedSession || sessions[0];
+
+  // FILTRAGE DYNAMIQUE DES DONNÉES DE LA COHORTE SÉLECTIONNÉE
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   
   const filteredProductions = allProductions.filter(p => 
     studentIdsInCurrentSession.includes(p.studentId)
   );
 
-  const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content.startsWith("[Importé"));
+  const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content?.startsWith("[Importé"));
   let totalLivrables = uniqueProductionsGlobal.length;
   let totalXP = 0;
 
+  // Calcul du score global d'avancement
+  const questsList = quests || [];
+  const getPointsByDifficulty = (diff) => {
+    const d = parseInt(diff, 10);
+    if (d === 3) return 500;
+    if (d === 2) return 250;
+    return 100;
+  };
+
   const studentsProgress = sessionStudents.map(student => {
     const studentProds = filteredProductions.filter(p => p.studentId === student.uid);
-    const studentUniqueProds = studentProds.filter(p => !p.content.startsWith("[Importé"));
+    const studentUniqueProds = studentProds.filter(p => !p.content?.startsWith("[Importé"));
 
+    // Calcul de l'XP cumulé par l'élève
     const studentPoints = studentProds.reduce((sum, prod) => {
-      const originalQuest = quests.find(q => q.id === prod.questId);
+      const originalQuest = questsList.find(q => q.id === prod.questId);
       if (originalQuest) {
-        const difficulty = parseInt(originalQuest.difficulty, 10);
-        if (difficulty === 3) return sum + 500;
-        if (difficulty === 2) return sum + 250;
-        return sum + 100;
+        return sum + getPointsByDifficulty(originalQuest.difficulty);
       }
-      if (prod.questId && prod.questId.startsWith('quest_')) {
-        return sum + 250; 
+      if (prod.questId && String(prod.questId).startsWith('quest_')) {
+        return sum + 250; // Fallback pour les quêtes natives
       }
-      return sum;
+      return sum + 100;
     }, 0);
     
     totalXP += studentPoints;
 
+    // Détermination du Palier max atteint (via localStorage de secours des élèves)
     let maxFloor = 1;
-    student.joinedTrees.forEach(treeId => {
-      const savedFloor = localStorage.getItem(`ecolearn_floor_${student.uid}_${treeId}`);
-      const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
-      if (floorIdx + 1 > maxFloor) maxFloor = floorIdx + 1;
-    });
+    if (Array.isArray(student.joinedTrees)) {
+      student.joinedTrees.forEach(treeId => {
+        const savedFloor = localStorage.getItem(`ecolearn_floor_${student.uid}_${treeId}`);
+        const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
+        if (floorIdx + 1 > maxFloor) {
+          maxFloor = floorIdx + 1;
+        }
+      });
+    }
 
     return {
       ...student,
@@ -170,6 +184,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
     };
   });
 
+  // KPI additionnelles de la vue décideur
   const totalStudents = sessionStudents.length;
   const countPalier1 = studentsProgress.filter(s => s.maxFloor >= 1).length;
   const countPalier2 = studentsProgress.filter(s => s.maxFloor >= 2).length;
@@ -177,49 +192,55 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const pctPalier1 = totalStudents > 0 ? Math.round((countPalier1 / totalStudents) * 100) : 0;
   const pctPalier2 = totalStudents > 0 ? Math.round((countPalier2 / totalStudents) * 100) : 0;
 
-  // Calcul du taux d'engagement actif (au moins 1 livrable déposé)
   const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
   return (
-    <div className="max-w-7xl mx-auto px-8 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-8 py-8 space-y-6">
       
-      {/* SELECTEUR DE SESSION SI PLUSIEURS SESSIONS */}
-      {sessions.length > 1 && (
-        <div className="flex items-center gap-3 bg-slate-50 border p-3 rounded-xl">
-          <label className="text-xs font-black text-slate-700 uppercase tracking-wider">Sélectionner la cohorte :</label>
+      {/* BARRE HAUTE DE SÉLECTION DE LA COHORTE DIRECTE (CORRIGÉE EN STRING) */}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 border p-4 rounded-xl shadow-sm">
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-black text-slate-700 uppercase tracking-wider whitespace-nowrap">
+            📂 Sélectionner la cohorte :
+          </label>
           <select 
-            value={selectedSession?.id || ''} 
+            value={String(currentSessionSafe.id || '')} 
             onChange={handleSessionChange}
-            className="bg-white border border-slate-200 text-xs font-bold rounded-lg px-3 py-1.5 text-slate-800 outline-none focus:border-purple-500"
+            className="bg-white border border-slate-200 text-xs font-bold rounded-lg px-3 py-2 text-slate-800 outline-none focus:border-purple-500 shadow-sm min-w-[220px] cursor-pointer"
           >
             {sessions.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.name || `Session - ${s.id.substring(0,6)}`}
+              <option key={String(s.id)} value={String(s.id)}>
+                📍 {s.name || `Session — ${s.session_code || `ID: ${String(s.id).substring(0, 6)}`}`}
               </option>
             ))}
           </select>
         </div>
-      )}
+        <div className="text-[11px] font-medium text-slate-400">
+          Supervision de <strong className="text-slate-600">{sessions.length} session(s)</strong> actives rattachées
+        </div>
+      </div>
 
-      {/* BANNIÈRE MANAGEMENT DYNAMIQUE */}
+      {/* HEADER BANNER */}
       <div className="bg-slate-900 text-white p-6 rounded-2xl flex flex-wrap justify-between items-center gap-4 shadow-md">
         <div className="space-y-1">
           <div className="text-[10px] uppercase font-black tracking-wider text-amber-400">Suivi d'Acculturation Entreprise</div>
           <h2 className="text-lg font-black tracking-tight">
-            Portail Décideur & RH — {selectedSession?.name || 'Ma Session'}
+            Portail Décideur & RH — {currentSessionSafe.name || 'Ma Session'}
           </h2>
-          <p className="text-xs text-slate-400">Code Session : <span className="font-mono text-amber-500 font-bold">{selectedSession?.code}</span> | {totalStudents} collaborateur(s) inscrit(s).</p>
+          <p className="text-xs text-slate-400">
+            Code unique d'arrimage : <span className="font-mono text-amber-500 font-bold bg-slate-800 px-2 py-0.5 rounded">{currentSessionSafe.session_code || 'N/A'}</span> | {totalStudents} collaborateur(s) inscrit(s) dans cette cohorte.
+          </p>
         </div>
         <button 
-          onClick={() => alert(`📊 Génération du rapport pour ${selectedSession?.name || 'la session'}...`)}
+          onClick={() => alert(`📊 Génération du rapport de suivi pour ${currentSessionSafe.name || 'la session'}...`)}
           className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all cursor-pointer"
         >
           📥 Télécharger le rapport (.xlsx)
         </button>
       </div>
 
-      {/* METRICS GLOBALES FILTRÉES */}
+      {/* METRICS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-1">
           <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Compteur de Compétences (XP cohorte)</div>
@@ -240,12 +261,13 @@ export default function ClientDashboardScreen({ trees, quests }) {
         </div>
       </div>
 
-      {/* GRAPH ET TABLEAU DYNAMIQUES */}
+      {/* CORPS PRINCIPAL DE L'AUDIT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* GRAPHIQUE TAUX DE REUSSITE */}
         <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-4 lg:col-span-1">
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">📉 Taux de passage des Paliers</h3>
+          
           <div className="space-y-4 pt-2">
             <div className="space-y-1">
               <div className="flex justify-between text-xs font-bold text-slate-700">
@@ -256,6 +278,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
                 <div className="bg-emerald-500 h-full" style={{ width: `${pctPalier1}%` }} />
               </div>
             </div>
+
             <div className="space-y-1">
               <div className="flex justify-between text-xs font-bold text-slate-700">
                 <span>Palier 2</span>
@@ -271,8 +294,11 @@ export default function ClientDashboardScreen({ trees, quests }) {
         {/* TABLEAU SYNTHESE REEL */}
         <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-3 lg:col-span-2">
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">👥 Synthèse par Collaborateur ({totalStudents})</h3>
+          
           {totalStudents === 0 ? (
-            <div className="text-center p-6 text-xs text-slate-400 italic">Aucun collaborateur inscrit dans cette session.</div>
+            <div className="text-center p-12 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed">
+              💡 Aucun collaborateur n'est encore associé au code "{currentSessionSafe.session_code || 'N/A'}" pour le moment.
+            </div>
           ) : (
             <div className="divide-y divide-slate-100 overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -309,6 +335,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
       {/* REGISTRE DES LIVRABLES DE LA SESSION */}
       <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-4">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">📂 Registre d'audit des Livrables de la session</h3>
+        
         {uniqueProductionsGlobal.length === 0 ? (
           <div className="text-center p-8 text-xs text-slate-400 font-medium italic bg-slate-50 rounded-xl border border-dashed">
             Aucun livrable n'a encore été déposé par cette cohorte.
@@ -337,6 +364,12 @@ export default function ClientDashboardScreen({ trees, quests }) {
                   </div>
                   <h4 className="font-bold text-xs text-slate-800 pt-1">🎯 Quête : {prod.questName}</h4>
                   <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border leading-relaxed font-medium italic">"{prod.content}"</p>
+                </div>
+
+                <div className="pt-2 border-t flex items-center justify-between text-[10px] text-slate-400 font-semibold">
+                  {/* SÉCURISÉ : On force String() sur l'ID avant le substring de secours */}
+                  <span>Réf Espace : DRH-SESS-{String(currentSessionSafe.id).substring(0, 5)}</span>
+                  <span className="text-emerald-600 font-extrabold">✓ Livrable Archivé</span>
                 </div>
               </div>
             ))}
