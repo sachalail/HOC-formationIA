@@ -15,7 +15,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
   // FILTRES DE JEU
   const [filterTheme, setFilterTheme] = useState('all');
   const [filterMode, setFilterMode] = useState('all'); 
-  const [portfolioFilter, setPortfolioFilter] = useState('all'); // 'all', 'validated', 'pending'
+  const [portfolioFilter, setPortfolioFilter] = useState('all'); // 'all', 'validated', 'pending', 'not_started'
 
   // ÉTATS DE SUIVI UNIQUE
   const [unlockedFloorIndex, setUnlockedFloorIndex] = useState(0); 
@@ -304,6 +304,42 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
     }
   };
 
+  // 📍 Fonction intelligente de Redirection vers l'arbre de jeu
+  const navigateToQuestInGame = (questId) => {
+    // 1. Trouver à quelle session et quel arbre de l'élève cette quête appartient
+    let foundSessionCode = selectedSessionCode;
+    let foundTreeId = selectedTreeId;
+    let foundFloorIdx = 0;
+    let foundQuestObj = quests.find(q => q.id === questId);
+
+    if (!foundQuestObj) return;
+
+    // Parcourir les sessions actives du joueur pour localiser la quête
+    for (const sessionItem of mySessionsData) {
+      const associatedTree = trees[sessionItem.tree_id];
+      if (associatedTree && associatedTree.floors) {
+        const floorIndex = associatedTree.floors.findIndex(floor => (floor.quests || []).includes(questId));
+        if (floorIndex !== -1) {
+          foundSessionCode = sessionItem.session_code;
+          foundTreeId = sessionItem.tree_id;
+          foundFloorIdx = floorIndex;
+          break;
+        }
+      }
+    }
+
+    if (foundSessionCode && foundTreeId) {
+      setSelectedSessionCode(foundSessionCode);
+      setSelectedTreeId(foundTreeId);
+      setCurrentFloorIndex(foundFloorIdx);
+      setActiveQuest(foundQuestObj);
+      setActiveTab('parcours'); // Changement d'onglet automatique !
+    } else {
+      // Si aucune session active n'a encore cet arbre, on prend la première session ou on avertit
+      alert("💡 Pour voir cette mission dans le parcours, assurez-vous d'avoir rejoint la session correspondante.");
+    }
+  };
+
   const uniqueLivrables = productions.filter(p => !p.content.startsWith("[Importé"));
 
   return (
@@ -539,110 +575,182 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         </div>
       )}
 
-      {/* PORTFOLIO COMPLET */}
+      {/* PORTFOLIO COMPLET - NOUVELLE VERSION 3 BLOCS DISTINCTS */}
       {activeTab === 'portfolio' && user && (
         <div className="space-y-8">
-          <div className="space-y-4">
-            <div className="border-b pb-3 flex flex-wrap justify-between items-center gap-3">
-              <div>
-                <h3 className="font-black text-sm text-emerald-800 uppercase tracking-wide">
-                  📂 Mon Historique de Rendu ({uniqueLivrables.length})
-                </h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-[11px] font-bold text-slate-400 uppercase">Filtrer par statut :</label>
-                <select 
-                  value={portfolioFilter} 
-                  onChange={(e) => setPortfolioFilter(e.target.value)} 
-                  className="bg-white border rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-700 cursor-pointer shadow-sm focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="all">👀 Tout afficher (Validées + En attente)</option>
-                  <option value="validated">🏆 Quêtes Validées uniquement</option>
-                  <option value="pending">⏳ En attente de coéquipier uniquement</option>
-                </select>
-              </div>
+          
+          {/* BARRE DE CONTRÔLE ET FILTRE DU HUB */}
+          <div className="bg-white border rounded-2xl p-4 flex flex-wrap justify-between items-center gap-4 shadow-sm">
+            <div>
+              <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                📂 Hub de Vos Missions & Historique
+              </h3>
+              <p className="text-[11px] text-slate-400 font-medium">Consultez vos rendus, téléchargez vos pièces jointes et localisez vos quêtes en un clic.</p>
             </div>
+            
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-bold text-slate-500 uppercase">Affichage :</label>
+              <select 
+                value={portfolioFilter} 
+                onChange={(e) => setPortfolioFilter(e.target.value)} 
+                className="bg-slate-50 border rounded-xl px-3 py-1.5 text-[11px] font-bold text-slate-700 cursor-pointer shadow-sm focus:outline-none focus:border-emerald-500"
+              >
+                <option value="all">👀 Tout afficher (3 Blocs)</option>
+                <option value="validated">🏆 Quêtes Validées uniquement</option>
+                <option value="pending">⏳ En attente de coéquipier uniquement</option>
+                <option value="not_started">❌ Non commencées uniquement</option>
+              </select>
+            </div>
+          </div>
 
-            {(() => {
-              const filteredLivrables = uniqueLivrables.filter(p => {
-                const isPending = p.content.includes('[EN_ATTENTE_COLLAB]');
-                if (portfolioFilter === 'validated') return !isPending;
-                if (portfolioFilter === 'pending') return isPending;
-                return true;
-              });
-
-              if (filteredLivrables.length === 0) {
+          {/* 🌟 BLOC 1 : LES QUÊTES VALIDÉES (VERT) */}
+          {(portfolioFilter === 'all' || portfolioFilter === 'validated') && (
+            <div className="space-y-3">
+              <div className="border-b border-emerald-100 pb-2">
+                <h4 className="font-black text-xs text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+                  ✅ Quêtes Validées & XP Obtenus ({uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]')).length})
+                </h4>
+              </div>
+              {(() => {
+                const validatedLivrables = uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]'));
+                if (validatedLivrables.length === 0) {
+                  return <div className="bg-slate-50 border border-dashed rounded-xl p-4 text-[11px] text-slate-400 italic">Aucune quête validée pour le moment.</div>;
+                }
                 return (
-                  <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-2xl text-center text-xs text-slate-400 italic">
-                    Aucun rendu ne correspond au filtre sélectionné.
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {validatedLivrables.map(p => {
+                      const originalQuest = quests.find(q => q.id === p.questId);
+                      const isQuestCollab = originalQuest?.is_collaborative === true || originalQuest?.is_collaborative === 'true';
+                      return (
+                        <div key={p.id} className="bg-white border border-emerald-100 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden transition-all hover:shadow-md">
+                          <div className="absolute top-0 left-0 bottom-0 w-1 bg-emerald-500" />
+                          <div className="space-y-2.5">
+                            <div className="flex justify-between items-center text-[10px] font-bold">
+                              <span className="text-slate-400">Code : {p.questId} {isQuestCollab && '🤝'}</span>
+                              <span className="text-emerald-600">🏆 +{originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP</span>
+                            </div>
+                            <h5 className="font-black text-xs text-slate-800 leading-tight">{p.questName}</h5>
+                            
+                            {/* Rendus & Fichier */}
+                            <div className="bg-slate-50 p-2.5 rounded-xl border text-[11px] space-y-2">
+                              <p className="text-slate-600 italic">"{p.content.replace('[VALIDE_COLLAB]', '🤝 [COLLAB VALIDE]')}"</p>
+                              {p.file_url && (
+                                <a href={p.file_url} download={`livrable_${p.questId}`} className="inline-flex items-center text-[10px] font-bold text-emerald-600 hover:underline gap-1 mt-1">
+                                  📁 Ouvrir la pièce jointe
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center pt-2 border-t text-[10px] text-slate-400">
+                            <span>Fait le {p.date}</span>
+                            <button onClick={() => navigateToQuestInGame(p.questId)} className="text-emerald-700 hover:text-emerald-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-emerald-50 px-2 py-1 rounded hover:bg-emerald-100">🎯 Voir dans le Jeu ➔</button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
-              }
-
-              return (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredLivrables.map(p => {
-                    const originalQuest = quests.find(q => q.id === p.questId);
-                    const isQuestCollab = originalQuest?.is_collaborative === true || originalQuest?.is_collaborative === 'true';
-                    const isPending = p.content.includes('[EN_ATTENTE_COLLAB]');
-
-                    return (
-                      <div key={p.id} className={`bg-white border p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden transition-all hover:shadow-md ${isPending ? 'border-amber-200 bg-amber-50/5' : isQuestCollab ? 'border-purple-200' : 'border-slate-100'}`}>
-                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${isPending ? 'bg-amber-400' : isQuestCollab ? 'bg-purple-600' : 'bg-emerald-500'}`} />
-                        <div>
-                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
-                            <span>Code : {p.questId} {isQuestCollab && '🤝'}</span>
-                            <span className={isPending ? 'text-amber-600' : 'text-emerald-600'}>
-                              {isPending ? '⏳ En attente' : `🏆 +${originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP`}
-                            </span>
-                          </div>
-                          <h4 className="font-black text-xs text-slate-800 mt-2">{p.questName}</h4>
-                          <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border mt-2 italic leading-relaxed">
-                            "{p.content.replace('[EN_ATTENTE_COLLAB]', '⏳ [EN ATTENTE COÉQUIPIER]').replace('[VALIDE_COLLAB]', '🤝 [COLLAB VALIDE]')}"
-                          </p>
-                        </div>
-                        <div className="text-[10px] text-slate-400 text-right">Soumis le {p.date}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
-
-          <div className="space-y-4 pt-4">
-            <div className="border-b pb-2">
-              <h3 className="font-black text-sm text-slate-400 uppercase tracking-wide">⏳ Catalogue des Missions Restantes</h3>
+              })()}
             </div>
-            {(() => {
-              const pendingQuests = quests.filter(q => !completedQuestIds.has(q.id));
-              if (pendingQuests.length === 0) {
-                return <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété 100 % des missions disponibles !</div>;
-              }
+          )}
 
-              return (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-75">
-                  {pendingQuests.map(q => {
-                    const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
-                    return (
-                      <div key={q.id} className={`bg-slate-50 border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-3 ${isQuestCollab ? 'border-purple-200 bg-purple-50/10' : 'border-slate-200'}`}>
-                        <div>
-                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
-                            <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
-                            <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
+          {/* ⏳ BLOC 2 : LES QUÊTES EN ATTENTE (AMBRE) */}
+          {(portfolioFilter === 'all' || portfolioFilter === 'pending') && (
+            <div className="space-y-3 pt-2">
+              <div className="border-b border-amber-200 pb-2">
+                <h4 className="font-black text-xs text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                  ⏳ En Attente de Synchronisation Équipe ({uniqueLivrables.filter(p => p.content.includes('[EN_ATTENTE_COLLAB]')).length})
+                </h4>
+              </div>
+              {(() => {
+                const pendingLivrables = uniqueLivrables.filter(p => p.content.includes('[EN_ATTENTE_COLLAB]'));
+                if (pendingLivrables.length === 0) {
+                  return <div className="bg-slate-50 border border-dashed rounded-xl p-4 text-[11px] text-slate-400 italic">Aucun dépôt n'est bloqué en attente d'un partenaire.</div>;
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pendingLivrables.map(p => {
+                      const originalQuest = quests.find(q => q.id === p.questId);
+                      return (
+                        <div key={p.id} className="bg-white border border-amber-200 bg-amber-50/5 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden transition-all hover:shadow-md animate-pulse">
+                          <div className="absolute top-0 left-0 bottom-0 w-1 bg-amber-400" />
+                          <div className="space-y-2.5">
+                            <div className="flex justify-between items-center text-[10px] font-bold">
+                              <span className="text-slate-400">Code : {p.questId} 🤝</span>
+                              <span className="text-amber-600 font-medium">⏳ Blocage équipe</span>
+                            </div>
+                            <h5 className="font-black text-xs text-amber-950 leading-tight">{p.questName}</h5>
+                            
+                            {/* Rendus & Fichier */}
+                            <div className="bg-white p-2.5 rounded-xl border border-amber-100 text-[11px] space-y-2 shadow-inner">
+                              <p className="text-slate-600 italic">"{p.content.replace('[EN_ATTENTE_COLLAB]', '⏳ [EN ATTENTE]')}"</p>
+                              {p.file_url && (
+                                <a href={p.file_url} download={`livrable_${p.questId}`} className="inline-flex items-center text-[10px] font-bold text-amber-600 hover:underline gap-1 mt-1">
+                                  📁 Ouvrir le justificatif joint
+                                </a>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-amber-800 leading-tight font-medium bg-amber-50 p-2 rounded-lg">💡 Vos équipiers doivent déposer le même fichier pour libérer vos {originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP.</p>
                           </div>
-                          <h4 className={`font-black text-xs mt-1.5 ${isQuestCollab ? 'text-purple-900' : 'text-slate-700'}`}>{q.name}</h4>
+                          
+                          <div className="flex justify-between items-center pt-2 border-t text-[10px] text-slate-400">
+                            <span>Initié le {p.date}</span>
+                            <button onClick={() => navigateToQuestInGame(p.questId)} className="text-amber-700 hover:text-amber-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-amber-100/50 px-2 py-1 rounded hover:bg-amber-100">🎯 Voir dans le Jeu ➔</button>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider italic">
-                          {pendingCollabQuestIds.has(q.id) ? '⏳ Déposé (En attente)' : '❌ Non initiée'}
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ❌ BLOC 3 : LES QUÊTES NON COMMENCÉES (ARDOISE) */}
+          {(portfolioFilter === 'all' || portfolioFilter === 'not_started') && (
+            <div className="space-y-3 pt-2">
+              <div className="border-b border-slate-200 pb-2">
+                <h4 className="font-black text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  ❌ Catalogue des Missions Restantes ({quests.filter(q => !completedQuestIds.has(q.id)).length})
+                </h4>
+              </div>
+              {(() => {
+                const pendingQuests = quests.filter(q => !completedQuestIds.has(q.id));
+                if (pendingQuests.length === 0) {
+                  return <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété 100 % des missions disponibles de l'aventure !</div>;
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-80">
+                    {pendingQuests.map(q => {
+                      const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
+                      const isStartedButPending = pendingCollabQuestIds.has(q.id);
+                      return (
+                        <div key={q.id} className={`bg-slate-50 border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-4 transition-all hover:bg-white ${isQuestCollab ? 'border-purple-200 bg-purple-50/5' : 'border-slate-200'}`}>
+                          <div>
+                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                              <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
+                              <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
+                            </div>
+                            <h5 className={`font-black text-xs mt-2 leading-tight ${isQuestCollab ? 'text-purple-950' : 'text-slate-700'}`}>{isQuestCollab && '🤝 '}{q.name}</h5>
+                            <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{q.desc}"</p>
+                          </div>
+                          
+                          <div className="flex justify-between items-center pt-2 border-t text-[10px]">
+                            <span className="font-bold text-slate-400 uppercase tracking-wider text-[9px]">
+                              {isStartedButPending ? '⏳ En attente' : '❌ Non initiée'}
+                            </span>
+                            <button onClick={() => navigateToQuestInGame(q.id)} className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-200/60 px-2 py-1 rounded hover:bg-slate-200">🚀 Lancer la mission ➔</button>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
         </div>
       )}
     </div>
