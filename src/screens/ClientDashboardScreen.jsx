@@ -22,7 +22,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         const { data: sessionsData, error: sessionsError } = await supabase
           .from('sessions')
           .select('*')
-          .contains('drh_ids', [hrUserId]); // Filtre si l'ID est dans l'array Postgres
+          .contains('drh_ids', JSON.stringify([hrUserId])); // On passe un tableau JS classique, Supabase s'occupe du cast JSONB
 
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
