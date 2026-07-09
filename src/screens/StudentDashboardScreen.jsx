@@ -14,7 +14,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
   
   // FILTRES DE JEU
   const [filterTheme, setFilterTheme] = useState('all');
-  const [filterMode, setFilterMode] = useState('all'); // 'all', 'solo', 'collab'
+  const [filterMode, setFilterMode] = useState('all'); 
   const [portfolioFilter, setPortfolioFilter] = useState('all'); // 'all', 'validated', 'pending'
 
   // ÉTATS DE SUIVI UNIQUE
@@ -22,9 +22,8 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
   const [currentFloorIndex, setCurrentFloorIndex] = useState(0); 
   const [triggerDropAnimation, setTriggerDropAnimation] = useState(false); 
   
-  // 🛡️ ÉTAT ANTI-SPAM (Contient uniquement les quêtes réellement validées)
+  // 🛡️ ÉTAT ANTI-SPAM
   const [completedQuestIds, setCompletedQuestIds] = useState(new Set());
-  // État pour suivre les quêtes collaboratives déposées mais bloquées en attente d'un partenaire
   const [pendingCollabQuestIds, setPendingCollabQuestIds] = useState(new Set());
 
   // PORTFOLIO EN DIRECT DEPUIS SUPABASE
@@ -36,7 +35,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
   const POINTS_REQUIRED_PER_FLOOR = 300;
 
-  // 🔑 Fonction de hachage unique basée sur la session et le nom du fichier
+  // 🔑 Fonction de hachage unique
   const generateLivrableHash = (questId, sessionCode, filename = '') => {
     return `collab_${questId}_${sessionCode}_${filename.replace(/[^a-zA-Z0-9]/g, '')}`.toLowerCase();
   };
@@ -207,7 +206,6 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
     .filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]'))
     .map(p => p.questId);
 
-  // Seules les quêtes validées rapportent des points
   const studentPoints = productions.reduce((sum, prod) => { 
     if (prod.content.includes('[EN_ATTENTE_COLLAB]')) return sum;
     const originalQuest = quests.find(q => q.id === prod.questId);
@@ -231,7 +229,6 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
       const currentHash = generateLivrableHash(activeQuest.id, selectedSessionCode, attachedFile.name);
 
-      // On vérifie s'il y a un dépôt existant EN ATTENTE avec ce même hash dans la même session
       const { data: matchingPartners, error: checkError } = await supabase
         .from('productions')
         .select('id, student_email, content')
@@ -243,11 +240,9 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         return;
       }
 
-      // Filtrer pour voir s'il y a un dépôt d'un AUTRE étudiant en attente
       const partnerSubmission = matchingPartners?.find(p => p.content.includes('[EN_ATTENTE_COLLAB]'));
 
       if (partnerSubmission) {
-        // Magnifique ! Un coéquipier attendait ce fichier. On débloque le premier étudiant !
         const updatedPartnerContent = partnerSubmission.content.replace('[EN_ATTENTE_COLLAB]', '[VALIDE_COLLAB]');
         
         await supabase
@@ -255,12 +250,9 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
           .update({ content: updatedPartnerContent })
           .eq('id', partnerSubmission.id);
 
-        // Le joueur actuel est lui aussi directement validé
         finalContent = `[VALIDE_COLLAB][Hash : ${currentHash}] ${livrableContent}`;
-        alert(`🤝 Collaboration réussie ! Votre coéquipier (${partnerSubmission.student_email}) avait mis cette mission en attente. La quête est désormais validÉE pour vous DEUX ! 🎉`);
+        alert(`🤝 Collaboration réussie ! Votre coéquipier (${partnerSubmission.student_email}) avait mis cette mission en attente. La quête est désormais validée pour vous deux ! 🎉`);
       } else {
-        // Personne n'a encore mis ce fichier en ligne : Le joueur actuel devient le premier déposant.
-        // IL EST BLOQUÉ EN ATTENTE ET NE GAGNE PAS DE POINTS MAINTENANT.
         finalContent = `[EN_ATTENTE_COLLAB][Hash : ${currentHash}] ${livrableContent}`;
         alert(`⏳ Dépôt enregistré ! Cependant, comme vous êtes le premier de l'équipe à soumettre ce fichier ("${attachedFile.name}"), la quête reste verrouillée. Elle ne sera validée que lorsqu'un de vos coéquipiers aura déposé exactement le même fichier.`);
       }
@@ -503,7 +495,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                       {isQuestCollab && !isDoneHere && !isPendingHere && (
                         <div className="p-3 bg-purple-50/50 border border-purple-100 rounded-xl">
                           <p className="text-[11px] text-purple-900 leading-tight font-medium">
-                            🔒 **Règle d'Équipe Strict :** Le premier à déposer bloque la quête en attente. Elle ne sera validée (et les points attribués) que lorsqu'un coéquipier déposera **exactement le même fichier**.
+                            🔒 Règle d'Équipe Strict : Le premier à déposer bloque la quête en attente. Elle ne sera validée qu'en cas de double dépôt du même fichier.
                           </p>
                         </div>
                       )}
@@ -515,7 +507,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                       {isPendingHere && (
                         <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 text-xs space-y-2">
                           <p className="font-bold">⏳ En attente de synchronisation...</p>
-                          <p className="text-[11px] leading-tight opacity-90">Vous avez soumis votre travail. Donnez maintenant votre fichier à votre partenaire pour qu'il le dépose à son tour sur son compte afin de libérer vos points !</p>
+                          <p className="text-[11px] leading-tight opacity-90">Vous avez soumis votre travail. Donnez maintenant votre fichier à votre partenaire pour qu'il le dépose à son tour afin de libérer vos points !</p>
                         </div>
                       )}
 
@@ -547,120 +539,112 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         </div>
       )}
 
-      {/* PORTFOLIO COMPLET AVEC FILTRE */}
-  {activeTab === 'portfolio' && user && (
-    <div className="space-y-8">
-      
-      {/* 1ère SECTION : LES RENDUS & LEUR SUIVI */}
-      <div className="space-y-4">
-        <div className="border-b pb-3 flex flex-wrap justify-between items-center gap-3">
-          <div>
-            <h3 className="font-black text-sm text-emerald-800 uppercase tracking-wide">
-              📂 Mon Historique de Rendu ({uniqueLivrables.length})
-            </h3>
-          </div>
-          
-          {/* ⚡ NOVEAU : SÉLECTEUR DE FILTRE PORTFOLIO */}
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] font-bold text-slate-400 uppercase">Filtrer par statut :</label>
-            <select 
-              value={portfolioFilter} 
-              onChange={(e) => setPortfolioFilter(e.target.value)} 
-              className="bg-white border rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-700 cursor-pointer shadow-sm focus:outline-none focus:border-emerald-500"
-            >
-              <option value="all">👀 Tout afficher (Validées + En attente)</option>
-              <option value="validated">🏆 Quêtes Validées uniquement</option>
-              <option value="pending">⏳ En attente de coéquipier uniquement</option>
-            </select>
-          </div>
-        </div>
-
-        {(() => {
-          // Application du filtre sur les livrables uniques
-          const filteredLivrables = uniqueLivrables.filter(p => {
-            const isPending = p.content.includes('[EN_ATTENTE_COLLAB]');
-            if (portfolioFilter === 'validated') return !isPending;
-            if (portfolioFilter === 'pending') return isPending;
-            return true; // 'all'
-          });
-
-          if (filteredLivrables.length === 0) {
-            return (
-              <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-2xl text-center text-xs text-slate-400 italic">
-                {portfolioFilter === 'validated' && "Aucune quête validée pour le moment. Collaborez pour débloquer vos points !"}
-                {portfolioFilter === 'pending' && "Aucune quête n'est actuellement en attente d'un coéquipier."}
-                {portfolioFilter === 'all' && "Aucun rendu trouvé."}
+      {/* PORTFOLIO COMPLET */}
+      {activeTab === 'portfolio' && user && (
+        <div className="space-y-8">
+          <div className="space-y-4">
+            <div className="border-b pb-3 flex flex-wrap justify-between items-center gap-3">
+              <div>
+                <h3 className="font-black text-sm text-emerald-800 uppercase tracking-wide">
+                  📂 Mon Historique de Rendu ({uniqueLivrables.length})
+                </h3>
               </div>
-            );
-          }
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-bold text-slate-400 uppercase">Filtrer par statut :</label>
+                <select 
+                  value={portfolioFilter} 
+                  onChange={(e) => setPortfolioFilter(e.target.value)} 
+                  className="bg-white border rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-700 cursor-pointer shadow-sm focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="all">👀 Tout afficher (Validées + En attente)</option>
+                  <option value="validated">🏆 Quêtes Validées uniquement</option>
+                  <option value="pending">⏳ En attente de coéquipier uniquement</option>
+                </select>
+              </div>
+            </div>
 
-          return (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredLivrables.map(p => {
-                const originalQuest = quests.find(q => q.id === p.questId);
-                const isQuestCollab = originalQuest?.is_collaborative === true || originalQuest?.is_collaborative === 'true';
+            {(() => {
+              const filteredLivrables = uniqueLivrables.filter(p => {
                 const isPending = p.content.includes('[EN_ATTENTE_COLLAB]');
+                if (portfolioFilter === 'validated') return !isPending;
+                if (portfolioFilter === 'pending') return isPending;
+                return true;
+              });
 
+              if (filteredLivrables.length === 0) {
                 return (
-                  <div key={p.id} className={`bg-white border p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden transition-all hover:shadow-md ${isPending ? 'border-amber-200 bg-amber-50/5' : isQuestCollab ? 'border-purple-200' : 'border-slate-100'}`}>
-                    <div className={`absolute top-0 left-0 bottom-0 w-1 ${isPending ? 'bg-amber-400' : isQuestCollab ? 'bg-purple-600' : 'bg-emerald-500'}`} />
-                    <div>
-                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
-                        <span>Code : {p.questId} {isQuestCollab && '🤝'}</span>
-                        <span className={isPending ? 'text-amber-600' : 'text-emerald-600'}>
-                          {isPending ? '⏳ En attente' : `🏆 +${originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP`}
-                        </span>
-                      </div>
-                      <h4 className="font-black text-xs text-slate-800 mt-2">{p.questName}</h4>
-                      <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border mt-2 italic leading-relaxed">
-                        "{p.content.replace('[EN_ATTENTE_COLLAB]', '⏳ [EN ATTENTE COÉQUIPIER]').replace('[VALIDE_COLLAB]', '🤝 [COLLAB VALIDE]')}"
-                      </p>
-                    </div>
-                    <div className="text-[10px] text-slate-400 text-right">Soumis le {p.date}</div>
+                  <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-2xl text-center text-xs text-slate-400 italic">
+                    Aucun rendu ne correspond au filtre sélectionné.
                   </div>
                 );
-              })}
-            </div>
-          );
-        })()}
-      </div>
+              }
 
-      {/* 2ème SECTION : CATALOGUE DES MISSIONS RESTANTES */}
-      <div className="space-y-4 pt-4">
-        <div className="border-b pb-2">
-          <h3 className="font-black text-sm text-slate-400 uppercase tracking-wide">⏳ Catalogue des Missions Restantes</h3>
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredLivrables.map(p => {
+                    const originalQuest = quests.find(q => q.id === p.questId);
+                    const isQuestCollab = originalQuest?.is_collaborative === true || originalQuest?.is_collaborative === 'true';
+                    const isPending = p.content.includes('[EN_ATTENTE_COLLAB]');
+
+                    return (
+                      <div key={p.id} className={`bg-white border p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden transition-all hover:shadow-md ${isPending ? 'border-amber-200 bg-amber-50/5' : isQuestCollab ? 'border-purple-200' : 'border-slate-100'}`}>
+                        <div className={`absolute top-0 left-0 bottom-0 w-1 ${isPending ? 'bg-amber-400' : isQuestCollab ? 'bg-purple-600' : 'bg-emerald-500'}`} />
+                        <div>
+                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                            <span>Code : {p.questId} {isQuestCollab && '🤝'}</span>
+                            <span className={isPending ? 'text-amber-600' : 'text-emerald-600'}>
+                              {isPending ? '⏳ En attente' : `🏆 +${originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP`}
+                            </span>
+                          </div>
+                          <h4 className="font-black text-xs text-slate-800 mt-2">{p.questName}</h4>
+                          <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-xl border mt-2 italic leading-relaxed">
+                            "{p.content.replace('[EN_ATTENTE_COLLAB]', '⏳ [EN ATTENTE COÉQUIPIER]').replace('[VALIDE_COLLAB]', '🤝 [COLLAB VALIDE]')}"
+                          </p>
+                        </div>
+                        <div className="text-[10px] text-slate-400 text-right">Soumis le {p.date}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div className="space-y-4 pt-4">
+            <div className="border-b pb-2">
+              <h3 className="font-black text-sm text-slate-400 uppercase tracking-wide">⏳ Catalogue des Missions Restantes</h3>
+            </div>
+            {(() => {
+              const pendingQuests = quests.filter(q => !completedQuestIds.has(q.id));
+              if (pendingQuests.length === 0) {
+                return <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété 100 % des missions disponibles !</div>;
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-75">
+                  {pendingQuests.map(q => {
+                    const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
+                    return (
+                      <div key={q.id} className={`bg-slate-50 border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-3 ${isQuestCollab ? 'border-purple-200 bg-purple-50/10' : 'border-slate-200'}`}>
+                        <div>
+                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                            <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
+                            <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
+                          </div>
+                          <h4 className={`font-black text-xs mt-1.5 ${isQuestCollab ? 'text-purple-900' : 'text-slate-700'}`}>{q.name}</h4>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider italic">
+                          {pendingCollabQuestIds.has(q.id) ? '⏳ Déposé (En attente)' : '❌ Non initiée'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
         </div>
-        {(() => {
-          const pendingQuests = quests.filter(q => !completedQuestIds.has(q.id));
-          if (pendingQuests.length === 0) {
-            return <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété 100 % des missions disponibles !</div>;
-          }
-
-          return (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-75">
-              {pendingQuests.map(q => {
-                const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
-                return (
-                  <div key={q.id} className={`bg-slate-50 border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-3 ${isQuestCollab ? 'border-purple-200 bg-purple-50/10' : 'border-slate-200'}`}>
-                    <div>
-                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
-                        <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
-                        <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
-                      </div>
-                      <h4 className={`font-black text-xs mt-1.5 ${isQuestCollab ? 'text-purple-900' : 'text-slate-700'}`}>{q.name}</h4>
-                    </div>
-                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider italic">
-                      {pendingCollabQuestIds.has(q.id) ? '⏳ Déposé (En attente)' : '❌ Non initiée'}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-      </div>
-
+      )}
     </div>
-  )}
- );
+  );
 }
