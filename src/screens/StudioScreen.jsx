@@ -17,7 +17,7 @@ const getQuestBadgeStyle = (quest) => {
 export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
-  // Navigation par onglet interne au Studio (Arbre d'abord, Sessions en discret)
+  // Navigation par onglet interne au Studio
   const [activeTab, setActiveTab] = useState('tree'); // 'tree' ou 'sessions'
   
   // États de sélection
@@ -37,7 +37,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [newTreeName, setNewTreeName] = useState('');
   const [newFloorMode, setNewFloorMode] = useState('static');
 
-  // 🤝 AJOUT DES ÉTATS POUR LE MODE COLLABORATIF
+  // 🤝 ÉTATS POUR LE MODE COLLABORATIF DURABLE
   const [isCollaborative, setIsCollaborative] = useState(false);
   const [requiredPartners, setRequiredPartners] = useState(2);
 
@@ -138,17 +138,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return matchesSearch && matchesTheme && matchesDifficulty;
   }).sort((a, b) => (a.theme || '').localeCompare(b.theme || ''));  
 
-  // 🔥 ULTRA BONUS : Calcul automatique de la contrainte maximale d'équipe sur l'arbre
+  // CALCUL AUTOMATIQUE DE LA CONTRAINTE MAXIMALE D'ÉQUIPE SUR L'ARBRE
   const recalculateAndSaveMaxTeamConstraint = async (treeId, floorsArray) => {
     if (!treeId || !floorsArray) return;
 
-    // Récupérer tous les IDs de quêtes rattachés aux paliers de l'arbre actif
     const attachedQuestIds = floorsArray.flatMap(f => f.quests || []);
-    
-    // Récupérer la liste complète des quêtes correspondantes
     const linkedQuests = safeQuestsList.filter(q => attachedQuestIds.includes(q.id));
 
-    // Déterminer la contrainte maximale requise (par défaut 1 si tout est solo)
     const maxConstraint = linkedQuests.reduce((max, q) => {
       if (q.is_collaborative) {
         return Math.max(max, q.required_partners || 2);
@@ -156,13 +152,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       return max;
     }, 1);
 
-    // Mettre à jour dans Supabase
     await supabase
       .from('trees')
       .update({ max_team_constraint: maxConstraint })
       .eq('id', treeId);
 
-    // Mettre à jour l'état local
     if (typeof setTrees === 'function') {
       setTrees(prev => {
         if (!prev[treeId]) return prev;
@@ -174,7 +168,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // 2. LOGIQUE DE SAUVEGARDE ET SYNCHRONISATION SUPABASE
+  // LOGIQUE DE SAUVEGARDE ET SYNCHRONISATION SUPABASE
   const handleSaveChanges = async () => {
     if (activeTab === 'tree' && currentTree) {
       const { error } = await supabase
@@ -185,9 +179,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       if (error) {
         alert(`❌ Erreur sauvegarde Arbre : ${error.message}`);
       } else {
-        // Déclencher le recalcul automatique au moment de la sauvegarde générale de l'arbre
         await recalculateAndSaveMaxTeamConstraint(currentTree.id, currentTree.floors);
-        alert(`🎉 Arbre "${currentTree.name}" et ses paliers synchronisés sur Supabase (Contrainte d'équipe recalculée) !`);
+        alert(`🎉 Arbre "${currentTree.name}" et ses paliers synchronisés sur Supabase !`);
       }
     } 
     
@@ -205,7 +198,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // MODIFICATION DE L'ARBRE DANS LE STATE LOCAL
   const updateCurrentTreeInState = (updatedFields) => {
     if (!currentTree) return;
     if (typeof setTrees === 'function') {
@@ -220,7 +212,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, ...updatedFields } : s));
   };
 
-  // LOGIQUE INTERACTIVE DES PALIERS (FLOORS) SUR L'ARBRE ACTIF
   const handleAddFloor = () => {
     if (!currentTree) return;
     const floors = currentTree.floors ? [...currentTree.floors] : [];
@@ -242,7 +233,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (!currentTree || !currentTree.floors) return;
     const updatedFloors = currentTree.floors.filter(f => f.floorId !== floorId);
     
-    updateCurrentTreeInState({ updatedFloors });
+    updateCurrentTreeInState({ floors: updatedFloors });
     recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
   };
 
@@ -290,11 +281,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     });
 
     updateCurrentTreeInState({ floors: updatedFloors });
-    // Déclencheur immédiat d'Ultra Bonus dès qu'on check/uncheck une mission dans un palier
     recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
   };
 
-  // ACTIONS DE CRÉATION (MODALES)
   const handleCreateTree = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!newTreeName.trim()) return;
@@ -319,7 +308,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (!newQuestName || !newQuestDesc) return;
     const calculatedDifficulty = newQuestType === 'boss' ? 3 : newQuestType === 'miniboss' ? 2 : 1;
 
-    // Insertion avec prise en compte des nouveaux champs collaboratifs
     const { data, error } = await supabase
       .from('quests')
       .insert([{ 
@@ -329,15 +317,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         difficulty: String(calculatedDifficulty), 
         owner_id: currentUserId, 
         visibility: 'private',
-        is_collaborative: isCollaborative,
-        required_partners: isCollaborative ? (requiredPartners || 2) : 2
+        is_collaborative: isCollaborative, 
+        required_partners: isCollaborative ? Number(requiredPartners) : 2
       }])
       .select().single(); 
 
     if (error) { alert(`⚠️ Erreur : ${error.message}`); return; }
     if (typeof setQuests === 'function') setQuests(prev => [...(prev || []), data]);
 
-    // Reset états du formulaire
     setNewQuestName(''); 
     setNewQuestDesc(''); 
     setIsCollaborative(false);
@@ -361,7 +348,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setNewSessionCode(''); setActiveModal(null);
   };
 
-  // GESTION DES RECHERCHES ET AJOUTS DE GESTIONNAIRES
   const handleAddDRH = (drhUser) => {
     if (!currentSession) return;
     const currentDrhIds = currentSession.drh_ids || [];
@@ -427,10 +413,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* ESPACE DE TRAVAIL (GAUCHE & CENTRE) */}
+        {/* ESPACE DE TRAVAIL */}
         <div className="lg:col-span-2 space-y-6">
           
-          {/* ONGLET A : ÉDITEUR D'ARBRE ET DE SES PALIERS */}
           {activeTab === 'tree' && (
             currentTree ? (
               <div className="space-y-4">
@@ -454,7 +439,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             {floor.mode === 'static' ? '📌 Statique' : '🎲 Aléatoire'}
                           </button>
 
-                          <div className="flex items-center bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 gap-1.5" title="Difficultés autorisées">
+                          <div className="flex items-center bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 gap-1.5">
                             {[1, 2, 3].map(level => {
                               const isChecked = allowedDiffs.includes(Number(level));
                               return (
@@ -532,7 +517,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             )
           )}
 
-          {/* ONGLET B : GESTION DES SESSIONS */}
           {activeTab === 'sessions' && (
             <div className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm space-y-4">
               <h2 className="text-md font-black text-blue-900 uppercase tracking-wide">🔗 Paramètres de distribution (Sessions)</h2>
@@ -798,7 +782,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
             {activeModal === 'session' && (
               <>
-                <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">📆 Initialiser un Espace Session</h3>
+                <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">💡 Initialiser un Espace Session</h3>
                 <form onSubmit={handleCreateSession} className="space-y-4 text-xs">
                   <div>
                     <label className="block text-slate-600 font-bold mb-1">Code d'accès de la session :</label>
