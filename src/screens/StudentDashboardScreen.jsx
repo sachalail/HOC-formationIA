@@ -4,25 +4,24 @@ import { supabase } from '../supabaseClient';
 
 export default function StudentDashboardScreen({ trees, quests }) {
   const [user, setUser] = useState(null);
+  // On stocke la liste sous forme de tableau standard (qui sera sérialisé en JSON en BDD)
   const [sessionCodesList, setSessionCodesList] = useState([]); 
   const [mySessionsData, setMySessionsData] = useState([]); 
-  
-  // 🔄 PERSISTANCE INTERFACE & SELECTION
   const [selectedSessionCode, setSelectedSessionCode] = useState(null); 
   const [selectedTreeId, setSelectedTreeId] = useState(null); 
   
   const [accessCode, setAccessCode] = useState('');
   const [activeTab, setActiveTab] = useState('parcours'); 
   
-  // FILTRES DE JEU (PORTFOLIO EXCLUSIF)
+  // FILTRES DE JEU
   const [filterTheme, setFilterTheme] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'done', 'todo'
 
-  // 🧭 STRUCTURE EVOLUÉE : Suivi par arbre pour ne pas perdre la mémoire des aperçus
+  // ÉTATS DE SUIVI UNIQUE
   const [unlockedFloorsObj, setUnlockedFloorsObj] = useState({}); 
   const [currentFloorIndex, setCurrentFloorIndex] = useState(0); 
   
-  // 🛡️ ÉTAT DES QUÊTES REUNIES
+  // 🛡️ ÉTAT ANTI-SPAM
   const [completedQuestIds, setCompletedQuestIds] = useState(new Set());
 
   // PORTFOLIO EN DIRECT DEPUIS SUPABASE
@@ -42,6 +41,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
       if (session?.user) {
         setUser(session.user);
 
+        // On récupère le champ JSONB 'session_codes'
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('session_codes')
@@ -66,6 +66,8 @@ export default function StudentDashboardScreen({ trees, quests }) {
   // Charger les arbres correspondants aux codes de sessions
   const fetchSessionsDetails = async (codes) => {
     if (!codes || codes.length === 0) return;
+
+    // Correction de la requête pour matcher le type de données stocké (code ou ID)
     const { data: sessionsData, error } = await supabase
       .from('sessions')
       .select('id, session_code, tree_id')
@@ -138,8 +140,10 @@ export default function StudentDashboardScreen({ trees, quests }) {
         (floor.quests || []).forEach(qId => {
           const foundQuest = quests.find(q => q.id === qId);
           if (foundQuest && !discovered.some(d => d.id === foundQuest.id)) {
+            // 🛡️ MODIFICATION : On clone pour éviter la mutation par référence
             discovered.push({
               ...foundQuest,
+              is_collaborative: !!foundQuest.is_collaborative,
               sessionCode: sessionItem.session_code,
               treeId: sessionItem.tree_id,
               floorIndex: tree.floors.findIndex(f => f.floorId === floor.floorId)
@@ -156,7 +160,11 @@ export default function StudentDashboardScreen({ trees, quests }) {
     setSelectedSessionCode(quest.sessionCode);
     setSelectedTreeId(quest.treeId);
     setCurrentFloorIndex(quest.floorIndex);
-    setActiveQuest(quests.find(q => q.id === quest.id));
+    
+    // 🛡️ MODIFICATION : On clone la quête originale trouvée pour bloquer l'effet de bord
+    const originalQuest = quests.find(q => q.id === quest.id);
+    setActiveQuest(originalQuest ? { ...originalQuest } : null);
+    
     setActiveTab('parcours');
   };
 
@@ -173,6 +181,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
       return;
     }
 
+    // Vérification de l'existence de la session via le code textuel saisi
     const { data: targetSession, error: sessionError } = await supabase
       .from('sessions')
       .select('*')
@@ -184,14 +193,17 @@ export default function StudentDashboardScreen({ trees, quests }) {
       return;
     }
 
+    // Sécurité de type : On pousse le code textuel validé par la BDD (ou targetSession.session_code)
     const updatedSessionCodes = [...sessionCodesList, targetSession.session_code];
 
+    // Sauvegarde du tableau JSON directement dans Supabase
     const { error: updateError } = await supabase
       .from('profiles')
       .update({ session_codes: updatedSessionCodes }) 
       .eq('id', user.id);
 
     if (updateError) {
+      console.error("Détails erreur Supabase:", updateError.message);
       alert("❌ Erreur de sauvegarde BDD.");
     } else {
       setSessionCodesList(updatedSessionCodes);
@@ -201,7 +213,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
       setSelectedTreeId(targetSession.tree_id);
       setCurrentFloorIndex(0);
       setAccessCode('');
-      alert(`🎉 Session "${targetSession.session_code}" ajoutée !`);
+      alert(`🎉 Session "${targetSession.session_code}" ajoutée ad aeternam !`);
     }
   };
 
@@ -231,7 +243,9 @@ export default function StudentDashboardScreen({ trees, quests }) {
 
   const studentPoints = productions.reduce((sum, prod) => { 
     const originalQuest = quests.find(q => q.id === prod.questId);
-    if (originalQuest) return sum + getPointsByDifficulty(originalQuest.difficulty);
+    if (originalQuest) {
+      return sum + getPointsByDifficulty(originalQuest.difficulty);
+    }
     return sum + 100; 
   }, 0);
 
@@ -333,6 +347,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
       {activeTab === 'parcours' && !selectedSessionCode && (
         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            
             <div className="lg:col-span-2 space-y-4">
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">🧠 Vos sessions actives</h3>
               {mySessionsData.length === 0 ? (
@@ -352,7 +367,15 @@ export default function StudentDashboardScreen({ trees, quests }) {
                             Arbre : {linkedTree ? linkedTree.name : `Chargement (${sessionItem.tree_id})`}
                           </h4>
                         </div>
-                        <button onClick={() => { setSelectedSessionCode(sessionItem.session_code); setSelectedTreeId(sessionItem.tree_id); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer">🚀 Entrer dans la session</button>
+                        <button 
+                          onClick={() => { 
+                            setSelectedSessionCode(sessionItem.session_code); 
+                            setSelectedTreeId(sessionItem.tree_id); 
+                          }} 
+                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          🚀 Entrer dans la session
+                        </button>
                       </div>
                     );
                   })}
@@ -366,10 +389,19 @@ export default function StudentDashboardScreen({ trees, quests }) {
                 <p className="text-[11px] text-slate-500 leading-relaxed mt-1">Saisissez un nouveau code pour ajouter un espace de formation à votre liste.</p>
               </div>
               <form onSubmit={handleJoinSession} className="space-y-2">
-                <input type="text" placeholder="Ex: ORANGE-LILLE-26" value={accessCode} onChange={(e) => setAccessCode(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-emerald-500" />
-                <button type="submit" className="w-full bg-slate-900 text-white text-xs font-black py-3 rounded-xl uppercase tracking-wider cursor-pointer">Ajouter la session</button>
+                <input 
+                  type="text" 
+                  placeholder="Ex: ORANGE-LILLE-26" 
+                  value={accessCode} 
+                  onChange={(e) => setAccessCode(e.target.value)} 
+                  className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-emerald-500" 
+                />
+                <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-black py-3 rounded-xl uppercase tracking-wider shadow-sm cursor-pointer">
+                  Ajouter la session
+                </button>
               </form>
             </div>
+
           </div>
         </div>
       )}
@@ -417,7 +449,8 @@ export default function StudentDashboardScreen({ trees, quests }) {
                         const isDoneElsewhere = globalCompletedQuestIds.includes(quest.id) && !isDoneHere;
 
                         return (
-                          <button key={quest.id} onClick={() => setActiveQuest(quest)} className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${isSelected ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-500/10' : isDoneHere ? 'bg-emerald-50/60 border-emerald-200' : isDoneElsewhere ? 'bg-amber-50/50 border-amber-300 border-dashed' : 'bg-slate-50'}`}>
+                          /* 🛡️ MODIFICATION : On clone la quête dans le clic pour casser la référence directe */
+                          <button key={quest.id} onClick={() => setActiveQuest({ ...quest })} className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${isSelected ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-500/10' : isDoneHere ? 'bg-emerald-50/60 border-emerald-200' : isDoneElsewhere ? 'bg-amber-50/50 border-amber-300 border-dashed' : 'bg-slate-50'}`}>
                             <div className="flex justify-between items-center text-[10px] font-black">
                               <span className="text-slate-400 uppercase">{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
                               {isDoneHere && <span className="text-emerald-600 font-black">Validée ✅</span>}
