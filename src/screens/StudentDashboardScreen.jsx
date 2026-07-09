@@ -26,716 +26,718 @@ export default function StudentDashboardScreen({ trees, quests }) {
 
   // ÉTATS DE SUIVI UNIQUE
   const [unlockedFloorsObj, setUnlockedFloorsObj] = useState({}); 
-  const [currentFloorIndex, setCurrentFloorIndex] = useState(0); 
+  const [myProductions, setMyProductions] = useState([]); 
+  const [allValidatedProds, setAllValidatedProds] = useState([]); 
+  const [allStudentsInSession, setAllStudentsInSession] = useState([]); 
+
+  // MODALE RENDU CIBLÉ
+  const [selectedQuest, setSelectedQuest] = useState(null);
+  const [submissionText, setSubmissionText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   
-  // 🛡️ ÉTAT ANTI-SPAM & RECONNAISSANCE DES VALIDEES
-  const [completedQuestIds, setCompletedQuestIds] = useState(new Set());
+  // GESTION FICHIERS JOINT
+  const [selectedFile, setSelectedFile] = useState(null);
 
-  // PORTFOLIO GLOBAL DEPUIS SUPABASE (Contient aussi les fichiers jumeaux potentiels pour calculs d'équipes)
-  const [productions, setProductions] = useState([]);
-
-  const [activeQuest, setActiveQuest] = useState(null); 
-  const [livrableContent, setLivrableContent] = useState(''); 
-  const [attachedFile, setAttachedFile] = useState(null);
-  const [triggerDropAnimation, setTriggerDropAnimation] = useState(false); 
-
-  const POINTS_REQUIRED_PER_FLOOR = 300;
-
-  // 🔑 1. RÉCUPÉRATION DE L'UTILISATEUR, DE SES SESSIONS ET DE SES PALIERS
+  // 1. CHARGEMENT INITIAL DE L'UTILISATEUR ET DE SES COMPTES-RENDUS/PRODUCTIONS
   useEffect(() => {
-    const getUserData = async () => {
+    const fetchUserAndSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
+      if (session) {
         setUser(session.user);
-
-        const { data: profile, error: profileError } = await supabase
+        
+        // Récupérer le profil pour extraire la liste des sessions jointes
+        const { data: profile } = await supabase
           .from('profiles')
-          .select('session_codes, unlocked_floors')
+          .select('joined_sessions')
           .eq('id', session.user.id)
           .single();
 
-        if (profile && !profileError) {
-          if (Array.isArray(profile.session_codes)) {
-            setSessionCodesList(profile.session_codes);
-            fetchSessionsDetails(profile.session_codes);
+        if (profile && Array.isArray(profile.joined_sessions)) {
+          setSessionCodesList(profile.joined_sessions);
+          if (profile.joined_sessions.length > 0) {
+            setSelectedSessionCode(profile.joined_sessions[0]);
           }
-          setUnlockedFloorsObj(profile.unlocked_floors || {});
         }
+        
+        // Charger les productions de cet étudiant
+        fetchMyProductions(session.user.id);
       }
     };
-    getUserData();
+    fetchUserAndSession();
   }, []);
 
-  const fetchSessionsDetails = async (codes) => {
-    if (!codes || codes.length === 0) return;
+  // 2. RÉCUPÉRATION SYNCHRONISÉE DES SESSIONS ASSOCIEES ET DE L'ARBRE PEDAGOGIQUE
+  useEffect(() => {
+    if (sessionCodesList.length === 0) return;
 
-    const { data: sessionsData, error } = await supabase
-      .from('sessions')
-      .select('id, session_code, tree_id')
-      .in('session_code', codes);
+    const fetchSessionsMetadata = async () => {
+      const { data: sessionsData } = await supabase
+        .from('sessions')
+        .select('*')
+        .in('session_code', sessionCodesList);
 
-    if (sessionsData && !error) {
-      setMySessionsData(sessionsData);
-    }
-  };
-
-  // 📥 2. SYNCHRONISATION DU PORTFOLIO (ET RECALCUL DU STATUT DES QUÊTES DUO)
-  const fetchStudentProductions = async () => {
-    if (!user) return;
-
-    // ÉTAPE A : Récupérer TOUTES les productions de la table pour pouvoir compter les fichiers jumeaux
-    const { data: allProds, error } = await supabase
-      .from('productions')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (allProds && !error) {
-      // Filtrer les productions de l'étudiant connecté
-      const myProds = allProds.filter(p => p.student_id === user.id);
-
-      // Calculer l'ensemble des quêtes validées
-      const completedSet = new Set();
-
-      myProds.forEach(myP => {
-        const linkedQuest = quests.find(q => q.id === myP.quest_id);
-        
-        if (linkedQuest?.is_collaborative) {
-          // Pour une quête collaborative : on compte combien de personnes différentes (y compris soi-même) 
-          // ont téléversé ce fichier exact (même file_hash) pour cette même quête
-          const matchingCount = allProds.filter(p => 
-            p.quest_id === myP.quest_id && 
-            p.file_hash === myP.file_hash && 
-            p.file_hash !== null
-          ).length;
-
-          const required = linkedQuest.required_partners || 2;
-          if (matchingCount >= required) {
-            completedSet.add(myP.quest_id); // Le quota d'équipe est atteint !
-          }
+      if (sessionsData) {
+        setMySessionsData(sessionsData);
+        const current = sessionsData.find(s => s.session_code === selectedSessionCode);
+        if (current && current.tree_id) {
+          setSelectedTreeId(current.tree_id);
         } else {
-          // Mode Solo classique
-          completedSet.add(myP.quest_id);
+          setSelectedTreeId(null);
         }
-      });
-
-      setCompletedQuestIds(completedSet);
-      
-      const formattedProds = myProds.map(p => ({
-        id: p.id,
-        studentId: p.student_id,
-        questId: p.quest_id,
-        questName: p.quest_name,
-        content: p.content,
-        date: new Date(p.created_at).toLocaleDateString('fr-FR'),
-        file_url: p.file_url,
-        file_hash: p.file_hash
-      }));
-
-      setProductions(formattedProds);
-      
-      // Stocker la liste brute complète dans le localstorage ou une variable globale si besoin de vérification croisée dans l'UI
-      window.__allProductionsRaw = allProds;
-    }
-  };
-
-  useEffect(() => {
-    if (user && quests?.length > 0) {
-      fetchStudentProductions();
-    }
-  }, [user, quests]);
-
-  useEffect(() => {
-    if (selectedTreeId) {
-      setCurrentFloorIndex(0); 
-      setActiveQuest(null);
-    }
-  }, [selectedTreeId]);
-
-  // 💾 3. REJOINDRE UNE SESSION
-  const handleJoinSession = async (e) => {
-    e.preventDefault();
-    const inputCode = accessCode.trim().toUpperCase();
-    if (!inputCode || !user) return;
-
-    if (sessionCodesList.includes(inputCode)) {
-      alert("💡 Vous suivez déjà cette session !");
-      setAccessCode('');
-      return;
-    }
-
-    const { data: targetSession, error: sessionError } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('session_code', inputCode)
-      .single();
-
-    if (sessionError || !targetSession) {
-      alert("❌ Code de session inconnu.");
-      return;
-    }
-
-    const updatedSessionCodes = [...sessionCodesList, targetSession.session_code];
-
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ session_codes: updatedSessionCodes }) 
-      .eq('id', user.id);
-
-    if (updateError) {
-      alert("❌ Erreur de sauvegarde BDD.");
-    } else {
-      setSessionCodesList(updatedSessionCodes);
-      setMySessionsData([...mySessionsData, { id: targetSession.id, session_code: targetSession.session_code, tree_id: targetSession.tree_id }]);
-      setSelectedSessionCode(targetSession.session_code);
-      setSelectedTreeId(targetSession.tree_id);
-      setCurrentFloorIndex(0);
-      setAccessCode('');
-      alert(`🎉 Session "${targetSession.session_code}" ajoutée !`);
-    }
-  };
-
-  // 🆙 4. DÉBLOCAGE DU PALIER SUIVANT
-  const handleUnlockNextFloor = async (currentUnlockedIdx, totalPaliers) => {
-    if (!user || !selectedTreeId) return;
-
-    const nextIndex = currentUnlockedIdx + 1;
-    if (nextIndex >= totalPaliers) return;
-
-    const updatedFloorsObj = {
-      ...unlockedFloorsObj,
-      [selectedTreeId]: nextIndex
+      }
     };
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({ unlocked_floors: updatedFloorsObj })
-      .eq('id', user.id);
+    fetchSessionsMetadata();
+  }, [sessionCodesList, selectedSessionCode]);
 
-    if (error) {
-      alert("❌ Impossible de sauvegarder votre progression sur le serveur.");
-    } else {
-      setTriggerDropAnimation(true); 
-      setTimeout(() => setTriggerDropAnimation(false), 600);
-      setUnlockedFloorsObj(updatedFloorsObj);
-      setCurrentFloorIndex(nextIndex);
-      setActiveQuest(null);
-    }
+  // CHARGER TOUTES LES PRODUCTIONS DE L'ÉTUDIANT CONNECTÉ
+  const fetchMyProductions = async (userId) => {
+    const { data } = await supabase
+      .from('productions')
+      .select('*')
+      .eq('student_id', userId);
+    if (data) setMyProductions(data);
   };
 
-  const getPointsByDifficulty = (difficulty) => {
-    const numericDifficulty = parseInt(difficulty, 10);
-    if (numericDifficulty === 3) return 500;
-    if (numericDifficulty === 2) return 250;
-    return 100;
-  };
+  // 3. CHARGEMENT DE TOUTES LES PRODUCTIONS VALIDÉES DE LA SESSION POUR LE CALCUL COLLABORATIF ET L'ANALYSE DU FLUX DE TRACE DES CO-ÉQUIPIERS
+  useEffect(() => {
+    if (!selectedSessionCode) return;
 
-  // Traitement d'attachement natif
-  const handleFileChangeRaw = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setAttachedFile(file); // On stocke l'objet File physique pour le traitement SHA-256
-  };
+    const fetchGlobalSessionData = async () => {
+      // Récupérer toutes les productions validées de cette session spécifique
+      const { data: prods } = await supabase
+        .from('productions')
+        .select('*')
+        .eq('session_code', selectedSessionCode)
+        .eq('is_validated', true);
 
-  const studentPoints = productions.reduce((sum, prod) => { 
-    // On n'attribue les points d'une quête collaborative que si elle figure dans le Set des quêtes validées
-    const originalQuest = quests.find(q => q.id === prod.questId);
-    if (originalQuest) {
-      if (originalQuest.is_collaborative && !completedQuestIds.has(originalQuest.id)) {
-        return sum; // Toujours en attente de partenaire, pas de points
+      if (prods) setAllValidatedProds(prods);
+
+      // Récupérer la liste des étudiants ayant rejoint cette même session
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email, name, joined_sessions');
+
+      if (profiles) {
+        const filtered = profiles.filter(p => 
+          Array.isArray(p.joined_sessions) && p.joined_sessions.includes(selectedSessionCode)
+        );
+        setAllStudentsInSession(filtered);
       }
-      return sum + getPointsByDifficulty(originalQuest.difficulty);
-    }
-    return sum + 100; 
-  }, 0);
+    };
 
-  // 🔥 5. DEPOSIT DE RENDU AVEC SÉCURITÉ DE HACHAGE ET LOGIQUE DE REMPLACEMENT
-  const handleSubmitLivrable = async (e) => {
-    if (e) e.preventDefault();
-    if (completedQuestIds.has(activeQuest.id)) return;
-    if (!user) return;
+    fetchGlobalSessionData();
+    
+    // Mettre en place un abonnement temps réel pour synchroniser les validations d'équipes instantanément
+    const channel = supabase
+      .channel(`session-realtime-${selectedSessionCode}`)
+      .on('postgres_changes', { event: '*', scheme: 'public', table: 'productions' }, () => {
+        fetchGlobalSessionData();
+        if (user) fetchMyProductions(user.id);
+      })
+      .subscribe();
 
-    // Validation stricte : Fichier obligatoire pour les quêtes collaboratives
-    if (activeQuest.is_collaborative && !attachedFile) {
-      alert("⚠️ Cette mission est collaborative ! Le dépôt d'un fichier justificatif est obligatoire pour être associé à vos partenaires.");
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedSessionCode, user]);
+
+  // 4. ALGORITHME DE CALCUL DES ÉTAGES DÉVERROUILLÉS (FLUX DE PROGRESSION CONTINU)
+  useEffect(() => {
+    if (!selectedTreeId || !trees || !trees[selectedTreeId]) {
+      setUnlockedFloorsObj({});
       return;
     }
 
+    const currentTree = trees[selectedTreeId];
+    const floors = currentTree.floors || [];
+    const unlockedMap = {};
+
+    // Le Palier 1 est toujours ouvert par défaut pour démarrer le parcours
+    if (floors.length > 0) {
+      const sortedFloors = [...floors].sort((a, b) => (a.floorId || 0) - (b.floorId || 0));
+      if (sortedFloors[0]) {
+        unlockedMap[sortedFloors[0].floorId] = true;
+      }
+
+      // Pour chaque palier supérieur, on vérifie si le palier précédent a été entièrement validé
+      for (let i = 1; i < sortedFloors.length; i++) {
+        const previousFloor = sortedFloors[i - 1];
+        const currentFloor = sortedFloors[i];
+
+        // Regarder les quêtes requises du palier précédent
+        const requiredQuestIds = previousFloor.quests || [];
+        
+        let isPreviousFloorFullyCompleted = false;
+
+        if (previousFloor.mode === 'random') {
+          // Mode Aléatoire : Il suffit d'avoir validé le nombre requis de quêtes ('count') parmi celles du pool du palier
+          const targetCount = previousFloor.count || 1;
+          const validatedInPoolCount = requiredQuestIds.filter(qId => isQuestValidatedByMe(qId)).length;
+          isPreviousFloorFullyCompleted = validatedInPoolCount >= targetCount;
+        } else {
+          // Mode Statique : Toutes les quêtes rattachées au palier doivent être individuellement accomplies
+          isPreviousFloorFullyCompleted = requiredQuestIds.length > 0 && requiredQuestIds.every(qId => isQuestValidatedByMe(qId));
+        }
+
+        if (isPreviousFloorFullyCompleted && unlockedMap[previousFloor.floorId]) {
+          unlockedMap[currentFloor.floorId] = true;
+        }
+      }
+    }
+
+    setUnlockedFloorsObj(unlockedMap);
+  }, [selectedTreeId, trees, myProductions, allValidatedProds]);
+
+  // FONCTION DE VÉRIFICATION INDIVIDUELLE : MA QUÊTE EST-ELLE VALIDÉE ET COMPTABILISÉE ?
+  const isQuestValidatedByMe = (questId) => {
+    const questMeta = (quests || []).find(q => q.id === questId);
+    if (!questMeta) return false;
+
+    // Si la quête est solo, on regarde simplement si ma propre production est validée
+    if (!questMeta.is_collaborative) {
+      return myProductions.some(p => p.quest_id === questId && p.is_validated === true);
+    }
+
+    // Si la quête est collaborative : elle est considérée validée si le nombre de personnes requises a rendu le même livrable (même hash ou même contenu textuel précis)
+    const myProdForQuest = myProductions.find(p => p.quest_id === questId);
+    if (!myProdForQuest) return false;
+
+    // Si le manager l'a explicitement validée en direct
+    if (myProdForQuest.is_validated === true) return true;
+
+    // Sinon, calcul collaboratif automatique par redondance de traces cryptographiques ou textuelles
+    const requiredThreshold = questMeta.required_partners || 2;
+    
+    const matchingProds = allValidatedProds.filter(p => {
+      const targetQuestMatch = p.quest_id === questId;
+      if (!targetQuestMatch) return false;
+
+      // Si un hash de fichier est disponible, on compare la signature physique
+      if (myProdForQuest.file_hash && p.file_hash) {
+        return myProdForQuest.file_hash === p.file_hash;
+      }
+      // Sinon repli sur l'exactitude du texte soumis
+      return String(myProdForQuest.content).trim() === String(p.content).trim();
+    });
+
+    return matchingProds.length >= requiredThreshold;
+  };
+
+  // OBTENIR LE NOMBRE ACTUEL DE SOUMISSIONS PARTAGÉES POUR UNE QUÊTE COLLABORATIVE
+  const getCollaborativePartnersCount = (questId) => {
+    const myProdForQuest = myProductions.find(p => p.quest_id === questId);
+    if (!myProdForQuest) return 0;
+
+    return allValidatedProds.filter(p => {
+      if (p.quest_id !== questId) return false;
+      if (myProdForQuest.file_hash && p.file_hash) {
+        return myProdForQuest.file_hash === p.file_hash;
+      }
+      return String(myProdForQuest.content).trim() === String(p.content).trim();
+    }).length;
+  };
+
+  // REJOINDRE UNE NOUVELLE SESSION PEDAGOGIQUE VIA LE CODE D'ACCÈS
+  const handleJoinSession = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const cleanCode = accessCode.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    // 1. Vérifier la validité réelle du code de session dans la base
+    const { data: sessionData, error: sessionErr } = await supabase
+      .from('sessions')
+      .select('id, session_code')
+      .eq('session_code', cleanCode)
+      .single();
+
+    if (sessionErr || !sessionData) {
+      alert("⚠️ Code de session introuvable. Veuillez vérifier l'exactitude des caractères.");
+      return;
+    }
+
+    if (sessionCodesList.includes(cleanCode)) {
+      alert("💡 Vous êtes déjà enregistré au sein de cette session localisée.");
+      return;
+    }
+
+    const updatedList = [...sessionCodesList, cleanCode];
+
+    // 2. Mettre à jour le profil de l'élève
+    const { error: updateErr } = await supabase
+      .from('profiles')
+      .update({ joined_sessions: updatedList })
+      .eq('id', user.id);
+
+    if (updateErr) {
+      alert(`❌ Erreur d'inscription : ${updateErr.message}`);
+    } else {
+      setSessionCodesList(updatedList);
+      setSelectedSessionCode(cleanCode);
+      setAccessCode('');
+      alert(`🎉 Félicitations ! Vous avez rejoint la session ${cleanCode} avec succès.`);
+    }
+  };
+
+  // INTERFACE DE SOUMISSION DU TRAVAIL ÉLÈVE (SOUVENIR DE PRODUCTION AVEC SIGNATURE HASHLOCAL OPTIONNELLE)
+  const handleUploadAndSubmitProduction = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!submissionText.trim() || !selectedQuest || submitting) return;
+
+    setSubmitting(true);
     try {
       let fileUrl = null;
-      let calculatedHash = null;
+      let fileHash = null;
 
-      // Traitement du fichier physique s'il est fourni
-      if (attachedFile) {
-        // A. Calcul de l'empreinte numérique SHA-256
-        calculatedHash = await calculateFileHash(attachedFile);
+      // S'il y a un fichier joint, on procède au téléversement et au calcul de son empreinte unique
+      if (selectedFile) {
+        // Calcul du hash local avant envoi pour l'Ultra-Bonus collaboratif
+        try {
+          fileHash = await calculateFileHash(selectedFile);
+        } catch (hashErr) {
+          console.error("Erreur lors du calcul du hash du fichier :", hashErr);
+        }
 
-        // B. Téléversement dans le Storage Supabase
-        const fileExt = attachedFile.name.split('.').pop();
-        const storageFileName = `${crypto.randomUUID()}.${fileExt}`;
-        
+        const fileExt = selectedFile.name.split('.').pop();
+        const fileName = `${user.id}_${Date.now()}.${fileExt}`;
+        const filePath = `livrables/${fileName}`;
+
         const { error: uploadError } = await supabase.storage
-          .from('productions_files')
-          .upload(storageFileName, attachedFile);
+          .from('documents')
+          .upload(filePath, selectedFile);
 
         if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage.from('productions_files').getPublicUrl(storageFileName);
-        fileUrl = urlData.publicUrl;
+        const { data: publicUrlData } = supabase.storage
+          .from('documents')
+          .getPublicUrl(filePath);
+          
+        if (publicUrlData) fileUrl = publicUrlData.publicUrl;
       }
 
-      // 🔄 LOGIQUE DE REMPLACEMENT : S'il existe déjà un ancien rendu (non validé), on le supprime d'abord
-      const existingUncompletedProd = productions.find(p => p.questId === activeQuest.id);
-      if (existingUncompletedProd) {
-        await supabase.from('productions').delete().eq('id', existingUncompletedProd.id);
-      }
+      const calculatedPts = Number(selectedQuest.difficulty) === 3 ? 100 : Number(selectedQuest.difficulty) === 2 ? 50 : 20;
 
-      // C. Insertion du nouveau livrable
-      const { error: insertError } = await supabase
+      const payload = {
+        student_id: user.id,
+        student_email: user.email,
+        session_code: selectedSessionCode,
+        quest_id: selectedQuest.id,
+        quest_name: selectedQuest.name,
+        content: submissionText.trim(),
+        points: calculatedPts,
+        is_validated: !selectedQuest.is_collaborative, // Les quêtes solos s'auto-valident, les collaboratives attendent le nombre requis d'équipiers
+        file_url: fileUrl,
+        file_hash: fileHash,
+        date: new Date().toLocaleDateString('fr-FR') + ' à ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      };
+
+      const { error: insertErr } = await supabase
         .from('productions')
-        .insert([
-          {
-            student_id: user.id,          
-            student_email: user.email,    
-            quest_id: activeQuest.id,     
-            quest_name: activeQuest.name,
-            content: livrableContent || (activeQuest.is_collaborative ? "Fichier partagé" : ""),     
-            file_url: fileUrl,
-            file_hash: calculatedHash
-          }
-        ]);
+        .insert([payload]);
 
-      if (insertError) throw insertError;
+      if (insertErr) throw insertErr;
 
-      // D. Re-calcul et synchronisation immédiate des statuts
-      await fetchStudentProductions();
+      alert("🚀 Votre livrable a été correctement transmis dans le flux de traces de la session !");
       
-      setLivrableContent('');
-      setAttachedFile(null);
-
-      // Notification personnalisée selon le type de quête
-      if (activeQuest.is_collaborative) {
-        alert("🤝 Livrable enregistré avec succès ! Analyse du réseau d'équipiers en cours...");
-      } else {
-        alert(`🎉 Mission individuelle validée ! +${getPointsByDifficulty(activeQuest.difficulty)} XP.`);
-      }
-
+      // Recharger les productions de l'étudiant
+      await fetchMyProductions(user.id);
+      
+      // Reset des états du formulaire
+      setSubmissionText('');
+      setSelectedFile(null);
+      setSelectedQuest(null);
     } catch (err) {
-      console.error(err);
-      alert("❌ Une erreur est survenue lors du téléversement.");
+      alert(`❌ Échec de la transmission : ${err.message}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleNavigateToQuest = (sessionCode, treeId, floorIdx, questObj) => {
-    setSelectedSessionCode(sessionCode);
-    setSelectedTreeId(treeId);
-    setCurrentFloorIndex(floorIdx);
-    setActiveQuest(questObj);
-    setActiveTab('parcours'); 
-  };
+  // CALCULS DU SCORE GLOBAL XP DE L'ÉLÈVE
+  const totalXPEarned = myProductions
+    .filter(p => isQuestValidatedByMe(p.quest_id))
+    .reduce((sum, p) => sum + (p.points || 0), 0);
 
-  // Calcul dynamique des quêtes découvertes
-  const discoveredQuests = [];
-  mySessionsData.forEach(sessionItem => {
-    const linkedTree = trees[sessionItem.tree_id];
-    if (linkedTree && linkedTree.floors) {
-      const savedFloorValue = unlockedFloorsObj[sessionItem.tree_id];
-      const maxUnlockedIdx = savedFloorValue !== undefined ? parseInt(savedFloorValue, 10) : 0;
-      
-      linkedTree.floors.forEach((floor, fIdx) => {
-        if (fIdx <= maxUnlockedIdx) {
-          const floorQuests = quests.filter(q => (floor.quests || []).includes(q.id));
-          floorQuests.forEach(q => {
-            const isDoneHere = completedQuestIds.has(q.id);
-            if (!isDoneHere) {
-              discoveredQuests.push({
-                quest: q,
-                sessionCode: sessionItem.session_code,
-                treeId: sessionItem.tree_id,
-                floorIndex: fIdx,
-                floorId: floor.floorId,
-                treeName: linkedTree.name
-              });
-            }
-          });
-        }
-      });
-    }
-  });
-
-  const uniqueLivrables = productions.filter(p => !p.content?.startsWith("[Importé"));
+  // FILTRAGE DU COMPTEUR DE QUÊTES DISPONIBLES ET COMPATIBLES
+  const currentTreeObj = trees ? trees[selectedTreeId] : null;
+  const activeFloorsArray = currentTreeObj ? (currentTreeObj.floors || []) : [];
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
-      <style>{`
-        @keyframes customBounce {
-          0% { transform: translateY(-80px); animation-timing-function: ease-in; opacity: 0; }
-          60% { transform: translateY(0); animation-timing-function: ease-out; opacity: 1; }
-          80% { transform: translateY(-10px); animation-timing-function: ease-in; }
-          100% { transform: translateY(0); }
-        }
-        .animate-drop-bounce { animation: customBounce 0.6s forwards; }
-      `}</style>
+      
+      {/* SECTION BANDEAU : STATUT ET SÉLECTION DE LA SESSION ACTIVE */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="space-y-1">
+          <div className="text-xs font-black text-slate-400 uppercase tracking-widest">Tableau de bord Apprenant</div>
+          <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            🎖️ Compteur d'expérience : <span className="text-purple-600 bg-purple-50 border border-purple-100 px-3 py-0.5 rounded-lg font-mono">{totalXPEarned} XP</span>
+          </h1>
+        </div>
 
-      {/* BANNIÈRE SCORE */}
-      <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-wrap justify-between items-center gap-4 shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="bg-emerald-500 text-slate-950 font-black px-3 py-1.5 rounded-lg text-sm shadow">
-            ✨ {studentPoints} XP TOTAL
-          </div>
-          <div className="text-xs text-slate-300">
-            Profil : <span className="font-bold text-white">{user?.email || "Chargement..."}</span>
-            {selectedSessionCode && <span> | Session active : <strong className="text-emerald-400 font-mono">{selectedSessionCode}</strong></span>}
-          </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs font-bold w-full md:w-auto">
+          {sessionCodesList.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 whitespace-nowrap">Session active :</span>
+              <select 
+                value={selectedSessionCode || ''} 
+                onChange={(e) => setSelectedSessionCode(e.target.value)}
+                className="bg-slate-50 border rounded-xl p-2.5 text-slate-800 focus:outline-none cursor-pointer"
+              >
+                {sessionCodesList.map(code => (
+                  <option key={code} value={code}>Session {code}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <form onSubmit={handleJoinSession} className="flex items-center gap-2 w-full sm:w-auto">
+            <input 
+              type="text" 
+              placeholder="Saisir un code session..." 
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value)}
+              className="bg-slate-100 text-slate-800 border rounded-xl p-2.5 font-mono uppercase tracking-wider text-center w-full sm:w-44 focus:outline-none focus:border-purple-500"
+            />
+            <button type="submit" className="bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 rounded-xl transition-all shrink-0">Rejoindre ➔</button>
+          </form>
         </div>
       </div>
 
-      {/* TABS */}
-      <div className="flex border-b border-slate-200 gap-4">
-        <button onClick={() => { setActiveTab('parcours'); setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 ${activeTab === 'parcours' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400'}`}>🌳 Mes Sessions & Parcours</button>
-        <button onClick={() => { setActiveTab('portfolio'); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400'}`}>📂 Mon Portfolio ({uniqueLivrables.length})</button>
+      {/* SÉLECTEUR D'ONGLETS DU DASHBOARD */}
+      <div className="flex gap-2 border-b pb-1 text-xs font-bold">
+        <button 
+          onClick={() => setActiveTab('parcours')} 
+          className={`pb-2.5 px-4 border-b-2 transition-all ${activeTab === 'parcours' ? 'border-purple-600 text-purple-900 font-black' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          🌳 Mon Parcours d'Arbre
+        </button>
+        <button 
+          onClick={() => setActiveTab('historique')} 
+          className={`pb-2.5 px-4 border-b-2 transition-all ${activeTab === 'historique' ? 'border-purple-600 text-purple-900 font-black' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          📁 Mes Livrables transmis ({myProductions.length})
+        </button>
       </div>
 
-      {/* PARCOURS ACCESSIBLES */}
-      {activeTab === 'parcours' && !selectedSessionCode && (
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-            <div className="lg:col-span-2 space-y-4">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">🧠 Vos sessions actives</h3>
-              {mySessionsData.length === 0 ? (
-                <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-2xl text-center text-xs text-slate-400 italic font-medium">
-                  Vous n'avez rejoint aucune session pour le moment. Utilisez un code d'accès à droite !
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {mySessionsData.map(sessionItem => {
-                    const linkedTree = trees[sessionItem.tree_id];
-                    return (
-                      <div key={sessionItem.session_code} className="bg-white border-2 border-slate-100 hover:border-emerald-500/30 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-6 group relative overflow-hidden">
-                        <div className="absolute top-0 left-0 right-0 h-1 bg-slate-100 group-hover:bg-emerald-500 transition-colors" />
-                        <div>
-                          <span className="text-[10px] bg-slate-900 text-emerald-400 px-2 py-0.5 rounded font-mono font-bold uppercase">CODE : {sessionItem.session_code}</span>
-                          <h4 className="text-sm font-black text-slate-800 mt-2.5 leading-snug">
-                            Arbre : {linkedTree ? linkedTree.name : `Chargement (${sessionItem.tree_id})`}
-                          </h4>
+      {/* REPRÉSENTATION DU CONTENU SELON L'ONGLET ACTIF */}
+      {activeTab === 'parcours' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* COLONNE GAUCHE & CENTRE : VUE DE L'ARBRE INTELLIGENT */}
+          <div className="lg:col-span-2 space-y-6">
+            {activeFloorsArray.length === 0 ? (
+              <div className="bg-white border p-12 rounded-2xl text-center text-slate-400 font-medium text-xs">
+                🫙 Aucun Arbre pédagogique n'est encore associé à cette session. Mettez-vous en relation avec votre enseignant ou manager.
+              </div>
+            ) : (
+              [...activeFloorsArray]
+                .sort((a, b) => (b.floorId || 0) - (a.floorId || 0)) // Inversion visuelle pour l'effet de croissance (racine en bas, cime en haut)
+                .map((floor) => {
+                  const isFloorUnlocked = unlockedFloorsObj[floor.floorId] === true;
+                  const floorQuestsIds = floor.quests || [];
+                  const floorQuestsMeta = (quests || []).filter(q => floorQuestsIds.includes(q.id));
+
+                  // Filtres optionnels sur le parcours
+                  const filteredFloorQuests = floorQuestsMeta.filter(q => {
+                    const matchesTheme = filterTheme === 'all' || q.theme === filterTheme;
+                    const pts = Number(q.difficulty) === 3 ? 100 : Number(q.difficulty) === 2 ? 50 : 20;
+                    const matchesPoints = filterPoints === 'all' || String(pts) === filterPoints;
+                    return matchesTheme && matchesPoints;
+                  });
+
+                  return (
+                    <div 
+                      key={floor.floorId} 
+                      className={`transition-all duration-300 rounded-2xl p-5 border ${
+                        isFloorUnlocked 
+                          ? 'bg-white border-slate-200 shadow-xs' 
+                          : 'bg-slate-50/70 border-slate-200/50 opacity-60 pointer-events-none select-none'
+                      }`}
+                    >
+                      <div className="flex flex-wrap justify-between items-center border-b pb-3 mb-4 gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <span className={`font-black text-xs px-3 py-1 rounded-lg text-white shadow-xs ${isFloorUnlocked ? 'bg-purple-700' : 'bg-slate-400'}`}>
+                            ÉTAGE {floor.floorId}
+                          </span>
+                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            Mode : {floor.mode === 'random' ? `🎲 Aléatoire (Piocher ${floor.count || 1} au choix)` : '📌 Statique (Tout valider)'}
+                          </span>
                         </div>
-                        <button 
-                          onClick={() => { 
-                            setSelectedSessionCode(sessionItem.session_code); 
-                            setSelectedTreeId(sessionItem.tree_id); 
-                          }} 
-                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          🚀 Entrer dans la session
-                        </button>
+
+                        {!isFloorUnlocked && (
+                          <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 font-black uppercase px-2 py-0.5 rounded-md">
+                            🔒 Complétez l'étage inférieur pour débloquer
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {filteredFloorQuests.map(q => {
+                          const isAlreadyValidated = isQuestValidatedByMe(q.id);
+                          const hasSubmitted = myProductions.some(p => p.quest_id === q.id);
+                          const isBoss = Number(q.difficulty) === 3;
+                          const isMiniBoss = Number(q.difficulty) === 2;
+                          const xpReward = isBoss ? 100 : isMiniBoss ? 50 : 20;
+
+                          return (
+                            <div 
+                              key={q.id} 
+                              className={`p-4 rounded-xl border flex flex-col justify-between gap-4 transition-all ${
+                                isAlreadyValidated 
+                                  ? 'bg-emerald-50/50 border-emerald-200 text-emerald-950' 
+                                  : hasSubmitted 
+                                    ? 'bg-amber-50/50 border-amber-200 text-amber-950'
+                                    : 'bg-slate-50 text-slate-800 border-slate-100 hover:border-slate-200'
+                              }`}
+                            >
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between items-center gap-2 text-[10px] font-black uppercase">
+                                  <span className="opacity-75 tracking-wider">Axe {q.theme || 'Général'}</span>
+                                  <span className="bg-white/70 border px-1.5 py-0.5 rounded">
+                                    {isBoss ? '🔥 BOSS' : isMiniBoss ? '⚡ MINIBOSS' : '📄 STANDARD'}
+                                  </span>
+                                </div>
+
+                                <h3 className="font-extrabold text-xs leading-snug flex items-center gap-1.5">
+                                  {q.name} {q.is_collaborative && "🤝"}
+                                </h3>
+                                <p className="text-[11px] opacity-80 leading-relaxed font-medium line-clamp-3">
+                                  "{q.desc}"
+                                </p>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-2 border-t border-dashed border-slate-200 mt-1">
+                                <span className="font-mono text-xs font-bold text-purple-700">+{xpReward} XP</span>
+                                
+                                {isAlreadyValidated ? (
+                                  <span className="text-[11px] font-black text-emerald-600 flex items-center gap-1">✅ Validée</span>
+                                ) : hasSubmitted ? (
+                                  <div className="text-right">
+                                    <span className="text-[10px] font-black text-amber-600 block">⏳ En attente</span>
+                                    {q.is_collaborative && (
+                                      <span className="text-[9px] text-slate-400 font-medium">
+                                        ({getCollaborativePartnersCount(q.id)}/{q.required_partners || 2} équipiers)
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedQuest(q);
+                                      setSubmissionText('');
+                                      setSelectedFile(null);
+                                    }}
+                                    className="bg-white text-slate-700 border text-[11px] font-black px-3 py-1.5 rounded-lg hover:bg-purple-700 hover:text-white transition-all shadow-2xs cursor-pointer"
+                                  >
+                                    Transmettre mon travail
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+
+          {/* COLONNE DROITE : BARRE DE FILTRES ET ENCADRÉ CO-ÉQUIPIERS REJOINTS */}
+          <div className="space-y-6">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <h3 className="font-black text-xs text-slate-900 uppercase tracking-wider border-b pb-2">🎯 Filtres du Parcours</h3>
+              
+              <div className="space-y-3 text-xs font-bold">
+                <div>
+                  <label className="block text-[10px] text-slate-400 uppercase mb-1">Thématique RSE</label>
+                  <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="w-full bg-slate-50 border rounded-xl p-2 cursor-pointer font-medium">
+                    <option value="all">Toutes les thématiques</option>
+                    <option value="social">🌱 Axe Social</option>
+                    <option value="env">🌍 Axe Environnement</option>
+                    <option value="tech">⚙️ Axe Technique</option>
+                  </select>
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-[10px] text-slate-400 uppercase mb-1">Valeur en points</label>
+                  <select value={filterPoints} onChange={(e) => setFilterPoints(e.target.value)} className="w-full bg-slate-50 border rounded-xl p-2 cursor-pointer font-medium">
+                    <option value="all">Tous les barèmes</option>
+                    <option value="20">20 XP (Standard)</option>
+                    <option value="50">50 XP (Miniboss)</option>
+                    <option value="100">100 XP (Boss)</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-slate-50/80 border border-slate-200/60 p-5 rounded-2xl space-y-4">
-              <div>
-                <h4 className="font-black text-xs uppercase tracking-wide text-slate-800 flex items-center gap-1.5">🔑 Ajouter une session</h4>
-                <p className="text-[11px] text-slate-500 leading-relaxed mt-1">Saisissez un nouveau code pour ajouter un espace de formation à votre liste.</p>
+            {/* LISTE DES COMPAGNONS DE ROUTE REJOINTS DANS CETTE SESSION */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+              <h3 className="font-black text-xs text-slate-900 uppercase tracking-wider border-b pb-2 flex justify-between items-center">
+                <span>👥 Équipiers en ligne</span>
+                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-mono font-bold text-[10px]">{allStudentsInSession.length}</span>
+              </h3>
+              
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 text-xs">
+                {allStudentsInSession.map(student => (
+                  <div key={student.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100 font-medium">
+                    <div className="truncate pr-2">
+                      <div className="font-bold text-slate-800 truncate">{student.name || "Apprenant anonyme"}</div>
+                      <div className="text-[10px] text-slate-400 font-mono truncate">{student.email}</div>
+                    </div>
+                    {student.id === user?.id && (
+                      <span className="text-[9px] bg-purple-100 text-purple-700 font-black uppercase px-1.5 py-0.5 rounded-md shrink-0">Moi</span>
+                    )}
+                  </div>
+                ))}
               </div>
-              <form onSubmit={handleJoinSession} className="space-y-2">
-                <input 
-                  type="text" 
-                  placeholder="Ex: ORANGE-LILLE-26" 
-                  value={accessCode} 
-                  onChange={(e) => setAccessCode(e.target.value)} 
-                  className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-emerald-500" 
-                />
-                <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-black py-3 rounded-xl transition-all uppercase tracking-wider shadow-sm cursor-pointer">
-                  Ajouter la session
-                </button>
-              </form>
             </div>
           </div>
+
         </div>
       )}
 
-      {/* ZONE DE JEU D'UNE SESSION ACTIVE */}
-      {activeTab === 'parcours' && selectedSessionCode && selectedTreeId && trees[selectedTreeId] && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="flex justify-between items-center text-xs text-slate-500 bg-white px-4 py-2 border rounded-xl shadow-sm">
-              <button onClick={() => { setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className="font-bold text-slate-400 hover:text-slate-600 cursor-pointer">⬅️ Changer de session</button>
-              <span className="font-black text-slate-700 truncate">Session : <strong className="font-mono bg-slate-100 px-2 py-0.5 rounded">{selectedSessionCode}</strong></span>
-            </div>
+      {/* HISTORIQUE COMPLET DES LIVRABLES DÉPOSÉS PAR L'ÉLÈVE */}
+      {activeTab === 'historique' && (
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider border-b pb-2">📂 Registre de vos traces d'apprentissage</h2>
+          
+          {myProductions.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 text-xs font-medium italic">Vous n'avez soumis aucun livrable textuel ou numérique pour le moment.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {myProductions.map(p => {
+                const originalQuest = (quests || []).find(q => q.id === p.quest_id);
+                const isCurrentlyValidated = isQuestValidatedByMe(p.quest_id);
+                const pts = p.points || 20;
 
-            {(() => {
-              const allFloors = trees[selectedTreeId].floors || [];
-              const totalPaliers = allFloors.length;
-              if (totalPaliers === 0) return null;
+                return (
+                  <div key={p.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between gap-3 text-xs relative">
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono border-b pb-1.5 mb-2">
+                        <span>SESSION : {p.session_code}</span>
+                        <span>Dépôt le {p.date}</span>
+                      </div>
+                      
+                      <h4 className="font-black text-slate-800 text-xs leading-snug">
+                        🎯 Quête : {p.quest_name || "Nom inconnu"} {originalQuest?.is_collaborative && "🤝"}
+                      </h4>
+                      <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-100 mt-2 font-medium italic leading-relaxed">
+                        "{p.content}"
+                      </p>
 
-              const savedFloorValue = unlockedFloorsObj[selectedTreeId];
-              const unlockedFloorIndex = savedFloorValue !== undefined ? parseInt(savedFloorValue, 10) : 0;
-
-              const safeUnlockedIndex = Math.min(unlockedFloorIndex, totalPaliers - 1);
-              const safeCurrentIndex = Math.min(currentFloorIndex, safeUnlockedIndex);
-              const activeFloor = allFloors[safeCurrentIndex];
-              
-              const nextFloorRequirement = (safeUnlockedIndex + 1) * POINTS_REQUIRED_PER_FLOOR;
-              const assezDePointsPourSuivant = studentPoints >= nextFloorRequirement;
-              const pointsManquants = nextFloorRequirement - studentPoints;
-
-              return (
-                <div className="flex gap-4 items-stretch">
-                  <div className="flex flex-col items-center py-2 gap-3 bg-slate-100/60 px-2 rounded-xl border w-11 shrink-0">
-                    {allFloors.map((floor, idx) => {
-                      const isUnlocked = idx <= safeUnlockedIndex;
-                      const isActive = idx === safeCurrentIndex;
-                      return (
-                        <button key={floor.floorId} disabled={!isUnlocked} onClick={() => { setCurrentFloorIndex(idx); setActiveQuest(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer ${isActive ? 'bg-emerald-600 text-white' : isUnlocked ? 'bg-white border' : 'bg-slate-200 text-slate-400 opacity-50'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
-                      );
-                    })}
-                  </div>
-
-                  <div className={`flex-1 bg-white border rounded-2xl p-5 shadow-sm space-y-4 relative ${triggerDropAnimation ? 'animate-drop-bounce' : ''}`}>
-                    <div className="text-[11px] border-b pb-2 text-slate-400 font-bold uppercase">Palier {activeFloor.floorId} ({trees[selectedTreeId].name})</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {(quests.filter(q => (activeFloor.quests || []).includes(q.id))).map(quest => {
-                        const isSelected = activeQuest?.id === quest.id;
-                        const isDone = completedQuestIds.has(quest.id);
-                        
-                        // Calcul d'état intermédiaire pour l'affichage (rendu présent mais pas encore validé par l'équipe)
-                        const currentProd = productions.find(p => p.questId === quest.id);
-                        const isWaitingPartner = quest.is_collaborative && currentProd && !isDone;
-
-                        return (
-                          <button key={quest.id} onClick={() => setActiveQuest(quest)} className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${isSelected ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-500/10' : isDone ? 'bg-emerald-50/60 border-emerald-200' : isWaitingPartner ? 'bg-amber-50/60 border-amber-300 border-dashed animate-pulse' : 'bg-slate-50'}`}>
-                            <div className="flex justify-between items-center text-[9px] font-black">
-                              <span className="text-slate-400 uppercase">{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
-                              {isDone && <span className="text-emerald-600 font-black">Validée ✅</span>}
-                              {isWaitingPartner && <span className="text-amber-600 font-bold">⏳ En attente ({ (window.__allProductionsRaw || []).filter(p => p.quest_id === quest.id && p.file_hash === currentProd.file_hash).length }/{quest.required_partners || 2})</span>}
-                              {!isDone && !isWaitingPartner && <span className="text-amber-500">{quest.difficulty}★</span>}
-                            </div>
-                            <h4 className="text-xs font-bold mt-1 text-slate-900 flex flex-col gap-0.5">
-                              <span>{quest.name}</span>
-                              {quest.is_collaborative && <span className="text-[9px] text-purple-600 font-semibold tracking-wide">🤝 MISSION DUO ({quest.required_partners || 2} pers.)</span>}
-                            </h4>
-                          </button>
-                        );
-                      })}
+                      {p.file_url && (
+                        <div className="mt-2.5">
+                          <a 
+                            href={p.file_url} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="inline-flex items-center text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-1 rounded-lg font-bold font-mono text-[10px] border border-purple-200/60 transition-all cursor-pointer"
+                          >
+                            📄 Pièce jointe téléversée ➔
+                          </a>
+                        </div>
+                      )}
                     </div>
 
-                    {safeCurrentIndex === safeUnlockedIndex && safeCurrentIndex < totalPaliers - 1 && (
-                      <div className="pt-3 border-t flex items-center justify-between text-[11px]">
-                        <div>{!assezDePointsPourSuivant ? <span>🔒 Il manque <strong className="text-slate-600">{pointsManquants} XP</strong></span> : <span className="text-emerald-600 font-bold">🌟 Prêt !</span>}</div>
-                        <button 
-                          disabled={!assezDePointsPourSuivant} 
-                          onClick={() => handleUnlockNextFloor(safeCurrentIndex, totalPaliers)} 
-                          className={`font-black px-4 py-2 rounded-xl transition-all cursor-pointer ${assezDePointsPourSuivant ? 'bg-slate-950 text-white scale-105 shadow-md' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
-                        >
-                          Débloquer le palier suivant ➔
-                        </button>
-                      </div>
+                    <div className="flex justify-between items-center pt-2 mt-1 border-t border-dashed border-slate-200 text-[10px] font-black">
+                      <span className={isCurrentlyValidated ? 'text-emerald-600' : 'text-amber-600'}>
+                        {isCurrentlyValidated ? '✅ Statut : Confirmée' : '⏳ Statut : Attente validation / Équipiers'}
+                      </span>
+                      <span className={`font-mono text-xs ${isCurrentlyValidated ? 'text-purple-700' : 'text-slate-400'}`}>
+                        {isCurrentlyValidated ? `+${pts} XP` : '0 / ' + pts + ' XP'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MODALE POUR TRANSMETTRE UN LIVRABLE / COMPTE-RENDU (OUVERTE SUR CLIC) */}
+      {selectedQuest && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white w-full max-w-xl rounded-2xl p-6 shadow-2xl border border-slate-100 relative space-y-4 max-h-[90vh] overflow-y-auto">
+            
+            <button 
+              type="button" 
+              onClick={() => setSelectedQuest(null)} 
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-bold text-sm focus:outline-none"
+            >
+              ✕
+            </button>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest block">Soumission de livrable</span>
+              <h3 className="text-md font-black text-slate-950 leading-snug">
+                {selectedQuest.name} {selectedQuest.is_collaborative && "🤝"}
+              </h3>
+              <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100 italic">
+                "{selectedQuest.desc}"
+              </p>
+            </div>
+
+            {selectedQuest.is_collaborative && (
+              <div className="p-3 bg-purple-50 text-purple-950 rounded-xl border border-purple-200/60 text-xs font-medium leading-relaxed">
+                📢 <span className="font-black uppercase text-purple-700">Mission Collaborative d'Équipe :</span> Pour déverrouiller et valider automatiquement cette quête sans intervention du manager, un seuil minimum de <strong>{selectedQuest.required_partners || 2} participants</strong> de votre session doit copier-coller exactement le même livrable textuel ou téléverser le même fichier physique. Accordez-vous bien avec vos équipiers !
+              </div>
+            )}
+
+            <form onSubmit={handleUploadAndSubmitProduction} className="space-y-4 text-xs font-bold">
+              <div className="space-y-1.5">
+                <label className="block text-slate-700">Saisir votre compte-rendu textuel ou réponse :</label>
+                <textarea 
+                  required
+                  rows="4"
+                  placeholder="Rédigez votre démonstration ou copiez le texte partagé avec votre équipe..."
+                  value={submissionText}
+                  onChange={(e) => setSubmissionText(e.target.value)}
+                  className="w-full border rounded-xl p-3 bg-slate-50 text-slate-800 font-medium leading-relaxed focus:outline-none focus:bg-white focus:border-purple-500 transition-all shadow-inner"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-slate-700">Pièce jointe justificative (Facultatif) :</label>
+                <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-4 text-center relative hover:bg-slate-100/60 transition-all">
+                  <input 
+                    type="file" 
+                    onChange={(e) => setSelectedFile(e.target.files[0])}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div className="text-slate-400 font-medium">
+                    {selectedFile ? (
+                      <span className="text-purple-700 font-black">📄 Sélectionné : {selectedFile.name}</span>
+                    ) : (
+                      <span>📎 Déposer un fichier ou cliquer pour explorer</span>
                     )}
                   </div>
                 </div>
-              );
-            })()}
-          </div>
-
-          {/* COLONNE DE TRAVAIL / ENVOI DE RENDUS & REMPLACEMENTS */}
-          <div className="space-y-4">
-            {activeQuest ? (
-              <div className="bg-white border-2 border-purple-200 p-5 rounded-2xl shadow-md space-y-4 sticky top-24">
-                {(() => {
-                  const isDone = completedQuestIds.has(activeQuest.id);
-                  const currentStudentProd = productions.find(p => p.questId === activeQuest.id);
-                  const isWaitingPartner = activeQuest.is_collaborative && currentStudentProd && !isDone;
-
-                  // Calcul du nombre actuel de jumeaux binaires trouvés sur le serveur
-                  const currentTeamCount = isWaitingPartner || isDone 
-                    ? (window.__allProductionsRaw || []).filter(p => p.quest_id === activeQuest.id && p.file_hash === currentStudentProd?.file_hash).length
-                    : 0;
-
-                  return (
-                    <>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDone ? 'bg-emerald-100 text-emerald-800' : isWaitingPartner ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-purple-100 text-purple-800'}`}>
-                            {isDone ? 'Validée (Équipe OK)' : isWaitingPartner ? 'En attente de jumeau' : 'Mission Active'}
-                          </span>
-                          <h3 className="font-black text-slate-900 text-sm mt-1">{activeQuest.name}</h3>
-                          {activeQuest.is_collaborative && (
-                            <p className="text-[10px] text-purple-700 font-black mt-0.5">🤝 TYPE : COLLABORATIVE — DUPLICATION EXIGÉE</p>
-                          )}
-                        </div>
-                        <button onClick={() => setActiveQuest(null)} className="text-slate-400 text-xs font-bold">✕</button>
-                      </div>
-
-                      <p className="text-xs text-slate-600 italic">"{activeQuest.desc}"</p>
-
-                      {isDone && (
-                        <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-4 text-center text-xs font-bold space-y-1">
-                          <p>✅ Mission validée avec succès !</p>
-                          <p className="text-[10px] font-normal text-slate-500">Quota de {activeQuest.required_partners || 2} fichiers identiques atteint dans le groupe.</p>
-                        </div>
-                      )}
-
-                      {/* MESSAGE D'UI AMELIORE POUR L'ATTENTE PARTENAIRE & REMPLACEMENT */}
-                      {isWaitingPartner && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs space-y-2">
-                          <p className="text-amber-900 font-bold">⏳ Fichier en attente d'association ({currentTeamCount}/{activeQuest.required_partners || 2})</p>
-                          <p className="text-[11px] text-slate-600 leading-relaxed">
-                            Votre document a été haché avec succès. Transmettez <strong>exactement le même fichier</strong> à vos collaborateurs pour qu'ils le déposent également ici.
-                          </p>
-                          <div className="text-[10px] bg-white p-1.5 border rounded text-slate-400 truncate font-mono">
-                            SHA-256 : {currentStudentProd?.file_hash}
-                          </div>
-                          <p className="text-[10px] font-bold text-amber-800 bg-amber-100/60 p-1.5 rounded text-center">
-                            💡 Vous vous êtes trompé ? Remplissez à nouveau le formulaire ci-dessous pour écraser et remplacer votre document.
-                          </p>
-                        </div>
-                      )}
-
-                      {/* LE FORMULAIRE RESTE DISPONIBLE SI LA MISSION N'EST PAS FINALE POUR PERMETTRE LE REMPLACEMENT */}
-                      {!isDone && (
-                        <form onSubmit={handleSubmitLivrable} className="space-y-3 pt-2 border-t">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
-                            {isWaitingPartner ? "🔄 Remplacer par un autre rendu :" : "Rédiger votre note explicative (optionnelle) :"}
-                          </label>
-                          <textarea rows="3" value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder="Ajoutez un commentaire ou une explication personnelle si vous le souhaitez..." className="w-full bg-slate-50 border rounded-xl p-3 text-xs focus:border-purple-500 focus:outline-none" />
-                          
-                          <div className="space-y-1.5 border-t pt-3">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
-                              📁 Fichier Justificatif {activeQuest.is_collaborative ? <strong className="text-purple-600">(OBLIGATOIRE)</strong> : '(Optionnel)'}
-                            </label>
-                            <input type="file" required={activeQuest.is_collaborative} onChange={handleFileChangeRaw} className="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:file:border-0 file:text-[11px] file:font-black file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer" />
-                            {attachedFile && <p className="text-[10px] text-emerald-600 font-bold">✓ {attachedFile.name} sélectionné</p>}
-                          </div>
-
-                          <button type="submit" className="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-2.5 rounded-xl text-xs uppercase shadow cursor-pointer transition-all">
-                            {isWaitingPartner ? "🔄 Écraser et Remplacer le livrable" : "💾 Déposer mon rendu unique"}
-                          </button>
-                        </form>
-                      )}
-                    </>
-                  );
-                })()}
               </div>
-            ) : (
-              <div className="bg-slate-100 border border-dashed rounded-2xl p-6 text-center text-xs text-slate-400 py-12">🎯 Sélectionnez une mission pour commencer.</div>
-            )}
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedQuest(null)}
+                  className="w-1/2 bg-slate-100 text-slate-700 py-2.5 rounded-xl hover:bg-slate-200 transition-all cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={submitting || !submissionText.trim()}
+                  className="w-1/2 bg-purple-700 text-white py-2.5 rounded-xl hover:bg-purple-800 transition-all shadow-md font-black disabled:opacity-50 cursor-pointer"
+                >
+                  {submitting ? "Téléversement en cours..." : "Valider et envoyer 🚀"}
+                </button>
+              </div>
+            </form>
+
           </div>
         </div>
       )}
 
-      {/* PORTFOLIO TECHNIQUE */}
-      {activeTab === 'portfolio' && user && (
-        <div className="space-y-8">
-          {/* MISSIONS DÉCOUVERTES */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm">
-            <div className="border-b pb-2">
-              <h3 className="font-black text-xs text-purple-700 uppercase tracking-widest flex items-center gap-2">
-                🎯 Mes Missions Découvertes / En cours ({discoveredQuests.length})
-              </h3>
-            </div>
-            {discoveredQuests.length === 0 ? (
-              <div className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-dashed">
-                Aucune mission en cours. Vous avez terminé toutes les quêtes de vos paliers actuels !
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {discoveredQuests.map(({ quest, sessionCode, treeId, floorIndex, floorId, treeName }) => (
-                  <button 
-                    key={`${sessionCode}-${quest.id}`}
-                    onClick={() => handleNavigateToQuest(sessionCode, treeId, floorIndex, quest)}
-                    className="bg-purple-50/40 hover:bg-purple-50 border-2 border-purple-100/60 hover:border-purple-400 p-4 rounded-2xl text-left shadow-sm transition-all flex flex-col justify-between gap-4 group cursor-pointer relative"
-                  >
-                    <div>
-                      <div className="flex justify-between items-center text-[9px] font-mono font-bold text-purple-500">
-                        <span>{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
-                        <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-mono text-[8px]">SESSION: {sessionCode}</span>
-                      </div>
-                      <h4 className="font-black text-xs text-slate-800 mt-2 group-hover:text-purple-900 leading-tight">
-                        {quest.name} {quest.is_collaborative && "🤝"}
-                      </h4>
-                    </div>
-                    <div className="text-[9px] text-slate-400 font-semibold border-t pt-2 flex justify-between items-center">
-                      <span>{treeName} • P.{floorId}</span>
-                      <span className="text-purple-600 font-bold group-hover:underline">S'y rendre ➔</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* FILTRES DU PORTFOLIO */}
-          <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-md">
-            <div className="space-y-0.5">
-              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">🎛️ Centre de Tri</h3>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer">
-                <option value="all">🌍 Toutes les catégories</option>
-                <option value="env">🌱 RSE & Environnement</option>
-                <option value="tech">⚙️ Code & Tech</option>
-              </select>
-            </select>
-          </div>
-
-          {/* LES RÉUSSITES DE L'APPRENANT */}
-          <div className="space-y-4">
-            <div className="border-b border-slate-200 pb-2">
-              <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide">
-                🏆 Mon Historique des dépôts <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-xs font-mono font-bold">{uniqueLivrables.length}</span>
-              </h3>
-            </div>
-            {uniqueLivrables.length === 0 ? (
-              <div className="bg-white border rounded-2xl p-8 text-center text-xs text-slate-400 italic font-medium">Aucun rendu trouvé en base de données.</div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {uniqueLivrables.filter(p => {
-                  const originalQuest = quests.find(q => q.id === p.questId);
-                  if (!originalQuest) return true;
-                  const pts = getPointsByDifficulty(originalQuest.difficulty);
-                  const matchTheme = filterTheme === 'all' || originalQuest.theme === filterTheme;
-                  const matchPoints = filterPoints === 'all' || pts === parseInt(filterPoints, 10);
-                  return matchTheme && matchPoints;
-                }).map(p => {
-                  const originalQuest = quests.find(q => q.id === p.questId);
-                  const pts = originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100;
-                  const isCurrentlyValidated = completedQuestIds.has(p.questId);
-
-                  return (
-                    <div key={p.id} className="bg-white border-2 border-slate-100 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden">
-                      <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${isCurrentlyValidated ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-                      <div>
-                        <div className="flex justify-between items-center text-[10px] font-mono font-bold gap-2">
-                          <span className="uppercase bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold">{p.questId}</span>
-                          
-                          {p.file_url && (
-                            <a href={p.file_url} target="_blank" rel="noreferrer" className="bg-sky-100 text-sky-800 px-2 py-0.5 rounded border border-sky-300/40">📄 Fichier ➔</a>
-                          )}
-                          
-                          <span className={`${isCurrentlyValidated ? 'text-emerald-600' : 'text-amber-600'} font-black ml-auto`}>
-                            {isCurrentlyValidated ? `+${pts} XP` : '⏳ Partenaire requis'}
-                          </span>
-                        </div>
-                        
-                        <h4 className="font-black text-xs text-slate-800 mt-3.5 leading-snug">
-                          {p.questName} {originalQuest?.is_collaborative && "🤝"}
-                        </h4>
-                        <p className="text-[11px] text-slate-500 line-clamp-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100 mt-3 font-medium italic">"{p.content}"</p>
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-medium flex justify-between font-mono">
-                        <span>{isCurrentlyValidated ? '✅ Validée' : '⏳ En attente'}</span>
-                        <span>Soumis le {p.date}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
