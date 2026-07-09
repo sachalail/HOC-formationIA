@@ -22,7 +22,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         const { data: sessionsData, error: sessionsError } = await supabase
           .from('sessions')
           .select('*')
-          .contains('drh', [hrUserId]); // Filtre si l'ID est dans l'array Postgres
+          .contains('drh_ids', [hrUserId]); // Filtre si l'ID est dans l'array Postgres
 
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
