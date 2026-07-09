@@ -63,29 +63,35 @@ export default function ClientDashboardScreen({ trees, quests }) {
     fetchHRData();
   }, []);
 
-  // 4. Dès que la session sélectionnée change, on récupère ses étudiants
+  // 4. Dès que la session sélectionnée change, on récupère AUTOMATIQUEMENT ses étudiants
   useEffect(() => {
-    if (!selectedSession || !selectedSession.students || selectedSession.students.length === 0) {
+    if (!selectedSession || !selectedSession.session_code) {
       setSessionStudents([]);
       return;
     }
 
     const fetchStudentsProfiles = async () => {
-      // Récupère les profils des étudiants inscrits dans cette session
-      const { data: profiles, error } = await supabase
-        .from('profiles')
-        .select('id, email') // Ajuste selon les colonnes existantes (ex: 'name' si tu l'as ajouté)
-        .in('id', selectedSession.students);
+      try {
+        // On cherche tous les profils d'étudiants dont le tableau 'session_codes' contient le code de cette session
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .contains('session_codes', JSON.stringify([selectedSession.session_code]));
 
-      if (!error && profiles) {
-        // On map pour garder une structure propre (avec fallback si le nom n'est pas dispo)
-        const formattedStudents = profiles.map(p => ({
-          uid: p.id,
-          name: p.email.split('@')[0], // Fallback sympa si tu n'as pas de colonne 'name'
-          email: p.email,
-          joinedTrees: selectedSession.tree_codes || []
-        }));
-        setSessionStudents(formattedStudents);
+        if (error) throw error;
+
+        if (profiles) {
+          // On map pour garder la structure attendue par le reste de ton écran
+          const formattedStudents = profiles.map(p => ({
+            uid: p.id,
+            name: p.email.split('@')[0], // Fallback sur le début du mail en attendant un champ 'name'
+            email: p.email,
+            joinedTrees: selectedSession.tree_id ? [selectedSession.tree_id] : [] // Utilise la colonne tree_id de ta table sessions
+          }));
+          setSessionStudents(formattedStudents);
+        }
+      } catch (err) {
+        console.error("Erreur lors de la récupération automatique des étudiants :", err);
       }
     };
 
