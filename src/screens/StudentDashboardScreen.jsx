@@ -4,7 +4,6 @@ import { supabase } from '../supabaseClient';
 
 export default function StudentDashboardScreen({ trees, quests }) {
   const [user, setUser] = useState(null);
-  // On stocke la liste sous forme de tableau standard (qui sera sérialisé en JSON en BDD)
   const [sessionCodesList, setSessionCodesList] = useState([]); 
   const [mySessionsData, setMySessionsData] = useState([]); 
   const [selectedSessionCode, setSelectedSessionCode] = useState(null); 
@@ -17,8 +16,8 @@ export default function StudentDashboardScreen({ trees, quests }) {
   const [filterTheme, setFilterTheme] = useState('all');
   const [filterPoints, setFilterPoints] = useState('all');
 
-  // ÉTATS DE SUIVI UNIQUE
-  const [unlockedFloorIndex, setUnlockedFloorIndex] = useState(0); 
+  // ÉTATS DE SUIVI UNIQUE (Synchronisés avec le JSONB de Supabase)
+  const [unlockedFloorsObj, setUnlockedFloorsObj] = useState({}); 
   const [currentFloorIndex, setCurrentFloorIndex] = useState(0); 
   
   // 🛡️ ÉTAT ANTI-SPAM
@@ -34,23 +33,27 @@ export default function StudentDashboardScreen({ trees, quests }) {
 
   const POINTS_REQUIRED_PER_FLOOR = 300;
 
-  // 🔑 1. RÉCUPÉRATION DE L'UTILISATEUR ET DE SES SESSIONS (JSON)
+  // 🔑 1. RÉCUPÉRATION DE L'UTILISATEUR, DE SES SESSIONS ET DE SES PALIERS (JSONB)
   useEffect(() => {
     const getUserData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUser(session.user);
 
-        // On récupère le champ JSONB 'session_codes'
+        // Récupération de 'session_codes' et 'unlocked_floors'
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('session_codes')
+          .select('session_codes, unlocked_floors')
           .eq('id', session.user.id)
           .single();
 
-        if (profile?.session_codes && Array.isArray(profile.session_codes) && !profileError) {
-          setSessionCodesList(profile.session_codes);
-          fetchSessionsDetails(profile.session_codes);
+        if (profile && !profileError) {
+          if (Array.isArray(profile.session_codes)) {
+            setSessionCodesList(profile.session_codes);
+            fetchSessionsDetails(profile.session_codes);
+          }
+          // On injecte l'objet JSONB des paliers (si null ou inexistant, on met {})
+          setUnlockedFloorsObj(profile.unlocked_floors || {});
         }
       }
     };
@@ -61,7 +64,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
   const fetchSessionsDetails = async (codes) => {
     if (!codes || codes.length === 0) return;
 
-    // Correction de la requête pour matcher le type de données stocké (code ou ID)
     const { data: sessionsData, error } = await supabase
       .from('sessions')
       .select('id, session_code, tree_id')
@@ -104,27 +106,15 @@ export default function StudentDashboardScreen({ trees, quests }) {
     }
   }, [user]);
 
-  // PERSISTANCE DES ÉTAGES EN LOCALSTORAGE
+  // Réinitialisation du palier de consultation dès qu'on change d'arbre
   useEffect(() => {
-    if (selectedTreeId && user) {
-      localStorage.setItem(
-        `ecolearn_floor_${user.id}_${selectedTreeId}`, 
-        unlockedFloorIndex.toString()
-      );
-    }
-  }, [unlockedFloorIndex, user, selectedTreeId]);
-
-  useEffect(() => {
-    if (selectedTreeId && user) {
-      const savedFloor = localStorage.getItem(`ecolearn_floor_${user.id}_${selectedTreeId}`);
-      const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
-      setUnlockedFloorIndex(floorIdx);
+    if (selectedTreeId) {
       setCurrentFloorIndex(0); 
       setActiveQuest(null);
     }
-  }, [user, selectedTreeId]);
+  }, [selectedTreeId]);
 
-  // 💾 3. COUPLAGE ET ENREGISTREMENT JSON DANS SUPABASE
+  // 💾 3. REJOINDRE UNE SESSION (JSON EN BDD)
   const handleJoinSession = async (e) => {
     e.preventDefault();
     const inputCode = accessCode.trim().toUpperCase();
@@ -138,7 +128,6 @@ export default function StudentDashboardScreen({ trees, quests }) {
       return;
     }
 
-    // Vérification de l'existence de la session via le code textuel saisi
     const { data: targetSession, error: sessionError } = await supabase
       .from('sessions')
       .select('*')
@@ -150,10 +139,8 @@ export default function StudentDashboardScreen({ trees, quests }) {
       return;
     }
 
-    // Sécurité de type : On pousse le code textuel validé par la BDD (ou targetSession.session_code)
     const updatedSessionCodes = [...sessionCodesList, targetSession.session_code];
 
-    // Sauvegarde du tableau JSON directement dans Supabase
     const { error: updateError } = await supabase
       .from('profiles')
       .update({ session_codes: updatedSessionCodes }) 
@@ -171,6 +158,40 @@ export default function StudentDashboardScreen({ trees, quests }) {
       setCurrentFloorIndex(0);
       setAccessCode('');
       alert(`🎉 Session "${targetSession.session_code}" ajoutée ad aeternam !`);
+    }
+  };
+
+  // 🆙 4. DÉBLOCAGE DU PALIER SUIVANT DANS LE JSONB SUPABASE
+  const handleUnlockNextFloor = async (currentUnlockedIdx, totalPaliers) => {
+    if (!user || !selectedTreeId) return;
+
+    const nextIndex = currentUnlockedIdx + 1;
+    if (nextIndex >= totalPaliers) return;
+
+    // On prépare le nouvel objet JSONB mis à jour
+    const updatedFloorsObj = {
+      ...unlockedFloorsObj,
+      [selectedTreeId]: nextIndex
+    };
+
+    // Sauvegarde en base de données
+    const { error } = await supabase
+      .from('profiles')
+      .update({ unlocked_floors: updatedFloorsObj })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error("Erreur lors de la sauvegarde du palier :", error.message);
+      alert("❌ Impossible de sauvegarder votre progression sur le serveur.");
+    } else {
+      // Animation graphique locale
+      setTriggerDropAnimation(true); 
+      setTimeout(() => setTriggerDropAnimation(false), 600);
+      
+      // Mise à jour de l'état
+      setUnlockedFloorsObj(updatedFloorsObj);
+      setCurrentFloorIndex(nextIndex);
+      setActiveQuest(null);
     }
   };
 
@@ -374,6 +395,10 @@ export default function StudentDashboardScreen({ trees, quests }) {
               const totalPaliers = allFloors.length;
               if (totalPaliers === 0) return null;
 
+              // Extraction du palier débloqué pour cet arbre spécifique depuis l'objet JSONB
+              const savedFloorValue = unlockedFloorsObj[selectedTreeId];
+              const unlockedFloorIndex = savedFloorValue !== undefined ? parseInt(savedFloorValue, 10) : 0;
+
               const safeUnlockedIndex = Math.min(unlockedFloorIndex, totalPaliers - 1);
               const safeCurrentIndex = Math.min(currentFloorIndex, safeUnlockedIndex);
               const activeFloor = allFloors[safeCurrentIndex];
@@ -419,7 +444,13 @@ export default function StudentDashboardScreen({ trees, quests }) {
                     {safeCurrentIndex === safeUnlockedIndex && safeCurrentIndex < totalPaliers - 1 && (
                       <div className="pt-3 border-t flex items-center justify-between text-[11px]">
                         <div>{!assezDePointsPourSuivant ? <span>🔒 Il manque <strong className="text-slate-600">{pointsManquants} XP</strong></span> : <span className="text-emerald-600 font-bold">🌟 Prêt !</span>}</div>
-                        <button disabled={!assezDePointsPourSuivant} onClick={() => { setTriggerDropAnimation(true); setTimeout(() => setTriggerDropAnimation(false), 600); setUnlockedFloorIndex(safeCurrentIndex + 1); setCurrentFloorIndex(safeCurrentIndex + 1); setActiveQuest(null); }} className={`font-black px-4 py-2 rounded-xl transition-all cursor-pointer ${assezDePointsPourSuivant ? 'bg-slate-950 text-white scale-105 shadow-md' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>Débloquer le palier suivant ➔</button>
+                        <button 
+                          disabled={!assezDePointsPourSuivant} 
+                          onClick={() => handleUnlockNextFloor(safeCurrentIndex, totalPaliers)} 
+                          className={`font-black px-4 py-2 rounded-xl transition-all cursor-pointer ${assezDePointsPourSuivant ? 'bg-slate-950 text-white scale-105 shadow-md' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                        >
+                          Débloquer le palier suivant ➔
+                        </button>
                       </div>
                     )}
                   </div>
@@ -428,7 +459,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
             })()}
           </div>
 
-          {/* COLONNE DETRAVAIL / DETAILS DE MISSION */}
+          {/* COLONNE DE TRAVAIL / DETAILS DE MISSION */}
           <div className="space-y-4">
             {activeQuest ? (
               <div className="bg-white border-2 border-purple-200 p-5 rounded-2xl shadow-md space-y-4 sticky top-24">
@@ -471,7 +502,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">📁 Joindre un justificatif</label>
                             <input type="file" onChange={handleFileChange} className="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-black file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer" />
                             {attachedFile && <p className="text-[10px] text-emerald-600 font-bold">✓ {attachedFile.name} chargé</p>}
- Espaces de formation                      </div>
+                          </div>
 
                           <button type="submit" disabled={isActiveQuestDone} className={`w-full font-bold py-2 rounded-xl text-xs uppercase mt-2 text-white transition-all cursor-pointer ${isActiveQuestDone ? 'bg-slate-300 cursor-not-allowed' : 'bg-purple-700 hover:bg-purple-600'}`}>
                             {isActiveQuestDone ? "✅ Déjà validée" : "💾 Déposer le livrable"}
