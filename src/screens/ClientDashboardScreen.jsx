@@ -4,14 +4,39 @@ import { supabase } from '../supabaseClient';
 
 export default function ClientDashboardScreen({ trees, quests }) {
   const [sessions, setSessions] = useState([]); 
-  const [selectedSession, setSelectedSession] = useState(null); 
+  const [selectedSession, setSelectedSession] = useState(() => {
+    // Anti-reset : récupération de la session sauvegardée
+    const saved = sessionStorage.getItem('drh_selected_session');
+    return saved ? JSON.parse(saved) : null;
+  }); 
   const [sessionStudents, setSessionStudents] = useState([]); 
   const [allProductions, setAllProductions] = useState([]); 
   const [loading, setLoading] = useState(true);
 
-  // ÉTATS DES FILTRES MULTICRITÈRES (TAGS)
-  const [selectedStudents, setSelectedStudents] = useState([]); // Array d'objets { uid, name, email }
-  const [selectedQuests, setSelectedQuests] = useState([]); // Array d'objets { id, name }
+  // ÉTATS DES FILTRES PERSISTANTS (Anti-reset au changement d'onglet / Alt+Tab)
+  const [selectedStudents, setSelectedStudents] = useState(() => {
+    const saved = sessionStorage.getItem('drh_filter_students');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedQuests, setSelectedQuests] = useState(() => {
+    const saved = sessionStorage.getItem('drh_filter_quests');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Sauvegarde des filtres dans le sessionStorage dès qu'ils changent
+  useEffect(() => {
+    sessionStorage.setItem('drh_filter_students', JSON.stringify(selectedStudents));
+  }, [selectedStudents]);
+
+  useEffect(() => {
+    sessionStorage.setItem('drh_filter_quests', JSON.stringify(selectedQuests));
+  }, [selectedQuests]);
+
+  useEffect(() => {
+    if (selectedSession) {
+      sessionStorage.setItem('drh_selected_session', JSON.stringify(selectedSession));
+    }
+  }, [selectedSession]);
 
   useEffect(() => {
     const fetchHRData = async () => {
@@ -29,7 +54,8 @@ export default function ClientDashboardScreen({ trees, quests }) {
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
 
-        if (sessionsData && sessionsData.length > 0) {
+        // Assigner la session par défaut uniquement si aucune n'est déjà mémorisée
+        if (sessionsData && sessionsData.length > 0 && !selectedSession) {
           setSelectedSession(sessionsData[0]);
         }
 
@@ -80,7 +106,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
 
         if (profiles) {
           const formattedStudents = profiles.map(p => {
-            // Extraction du palier max depuis le localStorage de secours de l'apprenant
             const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${selectedSession.tree_id}`);
             const maxFloor = savedFloor ? parseInt(savedFloor, 10) + 1 : 1;
 
@@ -98,16 +123,17 @@ export default function ClientDashboardScreen({ trees, quests }) {
       }
     };
 
-    // Réinitialiser les filtres lors d'un changement de cohorte
-    setSelectedStudents([]);
-    setSelectedQuests([]);
     fetchStudentsProfiles();
   }, [selectedSession]);
 
   const handleSessionChange = (e) => {
     const sessionDocId = e.target.value;
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
-    if (found) setSelectedSession(found);
+    if (found) {
+      setSelectedSession(found);
+      setSelectedStudents([]);
+      setSelectedQuests([]);
+    }
   };
 
   if (loading) {
@@ -130,7 +156,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const currentSessionSafe = selectedSession || sessions[0];
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
 
-  // 1. FILTRAGE APPLIQUÉ SUR TOUTES LES DONNÉES DE LA COHORTE + SÉLECTIONS DE TAGS
   const filteredProductions = allProductions.filter(p => {
     const isInSession = studentIdsInCurrentSession.includes(p.studentId);
     if (!isInSession) return false;
@@ -143,7 +168,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
 
   const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content?.startsWith("[Importé"));
   
-  // 2. LOGIQUE DES SCORES & XP RE-CALCULÉS DYNAMIQUEMENT
   const questsList = quests || [];
   const getPointsByDifficulty = (diff) => {
     const d = parseInt(diff, 10);
@@ -171,18 +195,15 @@ export default function ClientDashboardScreen({ trees, quests }) {
     };
   });
 
-  // Taux d'engagement de la sélection courante
   const totalStudents = sessionStudents.length;
   const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
-  // 3. GESTION DU RESTRUCTURAGE DES SÉLECTEURS (TRIÉ PAR DIFFICULTÉ / PALIER)
-  // Quêtes triées par difficulté croissante (1, puis 2, puis 3)
+  // TRI DES OPTIONS DE RECHERCHE
   const sortedQuestsOptions = [...questsList].sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10));
-  // Étudiants rangés par Palier Max décroissant
   const sortedStudentsOptions = [...sessionStudents].sort((a, b) => b.maxFloor - a.maxFloor);
 
-  // Fonctions d'Ajout / Retrait des Tags
+  // AJOUT/RETRAIT DES FILTRES
   const addStudentFilter = (uid) => {
     if (!uid) return;
     const match = sessionStudents.find(s => s.uid === uid);
@@ -210,7 +231,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
   return (
     <div className="max-w-7xl mx-auto px-8 py-8 space-y-6">
       
-      {/* BARRE HAUTE : SÉLECTION DE LA COHORTE */}
+      {/* SÉLECTION COHORTE */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
         <div className="flex items-center gap-3">
           <label className="text-xs font-black text-slate-700 uppercase tracking-wider whitespace-nowrap">
@@ -233,7 +254,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         </div>
       </div>
 
-      {/* BANNIÈRE COMMUNE (LUMINEUSE ET PRESTIGE) */}
+      {/* BANNIÈRE */}
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-2xl flex flex-wrap justify-between items-center gap-4 shadow-md">
         <div className="space-y-1">
           <div className="text-[10px] uppercase font-black tracking-wider text-emerald-400">Suivi d'Acculturation Entreprise</div>
@@ -252,78 +273,114 @@ export default function ClientDashboardScreen({ trees, quests }) {
         </button>
       </div>
 
-      {/* CENTRE DE FILTRAGE PAR TAGS (REDISPOSÉ) */}
+      {/* BLOC DE TRI DOUBLE COLONNES (TAGS + SÉLECTEURS ASSOCIES) */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-sm">
         <div className="text-[11px] font-black uppercase text-slate-500 tracking-wider">🎛️ Centre de Tri Avancé</div>
         
-        {/* ZONE DES TAGS ACTIFS (AU-DESSUS) */}
-        {(selectedStudents.length > 0 || selectedQuests.length > 0) && (
-          <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-200">
-            {selectedStudents.map(st => (
-              <span key={st.uid} className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-bold px-2.5 py-1 rounded-full">
-                👤 {st.name}
-                <button onClick={() => removeStudentFilter(st.uid)} className="hover:text-blue-900 font-black ml-0.5 cursor-pointer">✕</button>
-              </span>
-            ))}
-            {selectedQuests.map(q => (
-              <span key={q.id} className="inline-flex items-center gap-1.5 bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-bold px-2.5 py-1 rounded-full">
-                🎯 {q.name}
-                <button onClick={() => removeQuestFilter(q.id)} className="hover:text-purple-900 font-black ml-0.5 cursor-pointer">✕</button>
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* COLONNE FILTRE ÉTUDIANT */}
+          <div className="flex flex-col justify-between space-y-2">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Collaborateur :</label>
+              
+              {/* Zone de Tags Collaborateurs */}
+              <div className="flex flex-wrap gap-1.5 min-h-[32px] pb-1">
+                {selectedStudents.map(st => (
+                  <span key={st.uid} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    👤 {st.name}
+                    <button onClick={() => removeStudentFilter(st.uid)} className="hover:text-blue-900 font-black ml-0.5 cursor-pointer">✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
 
-        {/* SELECTEURS (LES ÉLÉMENTS SÉLECTIONNÉS SONT SOUSTRAITS DE LA RECHERCHE) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Collaborateur :</label>
             <select
               value=""
               onChange={(e) => { addStudentFilter(e.target.value); e.target.value = ""; }}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="" disabled>✨ Choisir un collaborateur (trié par palier max)...</option>
+              <option value="" disabled>✨ Sélectionner un collaborateur...</option>
               {sortedStudentsOptions
                 .filter(st => !selectedStudents.some(sel => sel.uid === st.uid))
-                .map(st => (
-                  <option key={st.uid} value={st.uid}>
-                    P.{st.maxFloor} — {st.email}
-                  </option>
-                ))}
+                .map((st, index, arr) => {
+                  const items = [];
+                  // Si c'est le tout premier élément ou qu'il y a un changement de palier
+                  if (index === 0 || st.maxFloor !== arr[index - 1].maxFloor) {
+                    items.push(
+                      <option key={`sep-floor-${st.maxFloor}`} disabled className="bg-slate-100 font-bold text-slate-500 text-[10px]">
+                        ─── COLLABORATEURS AU PALIER {st.maxFloor} ───
+                      </option>
+                    );
+                  }
+                  items.push(
+                    <option key={st.uid} value={st.uid}>
+                      Palier {st.maxFloor} — {st.email}
+                    </option>
+                  );
+                  return items;
+                })}
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Quête / Thème :</label>
+          {/* COLONNE FILTRE QUÊTES */}
+          <div className="flex flex-col justify-between space-y-2">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Quête / Thème :</label>
+              
+              {/* Zone de Tags Quêtes */}
+              <div className="flex flex-wrap gap-1.5 min-h-[32px] pb-1">
+                {selectedQuests.map(q => (
+                  <span key={q.id} className="inline-flex items-center gap-1 bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    🎯 {q.name}
+                    <button onClick={() => removeQuestFilter(q.id)} className="hover:text-purple-900 font-black ml-0.5 cursor-pointer">✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+
             <select
               value=""
               onChange={(e) => { addQuestFilter(e.target.value); e.target.value = ""; }}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="" disabled>✨ Choisir une mission (triée par difficulté)...</option>
+              <option value="" disabled>✨ Sélectionner une mission...</option>
               {sortedQuestsOptions
                 .filter(q => !selectedQuests.some(sel => sel.id === q.id))
-                .map(q => (
-                  <option key={q.id} value={q.id}>
-                    ({q.difficulty}★) — {q.name}
-                  </option>
-                ))}
+                .map((q, index, arr) => {
+                  const items = [];
+                  const diff = parseInt(q.difficulty, 10);
+                  // Si c'est la première quête ou s'il y a un changement de niveau de difficulté
+                  if (index === 0 || parseInt(q.difficulty, 10) !== parseInt(arr[index - 1].difficulty, 10)) {
+                    items.push(
+                      <option key={`sep-diff-${diff}`} disabled className="bg-slate-100 font-bold text-slate-500 text-[10px]">
+                        ─── MISSIONS DIFFICULTÉ {diff}★ ───
+                      </option>
+                    );
+                  }
+                  items.push(
+                    <option key={q.id} value={q.id}>
+                      ({q.difficulty}★) — {q.name}
+                    </option>
+                  );
+                  return items;
+                })}
             </select>
           </div>
+
         </div>
       </div>
 
-      {/* METRICS ROW DYNAMIQUES */}
+      {/* METRICS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm space-y-1">
-          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Compteur de Compétences (XP sélection)</div>
+          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Compteur de Compétences</div>
           <div className="text-3xl font-black text-slate-900">{totalXP} <span className="text-xs font-bold text-slate-400">XP</span></div>
           <p className="text-[11px] text-slate-500 font-medium">Somme pondérée des quêtes isolées.</p>
         </div>
 
         <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm space-y-1">
-          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Cas Pratiques / Livrables Trouvés</div>
+          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Cas Pratiques Trouvés</div>
           <div className="text-3xl font-black text-emerald-600">{uniqueProductionsGlobal.length} <span className="text-xs font-bold text-slate-400">Rendus</span></div>
           <p className="text-[11px] text-slate-500 font-medium">Preuves concrètes filtrées ci-dessous.</p>
         </div>
@@ -335,7 +392,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         </div>
       </div>
 
-      {/* TABLEAU SYNTHÈSE DES APPRENANTS */}
+      {/* SYNTHÈSE COHORTE */}
       <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-3">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">👥 Avancement de la Cohorte ({totalStudents})</h3>
         {totalStudents === 0 ? (
@@ -371,7 +428,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         )}
       </div>
 
-      {/* REGISTRE DES RENDUS (FLUX DE PRODUCTION DES APPRENANTS) */}
+      {/* REGISTRE DES RENDUS */}
       <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-4">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">📂 Registre d'audit des Livrables correspondants</h3>
         
