@@ -56,60 +56,54 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   }, [currentSessionSafe]);
 
   // 1. CHARGEMENT INITIAL DES SESSIONS ASSOCIÉES AU MANAGER / DRH
-  useEffect(() => {
-    const initializeDRHData = async () => {
-      try {
-        setLoading(true);
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          console.log("❌ Aucun utilisateur authentifié trouvé dans Supabase Auth.");
-          return;
+useEffect(() => {
+  const initializeDRHData = async () => {
+    try {
+      setLoading(true);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+
+      const hrUserId = authUser.id;
+
+      // REQUÊTE NATIVE ET PROPRE POUR COLONNE JSONB contenant un Array de Strings
+      const { data: fetchedSessions, error: sError } = await supabase
+        .from('sessions')
+        .select('*')
+        .contains('drh_ids', JSON.stringify([hrUserId])); // Match parfait avec ["ton-uuid"]
+
+      if (sError) throw sError;
+
+      if (fetchedSessions && fetchedSessions.length > 0) {
+        setSessions(fetchedSessions);
+        
+        // Validation et ré-aiguillage souple
+        const stillValid = fetchedSessions.find(s => String(s.id) === String(selectedSession?.id));
+        if (!stillValid) {
+          setSelectedSession(fetchedSessions[0]);
         }
-
-        const hrUserId = authUser.id;
-        console.log("👤 ID de ton compte utilisateur connecté :", hrUserId);
-
-        // Récupération des sessions de ce DRH
-        const { data: fetchedSessions, error: sError } = await supabase
-          .from('sessions')
-          .select('*')
-          .contains('drh_ids', [hrUserId]);
-
-        if (sError) throw sError;
-
-        console.log("📊 Sessions trouvées en BDD pour cet ID :", fetchedSessions);
-
-        if (fetchedSessions && fetchedSessions.length > 0) {
-          setSessions(fetchedSessions);
-          
-          // Comparaison souple (String) pour éviter les conflits de types (ex: Numéro vs UUID)
-          const stillValid = fetchedSessions.find(s => String(s.id) === String(selectedSession?.id));
-          if (!stillValid) {
-            setSelectedSession(fetchedSessions[0]);
-          }
-        } else {
-          setSessions([]);
-          setSelectedSession(null);
-        }
-
-        // Récupération globale du registre des productions
-        const { data: fetchedProductions, error: pError } = await supabase
-          .from('productions')
-          .select('*')
-          .order('id', { ascending: false });
-
-        if (pError) throw pError;
-        if (fetchedProductions) setAllProductions(fetchedProductions);
-
-      } catch (err) {
-        console.error("Erreur d'initialisation du tableau de bord client :", err);
-      } finally {
-        setLoading(false);
+      } else {
+        setSessions([]);
+        setSelectedSession(null);
       }
-    };
 
-    initializeDRHData();
-  }, []); 
+      // Récupération globale du registre des productions
+      const { data: fetchedProductions, error: pError } = await supabase
+        .from('productions')
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (pError) throw pError;
+      if (fetchedProductions) setAllProductions(fetchedProductions);
+
+    } catch (err) {
+      console.error("Erreur d'initialisation du tableau de bord client :", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  initializeDRHData();
+}, []);
 
   // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS DEPUIS SUPABASE
   useEffect(() => {
