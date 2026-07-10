@@ -2,27 +2,14 @@
 import React, { useState } from 'react';
 
 export default function DocScreen() {
-  const [activeTab, setActiveTab] = useState('user'); // 'user', 'formateur', 'drh', 'admin', 'bdd'
-  const [isDevMode, setIsDevMode] = useState(false); // false = Public (Version simplifiée), true = Dev (Technique)
+  const [activeTab, setActiveTab] = useState('user'); // 'user' ou 'formateur'
   
-  // États de simulation interactive pour les formulaires reproduits
-  const [simulatedQuestName, setSimulatedQuestName] = useState('Éco-gestes au bureau');
-  const [simulatedQuestTheme, setSimulatedQuestTheme] = useState('env');
-  const [simulatedQuestType, setSimulatedQuestType] = useState('normal');
+  // États de simulation interactive pour les petits formulaires
+  const [simulatedSessionCode, setSimulatedSessionCode] = useState('ROBOTIQUE-LYON-2026');
+  const [simulatedLivrable, setSimulatedLivrable] = useState('Projet_Robotique_Groupe3.pdf');
+  const [simulatedQuestName, setSimulatedQuestName] = useState('initiation-moteurs');
   const [simulatedIsCollab, setSimulatedIsCollab] = useState(true);
-  const [simulatedPartners, setSimulatedPartners] = useState(3);
-  const [simulatedSessionCode, setSimulatedSessionCode] = useState('AIRBUS-LILLE-26');
-  const [simulatedLivrable, setSimulatedLivrable] = useState('Livrable_Groupe4_RSE.pdf');
-  const [showFormPreview, setShowFormPreview] = useState(null); // 'quest', 'session', 'livrable' ou null
-
-  // Désactive l'onglet BDD si l'utilisateur quitte le mode Dev
-  const toggleDevMode = () => {
-    const nextDevMode = !isDevMode;
-    setIsDevMode(nextDevMode);
-    if (!nextDevMode && activeTab === 'bdd') {
-      setActiveTab('user');
-    }
-  };
+  const [showFormPreview, setShowFormPreview] = useState(null); // 'session', 'livrable', 'quest' ou null
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 space-y-6 pl-24 animate-fadeIn">
@@ -31,335 +18,269 @@ export default function DocScreen() {
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h2 className="text-lg font-black uppercase tracking-wider flex items-center gap-2">
-            📚 Centre de Documentation & Spécifications
+            📚 Centre de Documentation & Guides
           </h2>
           <p className="text-[11px] text-indigo-200 font-medium">
-            Cartographie des fonctionnalités, guides utilisateurs et architecture de la base de données
+            Découvrez le fonctionnement de la plateforme à travers ces guides simples et interactifs.
           </p>
-        </div>
-
-        {/* INTERRUPTEUR : Public // Dev */}
-        <div className="flex items-center gap-3 bg-slate-950/60 p-2 rounded-2xl border border-slate-800 self-stretch md:self-auto justify-between md:justify-start">
-          <span className={`text-[10px] font-black uppercase tracking-wider transition-colors ${!isDevMode ? 'text-emerald-400' : 'text-slate-500'}`}>
-            🍃 Public
-          </span>
-          
-          <button
-            onClick={toggleDevMode}
-            className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-300 focus:outline-none cursor-pointer ${
-              isDevMode ? 'bg-indigo-600' : 'bg-slate-700'
-            }`}
-          >
-            <div
-              className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-300 ${
-                isDevMode ? 'translate-x-6' : 'translate-x-0'
-              }`}
-            />
-          </button>
-
-          <span className={`text-[10px] font-black uppercase tracking-wider transition-colors ${isDevMode ? 'text-indigo-400' : 'text-slate-500'}`}>
-            💻 Dev
-          </span>
         </div>
       </div>
 
       {/* NAVIGATION PRINCIPALE */}
       <div className="flex border-b border-slate-200 overflow-x-auto pb-px gap-2">
         <button 
-          onClick={() => setActiveTab('user')} 
+          onClick={() => { setActiveTab('user'); setShowFormPreview(null); }} 
           className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 px-4 whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'user' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
-          👤 Apprenant (StudentDashboard)
+          👤 Guide de l'Apprenant (Page 1)
         </button>
         <button 
-          onClick={() => setActiveTab('formateur')} 
+          onClick={() => { setActiveTab('formateur'); setShowFormPreview(null); }} 
           className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 px-4 whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'formateur' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
-          🧠 Formateur (StudioScreen)
+          🧠 Guide du Formateur (Page 2)
         </button>
-        <button 
-          onClick={() => setActiveTab('drh')} 
-          className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 px-4 whitespace-nowrap transition-all cursor-pointer ${
-            activeTab === 'drh' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          💼 Espace DRH / Client
-        </button>
-        <button 
-          onClick={() => setActiveTab('admin')} 
-          className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 px-4 whitespace-nowrap transition-all cursor-pointer ${
-            activeTab === 'admin' ? 'border-red-600 text-red-700' : 'border-transparent text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          ⚡ Super Admin
-        </button>
-
-        {/* N'apparaît que si Dev Mode est activé */}
-        {isDevMode && (
-          <button 
-            onClick={() => setActiveTab('bdd')} 
-            className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 px-4 whitespace-nowrap transition-all cursor-pointer animate-fadeIn ${
-              activeTab === 'bdd' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-amber-600 font-extrabold'
-            }`}
-          >
-            🗄️ Architecture BDD
-          </button>
-        )}
       </div>
 
-
       {/* ======================================================== */}
-      {/* 👤 CONTENU : 1. APPRENANT (StudentDashboardScreen)       */}
+      {/* 👤 PAGE 1 : GUIDE DE L'APPRENANT                         */}
       {/* ======================================================== */}
       {activeTab === 'user' && (
         <div className="space-y-6">
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-2xl p-4 flex items-start gap-3">
-            <span className="text-xl">🎯</span>
-            <div>
-              <h4 className="text-xs font-black uppercase tracking-wider text-emerald-800">Objectif de l'Espace Apprenant</h4>
-              <p className="text-xs text-emerald-900/80 mt-0.5 leading-relaxed">
-                Centraliser la progression de l'élève. Il rejoint une session de cours, accomplit des défis pédagogiques individuels ou en groupe, gagne des points d'XP et débloque ses paliers.
-              </p>
-            </div>
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-2xl p-5 shadow-sm">
+            <h3 className="text-sm font-black text-emerald-900 uppercase tracking-wide">🎯 Ton Objectif : Valider le Palier 1</h3>
+            <p className="text-xs text-emerald-950/80 mt-1 leading-relaxed">
+              Pour franchir le premier palier de ton parcours, tu vas devoir accumuler tes premiers points d'XP (points d'expérience) en accomplissant les missions disponibles à ton étage. Dès que ta jauge d'XP est pleine, le palier supérieur se débloque automatiquement.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             <div className="lg:col-span-2 space-y-6">
               
-              {/* ACCÈS AUX SALLES */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-                <div className="flex justify-between items-start gap-4">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                      🔑 Accès aux Salles de Cours & Inscription
-                    </h3>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      L'élève saisit un code d'accès unique fourni par son formateur pour rejoindre instantanément son arbre de compétences.
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 flex flex-col items-center gap-1.5 shrink-0">
-                    <button 
-                      onClick={() => { setSimulatedSessionCode('AIRBUS-LILLE-26'); setShowFormPreview('session'); }}
-                      className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider cursor-pointer"
-                    >
-                      Ajouter !
-                    </button>
-                  </div>
+              {/* ÉTAPE 1 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  🔑 Étape 1 : Rejoindre ta session de cours
+                </h4>
+                <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+                  <p>Pour commencer, tu as besoin d'une clé d'accès.</p>
+                  <p><span className="font-bold text-slate-800">• Comment faire ?</span> Saisis le code unique fourni par ton formateur dans l'encadré d'inscription.</p>
+                  <blockquote className="bg-slate-50 border-l-4 border-slate-300 p-2 text-slate-600 italic rounded-r-lg">
+                    Le principe : C'est exactement comme entrer un code d'invitation pour rejoindre un serveur ou une partie personnalisée. En un clic, tu es connecté à ton Arbre de compétences et tu visualises tes premières quêtes.
+                  </blockquote>
                 </div>
-
-                {/* VERSION VULGARISÉE COLLÉGIEN */}
-                <div className="text-[11px] bg-emerald-900/5 text-emerald-950 p-3 rounded-xl border border-emerald-100/60">
-                  <p className="font-bold text-emerald-800">🗣️ Version simple (Pour tout comprendre) :</p>
-                  <p className="mt-1 text-slate-600">C'est comme quand tu tapes un code secret ou une invitation pour rejoindre un serveur ou une partie personnalisée dans ton jeu vidéo préféré ! Sauf qu'ici, la partie, c'est ton cours.</p>
-                </div>
-
-                {isDevMode && (
-                  <div className="text-[11px] bg-slate-900 text-slate-300 rounded-xl p-3 font-mono space-y-1 border border-slate-800">
-                    <p className="text-emerald-400 font-bold">🧠 Mécanique technique (Dev) :</p>
-                    <p>• Fonction : <code className="text-pink-400">handleJoinSession(e)</code></p>
-                    <p>• Mutation : Modifie le tableau JSONB <code className="text-amber-400">session_codes</code> dans <code className="text-purple-400">profiles</code>.</p>
-                  </div>
-                )}
+                <button 
+                  onClick={() => setShowFormPreview('session')}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider cursor-pointer"
+                >
+                  Simuler l'entrée du code ➔
+                </button>
               </div>
 
-              {/* BARÈME D'XP */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-                <div className="flex justify-between items-start gap-4">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                      🧗 Système de Palier & Barème d'XP
-                    </h3>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Chaque niveau du parcours réclame un quota strict de points d'XP (1★ = 100 XP • 2★ = 250 XP • 3★ = 500 XP).
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 flex flex-col items-center gap-1.5 shrink-0">
-                    <button className="bg-emerald-600 text-white text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider opacity-60 cursor-not-allowed">
-                      Palier suivant ➔
-                    </button>
-                  </div>
+              {/* ÉTAPE 2 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  🗂️ Étape 2 : Explorer ton Hub & Rendre un livrable
+                </h4>
+                <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+                  <p>Pour valider une quête individuelle et empocher ses XP, tu vas devoir fournir une preuve de ton travail (un <strong>Livrable</strong>) :</p>
+                  <p><span className="font-bold text-slate-800">• En mode Texte :</span> Tu rédiges ou colles directement ta réponse, ton code ou ton analyse dans la zone de texte prévue à cet écran.</p>
+                  <p><span className="font-bold text-slate-800">• En mode Document :</span> Tu glisses et déposes ton fichier (PDF, tableur, image, etc.) directement sur la quête avant de cliquer sur "Envoyer".</p>
                 </div>
+                <button 
+                  onClick={() => setShowFormPreview('livrable')}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider cursor-pointer"
+                >
+                  Simuler le dépôt d'un fichier ➔
+                </button>
+              </div>
 
-                <div className="text-[11px] bg-emerald-900/5 text-emerald-950 p-3 rounded-xl border border-emerald-100/60">
-                  <p className="font-bold text-emerald-800">🗣️ Version simple :</p>
-                  <p className="mt-1 text-slate-600">Plus tu réussis de missions difficiles (les quêtes à 3 étoiles), plus tu gagnes de gros points d'expérience (XP). Dès que ta jauge est pleine, tu passes au niveau supérieur (étage suivant).</p>
+              {/* ÉTAPE 3 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  🤝 Étape 3 : Maîtriser les Quêtes Collaboratives (Mode Coop)
+                </h4>
+                <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+                  <p>Certaines missions complexes affichent une icône d'équipe : ce sont des quêtes collaboratives.</p>
+                  <p><span className="font-bold text-slate-800">• La règle du jeu :</span> Pour que la quête soit validée par le système, <strong>tous les membres de ton groupe doivent déposer exactement le même fichier final</strong> sur leur compte respectif.</p>
+                  <p><span className="font-bold text-red-600">• Attention :</span> Si l'un de tes coéquipiers oublie de téléverser le document, la mission reste bloquée en statut "En attente" pour tout le monde. Communiquez, entraidez-vous et passez le palier ensemble !</p>
                 </div>
               </div>
 
-              {/* CO-DÉPÔT COOP */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-                <div className="flex justify-between items-start gap-4">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                      🤝 Système de Co-dépôt pour Missions d'Équipe
-                    </h3>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Pour valider une quête de groupe, plusieurs coéquipiers doivent envoyer le même fichier joint pour confirmer leur coopération.
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 flex flex-col items-center gap-1.5 shrink-0">
-                    <button 
-                      onClick={() => { setSimulatedLivrable('Dossier_RSE_Final.pdf'); setShowFormPreview('livrable'); }}
-                      className="bg-purple-700 hover:bg-purple-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider cursor-pointer"
-                    >
-                      Soumettre
-                    </button>
-                  </div>
+              {/* ÉTAPE 4 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  🧗 Étape 4 : Le passage au niveau supérieur (Passage de Palier)
+                </h4>
+                <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+                  <p>Regarde ta jauge globale d'expérience à l'écran. Si tu as atteint le quota d'XP requis pour le Palier 1, félicitations !</p>
+                  <p><strong>Le Palier 2 s'ouvre instantanément.</strong> De nouvelles quêtes plus challengeantes (et plus rémunératrices en XP) apparaissent sur ton Arbre. L'aventure continue !</p>
                 </div>
+              </div>
 
-                <div className="text-[11px] bg-emerald-900/5 text-emerald-950 p-3 rounded-xl border border-emerald-100/60">
-                  <p className="font-bold text-emerald-800">🗣️ Version simple :</p>
-                  <p className="mt-1 text-slate-600">C'est une mission en multijoueur coopératif ! Le site attend que tous les membres du groupe aient déposé le même travail. Tant qu'il manque un joueur, la mission reste "En attente".</p>
+              {/* ÉTAPE 5 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  🏆 Étape 5 : Contempler ta réussite dans ton Portfolio
+                </h4>
+                <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+                  <p>Toutes tes missions se pilotent et s'analysent depuis ton <strong>Portfolio</strong>. C'est à la fois ton journal de bord, ton tableau de chasse et ton Hub de Guilde personnel !</p>
+                  <blockquote className="bg-amber-50 border-l-4 border-amber-400 p-2 text-slate-700 italic rounded-r-lg">
+                    Depuis cet écran, tu as une vue globale sur toutes les missions que tu as croisées sur ton chemin. Tu peux t'en servir pour naviguer et te diriger instantanément vers n'importe quelle quête déjà découverte, qu'elle soit validée, commencée, ou pas encore touchée. C'est ici que tu stockes tes réussites : à la fin de l'année, ce portfolio devient ton grand livre de compétences à emporter partout !
+                  </blockquote>
                 </div>
               </div>
 
             </div>
 
-            {/* MODALES INTERACTIVES */}
-            <div className="space-y-4">
+            {/* INTERACTION DE SIMULATION DE DROITE */}
+            <div className="space-y-4 lg:sticky lg:top-6">
               {showFormPreview === 'session' && (
-                <div className="bg-white border-2 border-slate-950 p-4 rounded-2xl shadow-lg space-y-3 animate-fadeIn text-xs">
+                <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-lg space-y-3 border border-slate-800 text-xs animate-fadeIn">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase text-indigo-600">Simulateur : Code Session</span>
-                    <button onClick={() => setShowFormPreview(null)} className="text-slate-400 font-bold hover:text-slate-600">✕</button>
+                    <span className="text-[10px] font-black uppercase text-indigo-400">Simulateur : Étape 1</span>
+                    <button onClick={() => setShowFormPreview(null)} className="text-slate-400 font-bold hover:text-white">✕</button>
                   </div>
-                  <input type="text" value={simulatedSessionCode} onChange={(e) => setSimulatedSessionCode(e.target.value.toUpperCase())} className="w-full border rounded-lg p-2 font-mono bg-slate-50 uppercase text-center font-bold" />
-                  <button onClick={() => { alert(`Code "${simulatedSessionCode}" ajouté avec succès !`); setShowFormPreview(null); }} className="w-full bg-slate-900 text-white font-bold py-1.5 rounded-lg text-[10px] uppercase">Valider l'entrée</button>
+                  <label className="block text-slate-400 text-[10px] font-bold">Entre ton code d'accès :</label>
+                  <input 
+                    type="text" 
+                    value={simulatedSessionCode} 
+                    onChange={(e) => setSimulatedSessionCode(e.target.value.toUpperCase())} 
+                    className="w-full border border-slate-700 rounded-lg p-2 font-mono bg-slate-950 uppercase text-center font-bold text-emerald-400 text-sm" 
+                  />
+                  <button onClick={() => { alert(`Félicitations ! Tu as rejoint la session : ${simulatedSessionCode}`); setShowFormPreview(null); }} className="w-full bg-emerald-600 text-white font-bold py-2 rounded-lg text-[10px] uppercase tracking-wider">Rejoindre la guilde</button>
                 </div>
               )}
 
               {showFormPreview === 'livrable' && (
-                <div className="bg-white border-2 border-purple-600 p-4 rounded-2xl shadow-lg space-y-3 animate-fadeIn text-xs">
+                <div className="bg-white border-2 border-emerald-600 p-4 rounded-2xl shadow-lg space-y-3 text-xs animate-fadeIn">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase text-purple-700">Simulateur : Rendu Fichier</span>
+                    <span className="text-[10px] font-black uppercase text-emerald-700">Simulateur : Étape 2</span>
                     <button onClick={() => setShowFormPreview(null)} className="text-slate-400 font-bold hover:text-slate-600">✕</button>
                   </div>
-                  <input type="text" value={simulatedLivrable} onChange={(e) => setSimulatedLivrable(e.target.value)} className="w-full border rounded-lg p-2 font-mono bg-slate-50 text-slate-700" />
-                  <button onClick={() => { alert(`Fichier envoyé.`); setShowFormPreview(null); }} className="w-full bg-purple-700 text-white font-bold py-1.5 rounded-lg text-[10px] uppercase">Envoyer l'archive</button>
+                  <label className="block text-slate-500 text-[10px] font-bold">Glisse ton document ici :</label>
+                  <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center bg-slate-50 font-mono text-[10px] text-slate-500">
+                    📂 {simulatedLivrable}
+                  </div>
+                  <button onClick={() => { alert(`Document "${simulatedLivrable}" transmis avec succès ! Vos XP sont en chemin.`); setShowFormPreview(null); }} className="w-full bg-emerald-600 text-white font-black py-2 rounded-lg text-[10px] uppercase tracking-wider">Envoyer le livrable</button>
                 </div>
               )}
             </div>
+
           </div>
         </div>
       )}
 
-
       {/* ======================================================== */}
-      {/* 🧠 CONTENU : 2. FORMATEUR (StudioScreen)                 */}
+      {/* 🧠 PAGE 2 : GUIDE DU FORMATEUR                           */}
       {/* ======================================================== */}
       {activeTab === 'formateur' && (
         <div className="space-y-6">
-          <div className="bg-purple-50 border border-purple-200 text-purple-950 rounded-2xl p-4 flex items-start gap-3">
-            <span className="text-xl">🎯</span>
-            <div>
-              <h4 className="text-xs font-black uppercase tracking-wider text-purple-800">Objectif de l'Espace Formateur</h4>
-              <p className="text-xs text-purple-900/80 mt-0.5 leading-relaxed">
-                Permettre aux professeurs de créer l'arbre de compétences, d'ajouter des quêtes personnalisées et d'ouvrir des sessions de cours.
-              </p>
-            </div>
+          <div className="bg-purple-50 border border-purple-200 text-purple-950 rounded-2xl p-5 shadow-sm">
+            <h3 className="text-sm font-black text-purple-900 uppercase tracking-wide">🧠 Guide du Maître du Jeu : Créer et Lancer son Cours</h3>
+            <p className="text-xs text-purple-950/80 mt-1 leading-relaxed">
+              Bonjour Professeur ! Voici les 3 étapes essentielles pour transformer votre programme en une aventure pédagogique et guider votre classe vers la réussite.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             <div className="lg:col-span-2 space-y-6">
               
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-                <div className="flex justify-between items-start gap-4">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                      🎨 Création de Quêtes & Calibration
-                    </h3>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      L'enseignant configure l'intitulé de l'exercice, choisit son thème (Social, Environnement, Technique) et définit s'il s'agit d'une quête d'équipe ou solo.
+              {/* ÉTAPE 1 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  🌳 Étape 1 : Planter l'Arbre (Créer le parcours)
+                </h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Votre matière ne va pas être apprise en un bloc, elle va être découpée comme les étages d'un donjon ou les branches d'un grand arbre. Vous commencez par créer les <strong>Paliers</strong> (les étages). Pour passer à l'étage supérieur, vos élèves devront accumuler assez de points d'XP en réussissant les exercices de l'étage actuel.
+                </p>
+              </div>
+
+              {/* ÉTAPE 2 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  ⚔️ Étape 2 : Forger les Quêtes (Ajouter vos modules)
+                </h4>
+                <div className="text-xs text-slate-600 space-y-2 leading-relaxed">
+                  <p>À chaque étage, c'est vous qui déposez les exercices (les <strong>Quêtes</strong>). Vous écrivez l'histoire, la consigne, et vous fixez la récompense en fonction de la difficulté :</p>
+                  <p><span className="font-bold text-purple-700">• 1 Étoile (Facile / 100 XP) :</span> Idéal pour une question de cours ou une vérification rapide.</p>
+                  <p><span className="font-bold text-purple-700">• 2 Étoiles (Moyen / 250 XP) :</span> Un exercice d'application classique.</p>
+                  <p><span className="font-bold text-purple-700">• 3 Étoiles (Difficile / 500 XP) :</span> Un gros cas pratique ou un projet complet.</p>
+                  
+                  <div className="mt-4 p-3 bg-purple-900/5 text-purple-950 border border-purple-100 rounded-xl space-y-1">
+                    <span className="font-black text-[10px] text-purple-800 uppercase tracking-wide block">🌟 BONUS : Le Mode Multijoueur (Les quêtes collaboratives !)</span>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Lors de la création de votre quête, cochez la case <strong>"Collaborative"</strong> et indiquez le nombre de partenaires requis (par exemple : 3 joueurs).
+                    </p>
+                    <p className="text-[11px] text-slate-600 italic mt-1">
+                      Comment ça marche pour eux ? Vos élèves devront se mettre d'accord, travailler ensemble, puis envoyer <strong>exactement le même fichier</strong>. Le site validera leur équipe automatiquement dès que le dernier membre aura déposé son travail. Rien de tel pour booster la cohésion !
                     </p>
                   </div>
-                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 flex flex-col items-center gap-1.5 shrink-0">
-                    <button 
-                      onClick={() => { setSimulatedQuestName('Audit Énergétique'); setShowFormPreview('quest'); }}
-                      className="bg-purple-700 hover:bg-purple-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider cursor-pointer"
-                    >
-                      Créer
-                    </button>
-                  </div>
                 </div>
+                <button 
+                  onClick={() => setShowFormPreview('quest')}
+                  className="bg-purple-700 hover:bg-purple-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider cursor-pointer"
+                >
+                  Ouvrir l'outil de création de quêtes ➔
+                </button>
+              </div>
 
-                <div className="text-[11px] bg-purple-900/5 text-purple-950 p-3 rounded-xl border border-purple-100/60">
-                  <p className="font-bold text-purple-800">🗣️ Version simple :</p>
-                  <p className="mt-1 text-slate-600">Ici, le professeur est comme un "créateur de niveau" ou un maître du jeu. Il invente l'histoire de la quête, choisit sa difficulté et décide si vous devez la faire tout seul ou à plusieurs.</p>
-                </div>
+              {/* ÉTAPE 3 */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  🔑 Étape 3 : Ouvrir la Session et Partager le Code
+                </h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Votre parcours est prêt ? Il ne reste plus qu'à ouvrir la porte de la classe ! En un clic, vous générez une <strong>Session</strong> (par exemple : <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-700 font-mono font-bold">ROBOTIQUE-LYON-2026</code>). Le site vous donne alors un code d'accès unique. Écrivez ce code au tableau ou envoyez-le par message à vos élèves. Dès qu'ils le taperont sur leur écran, ils rejoindront votre Arbre et l'aventure pourra commencer !
+                </p>
               </div>
 
             </div>
 
-            <div className="space-y-4">
+            {/* INTERACTION DE SIMULATION DE DROITE */}
+            <div className="space-y-4 lg:sticky lg:top-6">
               {showFormPreview === 'quest' && (
-                <div className="bg-white border-2 border-purple-950 p-4 rounded-2xl shadow-lg space-y-3 animate-fadeIn text-xs">
+                <div className="bg-white border-2 border-purple-950 p-4 rounded-2xl shadow-lg space-y-3 text-xs animate-fadeIn">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase text-purple-700">Simulateur : Nouvelle Mission</span>
+                    <span className="text-[10px] font-black uppercase text-purple-700">Studio : Nouvelle Quête</span>
                     <button onClick={() => setShowFormPreview(null)} className="text-slate-400 font-bold hover:text-slate-600">✕</button>
                   </div>
                   <div>
-                    <label className="block text-slate-500 font-bold text-[10px] mb-1">Nom de la mission :</label>
-                    <input type="text" value={simulatedQuestName} onChange={(e) => setSimulatedQuestName(e.target.value)} className="w-full border rounded-lg p-2 bg-slate-50" />
+                    <label className="block text-slate-500 font-bold text-[10px] mb-1">Identifiant technique du module :</label>
+                    <input 
+                      type="text" 
+                      value={simulatedQuestName} 
+                      onChange={(e) => setSimulatedQuestName(e.target.value.toLowerCase())} 
+                      className="w-full border rounded-lg p-2 bg-slate-50 font-mono" 
+                    />
                   </div>
-                  <div className="flex items-center justify-between p-2 bg-purple-50 rounded-lg">
-                    <span className="text-[10px] font-bold">Mode d'équipe ?</span>
-                    <input type="checkbox" checked={simulatedIsCollab} onChange={(e) => setSimulatedIsCollab(e.target.checked)} />
+                  <div className="flex items-center justify-between p-2.5 bg-purple-50 rounded-xl border border-purple-100">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-black block text-purple-900 uppercase">👥 Mode Multijoueur</span>
+                      <span className="text-[9px] text-slate-500 block">Travail en équipe requis</span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={simulatedIsCollab} 
+                      onChange={(e) => setSimulatedIsCollab(e.target.checked)}
+                      className="w-4 h-4 cursor-pointer accent-purple-700"
+                    />
                   </div>
-                  <button onClick={() => { alert(`Quête enregistrée !`); setShowFormPreview(null); }} className="w-full bg-purple-700 text-white font-black py-1.5 rounded-lg text-[10px] uppercase">Générer la quête</button>
+                  <button onClick={() => { alert(`Quête "${simulatedQuestName}" forgée avec succès ! (Collaborative : ${simulatedIsCollab ? "Oui" : "Non"})`); setShowFormPreview(null); }} className="w-full bg-purple-700 text-white font-black py-2 rounded-lg text-[10px] uppercase tracking-wider">Insérer dans l'arbre</button>
                 </div>
               )}
             </div>
+
           </div>
         </div>
       )}
 
-
       {/* ======================================================== */}
-      {/* 💼 CONTENU : 3. DRH / CLIENT                             */}
-      {/* ======================================================== */}
-      {activeTab === 'drh' && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-            <h3 className="text-sm font-black text-slate-900">📊 Suivi Macro & Tableaux de Bord RSE</h3>
-            <p className="text-xs text-slate-600">
-              Permet aux entreprises partenaires de regarder les scores globaux et d'auditer les projets terminés sans pouvoir les modifier.
-            </p>
-
-            <div className="text-[11px] bg-blue-900/5 text-blue-950 p-3 rounded-xl border border-blue-100/60">
-              <p className="font-bold text-blue-800">🗣️ Version simple :</p>
-              <p className="mt-1 text-slate-600">C'est le mode spectateur ! Les directeurs de l'école ou de l'entreprise se connectent pour voir les statistiques (les moyennes de la classe, les taux de réussite) et voir si tout le monde travaille bien.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {/* ======================================================== */}
-      {/* ⚡ CONTENU : 4. SUPER ADMIN                              */}
-      {/* ======================================================== */}
-      {activeTab === 'admin' && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-            <h3 className="text-sm font-black text-slate-900">🛠️ Outil d'Impersonation & Maintenance</h3>
-            <p className="text-xs text-slate-600">
-              Réservé aux développeurs en chef pour réparer un compte bloqué en simulant précisément l'interface d'un utilisateur.
-            </p>
-
-            <div className="text-[11px] bg-red-900/5 text-red-950 p-3 rounded-xl border border-red-100/60">
-              <p className="font-bold text-red-800">🗣️ Version simple :</p>
-              <p className="mt-1 text-slate-600">C'est le bouton "Super-Pouvoir". Si un élève a son compte complètement bloqué à cause d'un bug informatique, l'administrateur peut entrer dans son compte pour aller réparer la panne directement.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {/* ======================================================== */}
-      {/* 🗄️ CONTENU : 5. ARCHITECTURE BASE DE DONNÉES             */}
+      {/* 🗄️ CONTENU : 3. ARCHITECTURE BASE DE DONNÉES             */}
       {/* ======================================================== */}
       {activeTab === 'bdd' && isDevMode && (
         <div className="space-y-6 animate-fadeIn">
