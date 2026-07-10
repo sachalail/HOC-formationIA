@@ -458,8 +458,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
               const pointsManquants = nextFloorRequirement - studentPoints;
 
               // Détermination du verrouillage de la vue par rapport au niveau débloqué réel
-              const isFloorViewLocked = true
-
+              const isFloorViewLocked = safeCurrentIndex > safeUnlockedIndex;
               const filteredQuestsOnFloor = (quests.filter(q => (activeFloor.quests || []).includes(q.id))).filter(quest => {
                 const matchTheme = filterTheme === 'all' || quest.theme === filterTheme;
                 const isQuestCollab = quest.is_collaborative === true || quest.is_collaborative === 'true';
