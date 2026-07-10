@@ -5,25 +5,39 @@ import { supabase } from '../supabaseClient';
 export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   const [sessions, setSessions] = useState([]); 
   const [selectedSession, setSelectedSession] = useState(() => {
-    const saved = sessionStorage.getItem('drh_selected_session');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = sessionStorage.getItem('drh_selected_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   }); 
   const [sessionStudents, setSessionStudents] = useState([]); 
   const [sessionQuests, setSessionQuests] = useState([]); 
-  const [allProductions, setAllProductions] = useState([]);
+  const [allProductions, setAllProductions] = useState([]); 
   const [loading, setLoading] = useState(true);
 
   // FILTRES DRH PERSISTANTS
   const [selectedStudents, setSelectedStudents] = useState(() => {
-    const saved = sessionStorage.getItem('drh_filter_students');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = sessionStorage.getItem('drh_filter_students');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
   const [selectedQuests, setSelectedQuests] = useState(() => {
-    const saved = sessionStorage.getItem('drh_filter_quests');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = sessionStorage.getItem('drh_filter_quests');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
-  const currentSessionSafe = selectedSession || sessions[0] || null;
+  // SECURITÉ ANTI-FANTÔME : On vérifie si la session sélectionnée fait partie des sessions réelles chargées
+  const isSelectedSessionValid = selectedSession && sessions.some(s => String(s.id) === String(selectedSession.id));
+  const currentSessionSafe = isSelectedSessionValid ? selectedSession : (sessions[0] || null);
 
   useEffect(() => {
     sessionStorage.setItem('drh_filter_students', JSON.stringify(selectedStudents));
@@ -33,13 +47,14 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     sessionStorage.setItem('drh_filter_quests', JSON.stringify(selectedQuests));
   }, [selectedQuests]);
 
+  // Synchronisation sécurisée de la session en mémoire
   useEffect(() => {
-    if (selectedSession) {
-      sessionStorage.setItem('drh_selected_session', JSON.stringify(selectedSession));
+    if (currentSessionSafe) {
+      sessionStorage.setItem('drh_selected_session', JSON.stringify(currentSessionSafe));
     } else {
       sessionStorage.removeItem('drh_selected_session');
     }
-  }, [selectedSession]);
+  }, [currentSessionSafe]);
 
   // 1. CHARGEMENT INITIAL DES SESSIONS ASSOCIÉES AU MANAGER / DRH
   useEffect(() => {
@@ -51,24 +66,28 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
         const hrUserId = authUser.id;
 
-        // Récupération de toutes les sessions où l'utilisateur est enregistré comme DRH/Observateur (JSONB Natif)
+        // Récupération en temps réel des sessions de ce DRH
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
-          .contains('drh_ids', [hrUserId]); // CORRECTION : Passage d'un vrai tableau JS au lieu d'une string
+          .contains('drh_ids', [hrUserId]);
 
         if (sError) throw sError;
 
         if (fetchedSessions && fetchedSessions.length > 0) {
           setSessions(fetchedSessions);
           
+          // Si la session stockée en mémoire n'est pas dans la liste fraîche de la BDD, on bascule sur la première disponible
           const stillValid = fetchedSessions.find(s => s.id === selectedSession?.id);
           if (!stillValid) {
             setSelectedSession(fetchedSessions[0]);
           }
+        } else {
+          setSessions([]);
+          setSelectedSession(null);
         }
 
-        // Récupération globale du registre d'audit des productions
+        // Récupération globale du registre des productions
         const { data: fetchedProductions, error: pError } = await supabase
           .from('productions')
           .select('*')
@@ -85,11 +104,15 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     };
 
     initializeDRHData();
-  }, [selectedSession?.id]);
+  }, []); // Exécution unique au montage du composant
 
   // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS DEPUIS SUPABASE
   useEffect(() => {
-    if (!currentSessionSafe) return;
+    if (!currentSessionSafe) {
+      setSessionStudents([]);
+      setSessionQuests([]);
+      return;
+    }
 
     const fetchCohortContext = async () => {
       try {
@@ -98,7 +121,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
             .select('id, email')
-            .contains('session_codes', [currentSessionSafe.session_code]); // CORRECTION CRITIQUE : Plus de JSON.stringify !
+            .contains('session_codes', [currentSessionSafe.session_code]);
 
           if (pError) throw pError;
 
@@ -115,6 +138,8 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               };
             });
             setSessionStudents(formattedStudents);
+          } else {
+            setSessionStudents([]);
           }
         }
 
@@ -133,7 +158,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             if (Array.isArray(floorsObj)) {
               floorsObj.forEach(floor => {
                 if (floor.quests && Array.isArray(floor.quests)) {
-                  // CORRECTION CRITIQUE : Conversion forcée en Nombre (Number) pour lier à la BDD
                   floor.quests.forEach(qId => extractedQuestIds.push(Number(qId)));
                 }
               });
@@ -180,7 +204,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   };
 
   if (loading) {
-    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement...</div>;
+    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement des données...</div>;
   }
 
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
@@ -191,7 +215,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(q.id));
 
   const filteredProductions = allProductions.filter(p => {
-    if (!p) return false;
+    if (!p || !currentSessionSafe) return false;
 
     const isStudentInSession = studentIdsInCurrentSession.includes(p.studentId);
     const matchesSessionCode = p.session_code === currentSessionSafe.session_code;
@@ -323,7 +347,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             </div>
           </div>
 
-          {/* CENTRE DE TRI AVANCÉ AVEC ACTIONS DISCRÈTES "TOUT SÉLECTIONNER" */}
+          {/* CENTRE DE TRI AVANCÉ */}
           <div className="bg-slate-50 border rounded-2xl p-5 space-y-4 shadow-sm">
             <div className="text-[11px] font-black uppercase text-slate-500 tracking-wider">🎛️ Centre de Tri Avancé</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -345,7 +369,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                     )}
                   </div>
                   
-                  {/* Bouton discret "Tout Sélectionner/Désélectionner" */}
                   <div className="text-right border-t pt-1.5 border-slate-50">
                     <button 
                       type="button"
@@ -383,7 +406,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                     )}
                   </div>
 
-                  {/* Bouton discret "Tout Sélectionner/Désélectionner" */}
                   <div className="text-right border-t pt-1.5 border-slate-50">
                     <button 
                       type="button"
@@ -423,44 +445,50 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y font-medium text-slate-700">
-                  {studentsProgress.map(student => {
-                    const isChecked = activeSelectedStudents.some(s => s.uid === student.uid);
-                    return (
-                      <tr key={student.uid} className={`hover:bg-slate-50/60 transition-colors ${isChecked ? 'bg-blue-50/20' : ''}`}>
-                        <td className="p-3 pl-4">
-                          <div className="font-bold text-slate-900">{student.name}</div>
-                          <div className="text-[10px] font-mono text-slate-400">{student.email}</div>
-                        </td>
-                        <td className="p-3 font-bold text-slate-900">{student.xp} XP</td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${student.livrablesCount > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400'}`}>
-                            {student.livrablesCount} dossiers
-                          </span>
-                        </td>
-                        <td className="p-3 pr-4 text-right">
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              if (isChecked) {
-                                setSelectedStudents(selectedStudents.filter(s => s.uid !== student.uid));
-                              } else {
-                                setSelectedStudents([...selectedStudents, student]);
-                              }
-                            }}
-                            className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all ${isChecked ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200'}`}
-                          >
-                            {isChecked ? "⚡ Actif" : "Désactivé"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {studentsProgress.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="text-center p-6 text-slate-400 italic">Aucun collaborateur trouvé pour cette cohorte.</td>
+                    </tr>
+                  ) : (
+                    studentsProgress.map(student => {
+                      const isChecked = activeSelectedStudents.some(s => s.uid === student.uid);
+                      return (
+                        <tr key={student.uid} className={`hover:bg-slate-50/60 transition-colors ${isChecked ? 'bg-blue-50/20' : ''}`}>
+                          <td className="p-3 pl-4">
+                            <div className="font-bold text-slate-900">{student.name}</div>
+                            <div className="text-[10px] font-mono text-slate-400">{student.email}</div>
+                          </td>
+                          <td className="p-3 font-bold text-slate-900">{student.xp} XP</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${student.livrablesCount > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-400'}`}>
+                              {student.livrablesCount} dossiers
+                            </span>
+                          </td>
+                          <td className="p-3 pr-4 text-right">
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (isChecked) {
+                                  setSelectedStudents(selectedStudents.filter(s => s.uid !== student.uid));
+                                } else {
+                                  setSelectedStudents([...selectedStudents, student]);
+                                }
+                              }}
+                              className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all ${isChecked ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200'}`}
+                            >
+                              {isChecked ? "⚡ Actif" : "Désactivé"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* DOSSIERS ET PORTFOLIO GLOBAL DES LIVRABLES AUDITÉS */}
+          {/* DOSSIERS ET PORTFOLIO GLOBAL */}
           <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
             <h3 className="text-xs font-black uppercase text-slate-800">📂 Registre d'audit des Livrables correspondants</h3>
             {uniqueProductionsGlobal.length === 0 ? (
