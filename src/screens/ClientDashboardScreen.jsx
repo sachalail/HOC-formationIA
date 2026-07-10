@@ -35,7 +35,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   });
 
-  // FONCTION DE CHANGEMENT DE SESSION (Placée en haut pour être définie avant tout return ou rendu)
+  // FONCTION DE CHANGEMENT DE SESSION
   const handleSessionChange = (e) => {
     const sessionDocId = e.target.value;
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
@@ -112,7 +112,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     initializeDRHData();
   }, []); 
 
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS (FLUX PROPRE SANS BREAK)
+  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS
   useEffect(() => {
     if (!currentSessionSafe) {
       setSessionStudents([]);
@@ -121,11 +121,8 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
 
     const fetchCohortContext = async () => {
+      // --- PARTIE A : CHARGEMENT ISOLE DES COLLABORATEURS ---
       try {
-        let formattedStudents = [];
-        let fetchedQuestsData = [];
-
-        // A. CHARGEMENT DES ÉTUDIANTS VIA JSONB
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
@@ -135,7 +132,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           if (pError) throw pError;
 
           if (profiles) {
-            formattedStudents = profiles.map(p => {
+            const formattedStudents = profiles.map(p => {
               const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${currentSessionSafe.tree_id}`);
               const maxFloor = savedFloor ? parseInt(savedFloor, 10) + 1 : 1;
               
@@ -146,10 +143,20 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 maxFloor: maxFloor
               };
             });
+            setSessionStudents(formattedStudents);
+          } else {
+            setSessionStudents([]);
           }
+        } else {
+          setSessionStudents([]);
         }
+      } catch (err) {
+        console.error("Erreur lors du chargement des profils collaborateurs :", err);
+        setSessionStudents([]);
+      }
 
-        // B. EXTRACTION DES QUÊTES VIA LES PALIERS DE L'ARBRE
+      // --- PARTIE B : CHARGEMENT ISOLE ET COMPATIBLE UUID DES QUETES VIA L'ARBRE ---
+      try {
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
             .from('trees')
@@ -165,7 +172,10 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               floorsObj.forEach(floor => {
                 if (floor && floor.quests && Array.isArray(floor.quests)) {
                   floor.quests.forEach(qId => {
-                    if (qId !== undefined && qId !== null) extractedQuestIds.push(Number(qId));
+                    // SÉCURITÉ : On garde la valeur brute textuelle/UUID sans forcer Number()
+                    if (qId !== undefined && qId !== null && String(qId).trim() !== "") {
+                      extractedQuestIds.push(String(qId));
+                    }
                   });
                 }
               });
@@ -173,7 +183,9 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               Object.values(floorsObj).forEach(floor => {
                 if (floor && Array.isArray(floor.quests)) {
                   floor.quests.forEach(qId => {
-                    if (qId !== undefined && qId !== null) extractedQuestIds.push(Number(qId));
+                    if (qId !== undefined && qId !== null && String(qId).trim() !== "") {
+                      extractedQuestIds.push(String(qId));
+                    }
                   });
                 }
               });
@@ -185,23 +197,19 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               const { data: fetchedQuests, error: qError } = await supabase
                 .from('quests')
                 .select('*')
-                .in('id', uniqueQuestIds);
+                .in('id', uniqueQuestIds); // Plus aucun risque de NaN ici
 
               if (qError) throw qError;
               if (fetchedQuests) {
-                fetchedQuestsData = fetchedQuests;
+                setSessionQuests(fetchedQuests);
+                return;
               }
             }
           }
         }
-        
-        // Application synchronisée des états à la fin du flux asynchrone
-        setSessionStudents(formattedStudents);
-        setSessionQuests(fetchedQuestsData);
-
+        setSessionQuests([]);
       } catch (err) {
-        console.error("Erreur de synchronisation du contexte de cohorte :", err);
-        setSessionStudents([]);
+        console.error("Erreur lors de l'extraction des quêtes depuis l'arbre :", err);
         setSessionQuests([]);
       }
     };
@@ -425,7 +433,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 </div>
 
                 <select value="" onChange={(e) => {
-                  const match = sessionQuests.find(q => q.id === Number(e.target.value));
+                  const match = sessionQuests.find(q => String(q.id) === String(e.target.value));
                   if (match) setSelectedQuests([...selectedQuests, match]);
                 }} className="w-full bg-white border text-xs rounded-xl p-2.5 font-semibold text-slate-700 outline-none">
                   <option value="" disabled>✨ Choisir une quête ({availableQuests.length} dispo)...</option>
