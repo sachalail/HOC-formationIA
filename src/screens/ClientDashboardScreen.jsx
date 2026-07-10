@@ -197,11 +197,11 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
   // TRIS DES ENSEMBLES DE RECHERCHE RESTANTS
-  const availableStudents = sortedStudentsOptions = [...sessionStudents]
+  const availableStudents = [...sessionStudents]
     .sort((a, b) => b.maxFloor - a.maxFloor)
     .filter(st => !selectedStudents.some(sel => sel.uid === st.uid));
 
-  const availableQuests = sortedQuestsOptions = [...questsList]
+  const availableQuests = [...questsList]
     .sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10))
     .filter(q => !selectedQuests.some(sel => sel.id === q.id));
 
