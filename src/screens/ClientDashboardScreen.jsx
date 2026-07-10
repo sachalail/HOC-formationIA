@@ -93,7 +93,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     fetchHRData();
   }, []);
 
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES DEPUIS LE JSONB 'FLOORS' DE L'ARBRE
+// 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS
   useEffect(() => {
     if (!currentSessionSafe) return;
 
@@ -104,7 +104,8 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
             .select('id, email')
-            .contains('session_codes', JSON.stringify([currentSessionSafe.session_code]));
+            // CORRECTION : On passe le tableau JS directement, sans JSON.stringify !
+            .contains('session_codes', [currentSessionSafe.session_code]);
 
           if (pError) throw pError;
 
@@ -135,18 +136,19 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           if (!tError && treeData && treeData.floors) {
             const extractedQuestIds = [];
             
-            // On parcourt l'objet ou tableau JSONB floors pour récupérer les IDs de quêtes
             const floorsObj = typeof treeData.floors === 'string' ? JSON.parse(treeData.floors) : treeData.floors;
             if (Array.isArray(floorsObj)) {
               floorsObj.forEach(floor => {
                 if (floor.quests && Array.isArray(floor.quests)) {
-                  floor.quests.forEach(qId => extractedQuestIds.push(String(qId)));
+                  // CORRECTION : On garde le format Nombre (Number) au lieu de forcer en String
+                  floor.quests.forEach(qId => extractedQuestIds.push(Number(qId)));
                 }
               });
             } else if (typeof floorsObj === 'object') {
               Object.values(floorsObj).forEach(floor => {
                 if (floor && Array.isArray(floor.quests)) {
-                  floor.quests.forEach(qId => extractedQuestIds.push(String(qId)));
+                  // CORRECTION : Idem ici
+                  floor.quests.forEach(qId => extractedQuestIds.push(Number(qId)));
                 }
               });
             }
