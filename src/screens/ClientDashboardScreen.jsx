@@ -104,7 +104,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     initializeDRHData();
   }, []); 
 
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS (REQUÊTE PROPRE JSONB)
+  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS (REQUÊTE PROPRE ET SÉCURISÉE)
   useEffect(() => {
     if (!currentSessionSafe) {
       setSessionStudents([]);
@@ -114,8 +114,8 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     const fetchCohortContext = async () => {
       try {
+        // A. CHARGEMENT DES ÉTUDIANTS (FONCTIONNEL & PROPRE)
         if (currentSessionSafe.session_code) {
-          // Requête standard pour tableau de chaînes JSONB sur les profils
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
             .select('id, email')
@@ -141,6 +141,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           }
         }
 
+        // B. EXTRACTION DES QUÊTES VIA L'ARBRE (PROPRE & SANS CONFLIT DE TYPE)
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
             .from('trees')
@@ -151,35 +152,48 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           if (!tError && treeData && treeData.floors) {
             const extractedQuestIds = [];
             
+            // On parse le JSON des paliers (floors) qu'il soit stocké sous forme de String ou d'Objet direct
             const floorsObj = typeof treeData.floors === 'string' ? JSON.parse(treeData.floors) : treeData.floors;
+            
             if (Array.isArray(floorsObj)) {
               floorsObj.forEach(floor => {
-                if (floor.quests && Array.isArray(floor.quests)) {
-                  floor.quests.forEach(qId => extractedQuestIds.push(Number(qId)));
+                if (floor && floor.quests && Array.isArray(floor.quests)) {
+                  floor.quests.forEach(qId => {
+                    if (qId !== undefined && qId !== null) extractedQuestIds.push(Number(qId));
+                  });
                 }
               });
-            } else if (typeof floorsObj === 'object') {
+            } else if (typeof floorsObj === 'object' && floorsObj !== null) {
               Object.values(floorsObj).forEach(floor => {
                 if (floor && Array.isArray(floor.quests)) {
-                  floor.quests.forEach(qId => extractedQuestIds.push(Number(qId)));
+                  floor.quests.forEach(qId => {
+                    if (qId !== undefined && qId !== null) extractedQuestIds.push(Number(qId));
+                  });
                 }
               });
             }
 
+            // Si on a trouvé des IDs de quêtes associés à cet arbre, on va chercher leurs détails
             if (extractedQuestIds.length > 0) {
+              // Filtrage unique pour éviter les doublons d'IDs dans la requête
+              const uniqueQuestIds = [...new Set(extractedQuestIds)];
+
               const { data: fetchedQuests, error: qError } = await supabase
                 .from('quests')
                 .select('*')
-                .in('id', extractedQuestIds);
+                .in('id', uniqueQuestIds); // Utilisation de .in() standard sur clé primaire (parfaitement propre)
 
-              if (!qError && fetchedQuests) {
+              if (qError) throw qError;
+
+              if (fetchedQuests) {
                 setSessionQuests(fetchedQuests);
-                return;
+                return; // Succès, on stoppe ici !
               }
             }
           }
         }
         
+        // Repli si aucun arbre ou quête trouvé
         setSessionQuests([]);
 
       } catch (err) {
@@ -189,22 +203,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
-
-  // LA FONCTION RÉALIMENTÉE ET SÉCURISÉE
-  const handleSessionChange = (e) => {
-    const sessionDocId = e.target.value;
-    const found = sessions.find(s => String(s.id) === String(sessionDocId));
-    if (found) {
-      setSelectedSession(found);
-      setSelectedStudents([]);
-      setSelectedQuests([]);
-    }
-  };
-
-  if (loading) {
-    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement des données...</div>;
-  }
-
+  
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   const sessionQuestIdsOnly = sessionQuests.map(q => q.id);
