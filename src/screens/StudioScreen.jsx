@@ -17,7 +17,7 @@ const getQuestBadgeStyle = (quest) => {
 export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
-  // Navigation par onglet interne au Studio (Arbre d'abord, Sessions en discret)
+  // Navigation par onglet interne au Studio
   const [activeTab, setActiveTab] = useState('tree'); // 'tree' ou 'sessions'
   
   // États de sélection
@@ -25,7 +25,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   
-  // Modale active ('quest', 'tree', 'session' ou null)
+  // Modale active ('quest', 'tree', 'session', 'tree_browser' ou null)
   const [activeModal, setActiveModal] = useState(null); 
 
   // États des formulaires
@@ -37,7 +37,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [newTreeName, setNewTreeName] = useState('');
   const [newFloorMode, setNewFloorMode] = useState('static');
 
-  // 🤝 AJOUT DES ÉTATS POUR LE MODE COLLABORATIF
+  // AJOUT DES ÉTATS POUR LE MODE COLLABORATIF
   const [isCollaborative, setIsCollaborative] = useState(false);
   const [requiredPartners, setRequiredPartners] = useState(2);
 
@@ -50,6 +50,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [filterTheme, setFilterTheme] = useState('all'); 
   const [filterDifficulty, setFilterDifficulty] = useState('all'); 
 
+  // ✨ NOUVEAUX ÉTATS POUR LA GESTION ET EXPLORATION DES ARBRES
+  const [treeBrowserTab, setTreeBrowserTab] = useState('local'); // 'local' ou 'shared'
+  const [treeSearchQuery, setTreeSearchQuery] = useState('');
+
   // 1. CHARGEMENT INITIAL (USER, ARBRES & SESSIONS DEPUIS LA BDD)
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -57,7 +61,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       if (session) {
         setCurrentUserId(session.user.id);
         fetchSessions(session.user.id);
-        fetchTrees(session.user.id);
+        fetchTrees(); // Chargement global pour récupérer aussi les publics
       }
     };
     fetchInitialData();
@@ -81,18 +85,30 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  const fetchTrees = async (userId) => {
-    const { data, error } = await supabase.from('trees').select('*').eq('owner_id', userId);
+  const fetchTrees = async () => {
+    // Modification pour charger les siens ET les arbres publics (partagés)
+    const { data, error } = await supabase
+      .from('trees')
+      .select('*');
+
     if (data && !error && data.length > 0) {
       const treesMap = {};
       data.forEach(t => { treesMap[t.id] = t; });
       if (typeof setTrees === 'function') setTrees(treesMap);
-      if (!activeTreeId) setActiveTreeId(data[0].id);
+      
+      // Sélectionner par défaut le premier arbre possédé s'il n'y en a pas d'actif
+      if (!activeTreeId) {
+        const firstOwned = data.find(t => t.owner_id === currentUserId) || data[0];
+        setActiveTreeId(firstOwned.id);
+      }
     }
   };
 
   const currentTree = trees[activeTreeId];
   const currentSession = sessions.find(s => String(s.id) === String(activeSessionId));
+
+  // Vérification de propriété de l'arbre actif
+  const isOwnerOfCurrentTree = currentTree && currentTree.owner_id === currentUserId;
 
   // RECHERCHE DYNAMIQUE DE DRH AVEC FILTRAGE DES DOUBLONS
   useEffect(() => {
@@ -138,17 +154,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return matchesSearch && matchesTheme && matchesDifficulty;
   }).sort((a, b) => (a.theme || '').localeCompare(b.theme || ''));  
 
-  // 🔥 ULTRA BONUS : Calcul automatique de la contrainte maximale d'équipe sur l'arbre
+  // Calcul automatique de la contrainte maximale d'équipe sur l'arbre
   const recalculateAndSaveMaxTeamConstraint = async (treeId, floorsArray) => {
     if (!treeId || !floorsArray) return;
-
-    // Récupérer tous les IDs de quêtes rattachés aux paliers de l'arbre actif
     const attachedQuestIds = floorsArray.flatMap(f => f.quests || []);
-    
-    // Récupérer la liste complète des quêtes correspondantes
     const linkedQuests = safeQuestsList.filter(q => attachedQuestIds.includes(q.id));
 
-    // Déterminer la contrainte maximale requise (par défaut 1 si tout est solo)
     const maxConstraint = linkedQuests.reduce((max, q) => {
       if (q.is_collaborative || q.is_collaborative === 'true') {
         return Math.max(max, Number(q.required_partners) || 2);
@@ -156,13 +167,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       return max;
     }, 1);
 
-    // Mettre à jour dans Supabase
     await supabase
       .from('trees')
       .update({ max_team_constraint: maxConstraint })
       .eq('id', treeId);
 
-    // Mettre à jour l'état local
     if (typeof setTrees === 'function') {
       setTrees(prev => {
         if (!prev[treeId]) return prev;
@@ -177,6 +186,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   // 2. LOGIQUE DE SAUVEGARDE ET SYNCHRONISATION SUPABASE
   const handleSaveChanges = async () => {
     if (activeTab === 'tree' && currentTree) {
+      if (!isOwnerOfCurrentTree) {
+        alert("⚠️ Vous ne pouvez pas modifier cet arbre car vous n'en êtes pas le propriétaire. Faites-en une copie locale !");
+        return;
+      }
+
       const { error } = await supabase
         .from('trees')
         .update({ floors: currentTree.floors || [] })
@@ -185,9 +199,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       if (error) {
         alert(`❌ Erreur sauvegarde Arbre : ${error.message}`);
       } else {
-        // Déclencher le recalcul automatique au moment de la sauvegarde générale de l'arbre
         await recalculateAndSaveMaxTeamConstraint(currentTree.id, currentTree.floors);
-        alert(`🎉 Arbre "${currentTree.name}" et ses paliers synchronisés sur Supabase (Contrainte d'équipe recalculée) !`);
+        alert(`🎉 Arbre "${currentTree.name}" et ses paliers synchronisés sur Supabase !`);
       }
     } 
     
@@ -205,9 +218,64 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
+  // ✨ LOGIQUE DE PARTAGE DE L'ARBRE (Passage en visibilité public)
+  const handleShareTree = async () => {
+    if (!currentTree) return;
+    if (!isOwnerOfCurrentTree) {
+      alert("⚠️ Vous devez être le propriétaire de l'arbre pour pouvoir le partager.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from('trees')
+      .update({ visibility: 'public' })
+      .eq('id', currentTree.id);
+
+    if (error) {
+      alert(`❌ Erreur lors du partage : ${error.message}`);
+    } else {
+      if (typeof setTrees === 'function') {
+        setTrees(prev => ({
+          ...prev,
+          [currentTree.id]: { ...prev[currentTree.id], visibility: 'public' }
+        }));
+      }
+      alert(`🌍 L'arbre "${currentTree.name}" est désormais partagé et accessible à l'ensemble de la communauté !`);
+    }
+  };
+
+  // ✨ LOGIQUE DE DUPLICATION D'UN ARBRE PARTAGÉ EN LOCAL
+  const handleDuplicateTreeAsLocal = async (treeToCopy) => {
+    if (!treeToCopy) return;
+
+    const { data, error } = await supabase
+      .from('trees')
+      .insert([{ 
+        name: `${treeToCopy.name} (Copie locale)`, 
+        owner_id: currentUserId, 
+        floors: treeToCopy.floors || [], 
+        visibility: 'private', 
+        max_team_constraint: treeToCopy.max_team_constraint || 1 
+      }])
+      .select().single();
+
+    if (error) {
+      alert(`⚠️ Erreur lors de la copie : ${error.message}`);
+      return;
+    }
+
+    if (typeof setTrees === 'function') {
+      setTrees(prev => ({ ...prev, [data.id]: data }));
+    }
+    setActiveTreeId(data.id);
+    setActiveModal(null);
+    alert(`📥 Une copie locale éditable de l'arbre "${treeToCopy.name}" a été ajoutée à votre espace !`);
+  };
+
   // MODIFICATION DE L'ARBRE DANS LE STATE LOCAL
   const updateCurrentTreeInState = (updatedFields) => {
     if (!currentTree) return;
+    if (!isOwnerOfCurrentTree) return; // Sécurité anti-mutation locale si non-propriétaire
     if (typeof setTrees === 'function') {
       setTrees(prev => ({
         ...prev,
@@ -220,9 +288,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, ...updatedFields } : s));
   };
 
-  // LOGIQUE INTERACTIVE DES PALIERS (FLOORS) SUR L'ARBRE ACTIF
+  // LOGIQUE INTERACTIVE DES PALIERS (FLOORS)
   const handleAddFloor = () => {
-    if (!currentTree) return;
+    if (!currentTree || !isOwnerOfCurrentTree) return;
     const floors = currentTree.floors ? [...currentTree.floors] : [];
     const nextFloorId = floors.length > 0 ? Math.max(...floors.map(f => f.floorId || 0)) + 1 : 1;
 
@@ -239,7 +307,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const handleRemoveFloor = (floorId) => {
-    if (!currentTree || !currentTree.floors) return;
+    if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
     const updatedFloors = currentTree.floors.filter(f => f.floorId !== floorId);
     
     updateCurrentTreeInState({ floors: updatedFloors });
@@ -247,7 +315,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const toggleFloorMode = (floorId) => {
-    if (!currentTree || !currentTree.floors) return;
+    if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
     updateCurrentTreeInState({
       floors: currentTree.floors.map(f => 
         f.floorId === floorId ? { ...f, mode: f.mode === 'static' ? 'random' : 'static' } : f
@@ -256,7 +324,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const handleCountChange = (floorId, val) => {
-    if (!currentTree || !currentTree.floors) return;
+    if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
     const numericVal = Math.max(1, parseInt(val, 10) || 1);
     updateCurrentTreeInState({
       floors: currentTree.floors.map(f => f.floorId === floorId ? { ...f, count: numericVal } : f)
@@ -264,7 +332,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const handleToggleDifficultyInFloor = (floorId, diffLevel) => {
-    if (!currentTree || !currentTree.floors) return;
+    if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
     updateCurrentTreeInState({
       floors: currentTree.floors.map(f => {
         if (f.floorId !== floorId) return f;
@@ -278,7 +346,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const handleToggleQuestInFloor = (floorId, questId) => {
-    if (!currentTree || !currentTree.floors) return;
+    if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
     
     const updatedFloors = currentTree.floors.map(f => {
       if (f.floorId !== floorId) return f;
@@ -290,7 +358,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     });
 
     updateCurrentTreeInState({ floors: updatedFloors });
-    // Déclencheur immédiat d'Ultra Bonus dès qu'on check/uncheck une mission dans un palier
     recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
   };
 
@@ -299,9 +366,17 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (e && e.preventDefault) e.preventDefault();
     if (!newTreeName.trim()) return;
 
+    // ✨ CORRECTION SÉCURISÉE : Ajout explicite de max_user à 100 par défaut (résout le blocage de création)
     const { data, error } = await supabase
       .from('trees')
-      .insert([{ name: newTreeName.trim(), owner_id: currentUserId, floors: [], visibility: 'private', max_team_constraint: 1 }])
+      .insert([{ 
+        name: newTreeName.trim(), 
+        owner_id: currentUserId, 
+        floors: [], 
+        visibility: 'private', 
+        max_team_constraint: 1,
+        max_user: 100 
+      }])
       .select().single();
 
     if (error) { alert(`⚠️ Erreur : ${error.message}`); return; }
@@ -319,7 +394,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (!newQuestName || !newQuestDesc) return;
     const calculatedDifficulty = newQuestType === 'boss' ? 3 : newQuestType === 'miniboss' ? 2 : 1;
 
-    // Insertion avec prise en compte des nouveaux champs collaboratifs
     const { data, error } = await supabase
       .from('quests')
       .insert([{ 
@@ -337,7 +411,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (error) { alert(`⚠️ Erreur : ${error.message}`); return; }
     if (typeof setQuests === 'function') setQuests(prev => [...(prev || []), data]);
 
-    // Reset états du formulaire
     setNewQuestName(''); 
     setNewQuestDesc(''); 
     setIsCollaborative(false);
@@ -379,8 +452,19 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   const handleRemoveDRH = (drhId) => {
     if (!currentSession) return;
-    updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== id) });
+    updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
   };
+
+  // Filtrage de la liste pour l'explorateur d'arbres
+  const filteredBrowsedTrees = Object.values(trees || {}).filter(t => {
+    if (!t) return false;
+    const matchesSearch = (t.name || '').toLowerCase().includes(treeSearchQuery.toLowerCase());
+    if (treeBrowserTab === 'local') {
+      return matchesSearch && t.owner_id === currentUserId;
+    } else {
+      return matchesSearch && t.visibility === 'public';
+    }
+  });
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
@@ -392,7 +476,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             onClick={() => setActiveTab('tree')}
             className={`px-4 py-2 rounded-lg transition-all ${activeTab === 'tree' ? 'bg-white text-purple-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
           >
-            🌳 Architecture de l'Arbre ({Object.keys(trees).length})
+            🌳 Architecture de l'Arbre
           </button>
           <button 
             onClick={() => setActiveTab('sessions')}
@@ -411,19 +495,31 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             )}
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <span className="text-slate-500 whitespace-nowrap">Arbre actif :</span>
-              <select 
-                value={activeTreeId} 
-                onChange={(e) => setActiveTreeId(e.target.value)}
-                className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-purple-900 focus:outline-none w-full sm:w-48 font-bold"
+              {/* ✨ REMPLACEMENT DU SELECT PAR UN BOUTON DE POP-UP D'EXPLORATION GLOBALE */}
+              <button
+                onClick={() => setActiveModal('tree_browser')}
+                className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-purple-900 text-left font-bold min-w-[180px] flex justify-between items-center transition-all hover:bg-purple-100"
               >
-                {Object.values(trees).map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
+                <span className="truncate">{currentTree ? currentTree.name : "-- Choisir un arbre --"}</span>
+                <span className="text-[10px] ml-2">🔍 Ouvrir...</span>
+              </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* INDICATION DE LECTURE SEULE SI NON-PROPRIÉTAIRE */}
+      {activeTab === 'tree' && currentTree && !isOwnerOfCurrentTree && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-bold flex justify-between items-center shadow-xs">
+          <span>🔒 Vous visualisez cet arbre en mode Lecture Seule (Propriétaire distant). Vous ne pourrez pas enregistrer de modifications dessus.</span>
+          <button 
+            onClick={() => handleDuplicateTreeAsLocal(currentTree)}
+            className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-[11px] uppercase tracking-wide transition-all"
+          >
+            📥 Dupliquer en local
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
@@ -446,10 +542,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           <span className="bg-purple-700 text-white font-extrabold px-2.5 py-1 text-xs rounded-lg shadow-sm">PALIER {floor.floorId}</span>
                           
                           <button 
+                            disabled={!isOwnerOfCurrentTree}
                             onClick={() => toggleFloorMode(floor.floorId)} 
                             className={`text-xs font-bold px-3 py-1 rounded-full border transition-all ${
                               floor.mode === 'static' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                            }`}
+                            } disabled:opacity-60`}
                           >
                             {floor.mode === 'static' ? '📌 Statique' : '🎲 Aléatoire'}
                           </button>
@@ -460,10 +557,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               return (
                                 <button
                                   key={level}
+                                  disabled={!isOwnerOfCurrentTree}
                                   onClick={() => handleToggleDifficultyInFloor(floor.floorId, level)}
                                   className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-black transition-all ${
                                     isChecked ? 'bg-amber-400 text-amber-950 border border-amber-500 shadow-sm scale-110' : 'text-slate-400 hover:bg-slate-200'
-                                  }`}
+                                  } disabled:opacity-40`}
                                 >
                                   {level}★
                                 </button>
@@ -476,16 +574,19 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               <span>🎯 Pioche :</span>
                               <input 
                                 type="number" min="1"
+                                disabled={!isOwnerOfCurrentTree}
                                 value={floor.count !== undefined ? floor.count : 2} 
                                 onChange={(e) => handleCountChange(floor.floorId, e.target.value)}
-                                className="w-10 bg-white border border-amber-300 rounded text-center py-0.5 font-black text-slate-900"
+                                className="w-10 bg-white border border-amber-300 rounded text-center py-0.5 font-black text-slate-900 disabled:bg-slate-100"
                               />
                               <span className="text-[11px] opacity-75 font-medium">missions</span>
                             </div>
                           )}
                         </div>
                         
-                        <button onClick={() => handleRemoveFloor(floor.floorId)} className="text-slate-400 hover:text-red-500 text-xs font-bold">Supprimer</button>
+                        {isOwnerOfCurrentTree && (
+                          <button onClick={() => handleRemoveFloor(floor.floorId)} className="text-slate-400 hover:text-red-500 text-xs font-bold">Supprimer</button>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -501,6 +602,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               return (
                                 <button 
                                   key={quest.id} 
+                                  disabled={!isOwnerOfCurrentTree}
                                   onClick={() => handleToggleQuestInFloor(floor.floorId, quest.id)} 
                                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1.5 ${
                                     isSelected 
@@ -510,7 +612,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                       : isQuestCollab 
                                         ? 'bg-purple-5 text-purple-800 border-purple-200 hover:bg-purple-100 font-semibold' 
                                         : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                                  }`}
+                                  } disabled:opacity-80 disabled:cursor-not-allowed`}
                                 >
                                   <span>{quest.name}</span>
                                   {isQuestCollab && (
@@ -529,19 +631,21 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   );
                 })}
 
-                <div className="bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs font-bold text-slate-600">Prochain palier :</label>
-                    <select value={newFloorMode} onChange={(e) => setNewFloorMode(e.target.value)} className="bg-white border rounded-lg text-xs p-2 font-semibold">
-                      <option value="static">📌 Statique</option>
-                      <option value="random">🎲 Aléatoire</option>
-                    </select>
+                {isOwnerOfCurrentTree ? (
+                  <div className="bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-bold text-slate-600">Prochain palier :</label>
+                      <select value={newFloorMode} onChange={(e) => setNewFloorMode(e.target.value)} className="bg-white border rounded-lg text-xs p-2 font-semibold">
+                        <option value="static">📌 Statique</option>
+                        <option value="random">🎲 Aléatoire</option>
+                      </select>
+                    </div>
+                    <button onClick={handleAddFloor} className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold px-5 py-2.5 rounded-lg">➕ Insérer un Palier dans l'Arbre</button>
                   </div>
-                  <button onClick={handleAddFloor} className="bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold px-5 py-2.5 rounded-lg">➕ Insérer un Palier dans l'Arbre</button>
-                </div>
+                ) : null}
               </div>
             ) : (
-              <div className="bg-white border p-12 rounded-xl text-center text-slate-400 text-xs font-semibold">Créez votre premier Arbre pédagogique via la barre latérale gauche 🌳</div>
+              <div className="bg-white border p-12 rounded-xl text-center text-slate-400 text-xs font-semibold">Ouvrez l'explorateur ou créez votre premier Arbre pédagogique via la barre latérale gauche 🌳</div>
             )
           )}
 
@@ -732,6 +836,17 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         <button onClick={() => setActiveModal('quest')} className="bg-slate-800 hover:bg-slate-700 text-purple-400 border border-purple-900/50 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold shadow-xs" title="Créer une nouvelle mission en BDD">✨</button>
         <button onClick={() => setActiveModal('session')} className="bg-slate-800 hover:bg-slate-700 text-blue-400 border border-blue-900/50 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold shadow-xs" title="Ouvrir un nouvel espace Session">📆</button>
         
+        {/* ✨ RÉINTÉGRATION DU BOUTON FLOTTANT DE PARTAGE DE L'ARBRE ACTIF */}
+        {currentTree && isOwnerOfCurrentTree && currentTree.visibility !== 'public' && (
+          <button 
+            onClick={handleShareTree} 
+            className="bg-amber-600 hover:bg-amber-500 text-white w-10 h-10 rounded-xl flex items-center justify-center text-md font-bold shadow-xs transition-all" 
+            title="Partager cet arbre avec la communauté"
+          >
+            🌍
+          </button>
+        )}
+
         <div className="w-8 h-px bg-slate-700 my-1"></div>
 
         <button onClick={handleSaveChanges} className="bg-emerald-600 hover:bg-emerald-500 text-white w-12 h-12 rounded-xl flex flex-col items-center justify-center text-sm font-black shadow-lg uppercase tracking-tight" title="Enregistrer les modifications sur Supabase">💾</button>
@@ -756,6 +871,99 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               </>
             )}
 
+            {/* ✨ NOUVELLE MODALE INTERACTIVE : EXPLORATEUR D'ARBRES EN DEUX ONGLETS */}
+            {activeModal === 'tree_browser' && (
+              <>
+                <div className="border-b border-slate-100 pb-2">
+                  <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">🔍 Catalogue global des Arbres</h3>
+                  <p className="text-[11px] text-slate-500">Sélectionnez le parcours actif ou dupliquez un modèle partagé.</p>
+                </div>
+
+                <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold gap-1">
+                  <button 
+                    type="button"
+                    onClick={() => setTreeBrowserTab('local')}
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-all ${treeBrowserTab === 'local' ? 'bg-white text-purple-950 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    🏠 Mes Arbres locaux
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setTreeBrowserTab('shared')}
+                    className={`flex-1 py-1.5 rounded-lg text-center transition-all ${treeBrowserTab === 'shared' ? 'bg-white text-purple-950 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    🌍 Modèles partagés
+                  </button>
+                </div>
+
+                <input 
+                  type="text"
+                  placeholder="🔍 Rechercher un arbre..."
+                  value={treeSearchQuery}
+                  onChange={(e) => setTreeSearchQuery(e.target.value)}
+                  className="w-full border text-xs rounded-lg p-2 bg-slate-50 font-medium"
+                />
+
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {filteredBrowsedTrees.length > 0 ? (
+                    filteredBrowsedTrees.map((t) => {
+                      const isSelected = t.id === activeTreeId;
+                      const isOwned = t.owner_id === currentUserId;
+                      return (
+                        <div 
+                          key={t.id} 
+                          className={`p-3 border rounded-xl flex flex-col justify-between gap-2 transition-all ${
+                            isSelected ? 'bg-purple-50 border-purple-300' : 'bg-slate-50 border-slate-200'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                              <span className="truncate max-w-[180px]">Par: {isOwned ? "Moi-même" : `Auteur distant`}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-black ${
+                                t.visibility === 'public' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'
+                              }`}>
+                                {t.visibility === 'public' ? '🌍 Communautaire' : '🔒 Privé'}
+                              </span>
+                            </div>
+                            <h4 className="font-bold text-xs text-slate-800 mt-1">{t.name}</h4>
+                            <p className="text-[10px] text-slate-500 mt-0.5 italic">
+                              Structure contenant {Array.isArray(t.floors) ? t.floors.length : 0} paliers de progression.
+                            </p>
+                          </div>
+
+                          <div className="flex justify-end gap-1.5 pt-1 border-t border-slate-100/60">
+                            {!isSelected && (
+                              <button
+                                type="button"
+                                onClick={() => { setActiveTreeId(t.id); setActiveModal(null); }}
+                                className="bg-slate-900 text-white font-bold text-[10px] px-2.5 py-1 rounded-md transition-all hover:bg-slate-800"
+                              >
+                                🎯 Activer
+                              </button>
+                            )}
+                            {!isOwned && (
+                              <button
+                                type="button"
+                                onClick={() => handleDuplicateTreeAsLocal(t)}
+                                className="bg-purple-100 text-purple-700 font-bold text-[10px] px-2.5 py-1 rounded-md transition-all hover:bg-purple-200"
+                              >
+                                📥 Copier localement
+                              </button>
+                            )}
+                            {isSelected && (
+                              <span className="text-purple-700 text-[10px] font-black py-1">✓ Sélectionné</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-center text-[11px] text-slate-400 italic py-4">Aucun modèle trouvé dans cette section.</p>
+                  )}
+                </div>
+              </>
+            )}
+
             {activeModal === 'quest' && (
               <>
                 <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">✨ Nouvelle Mission (Base)</h3>
@@ -769,7 +977,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     <textarea required rows="2" placeholder="Description de l'exercice..." value={newQuestDesc} onChange={(e) => setNewQuestDesc(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50" />
                   </div>
 
-                  {/* 🤝 BLOC INTERACTIF POUR LES MISSIONS COLLABORATIVES */}
                   <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 space-y-3">
                     <div className="flex items-center gap-2">
                       <input 
