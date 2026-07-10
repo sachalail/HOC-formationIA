@@ -153,6 +153,10 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const currentSessionSafe = selectedSession || sessions[0];
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
 
+  // FILTRAGE DES QUÊTES LIÉES UNIQUEMENT À CET ARBRE DE SESSION
+  const questsList = quests || [];
+  const sessionQuestsOnly = questsList.filter(q => String(q.tree_id) === String(currentSessionSafe.tree_id));
+
   const filteredProductions = allProductions.filter(p => {
     const isInSession = studentIdsInCurrentSession.includes(p.studentId);
     if (!isInSession) return false;
@@ -165,7 +169,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
 
   const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content?.startsWith("[Importé"));
   
-  const questsList = quests || [];
   const getPointsByDifficulty = (diff) => {
     const d = parseInt(diff, 10);
     if (d === 3) return 500;
@@ -196,16 +199,21 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
-  // TRIS DES ENSEMBLES DE RECHERCHE RESTANTS
+  // SÉLECTION DES APPRENANTS DISPONIBLES DANS LE MENU DÉROULANT
   const availableStudents = [...sessionStudents]
     .sort((a, b) => b.maxFloor - a.maxFloor)
     .filter(st => !selectedStudents.some(sel => sel.uid === st.uid));
 
-  const availableQuests = [...questsList]
+  // SÉLECTION DES QUÊTES DE LA SESSION DISPONIBLES DANS LE MENU DÉROULANT
+  const availableQuests = [...sessionQuestsOnly]
     .sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10))
     .filter(q => !selectedQuests.some(sel => sel.id === q.id));
 
-  // FONCTIONS DE SELECTION
+  // TRI DES TAGS SÉLECTIONNÉS POUR PERMETTRE L'AFFICHAGE DES SÉPARATEURS PAR PALIER / DIFFICULTÉ
+  const sortedSelectedStudents = [...selectedStudents].sort((a, b) => b.maxFloor - a.maxFloor);
+  const sortedSelectedQuests = [...selectedQuests].sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10));
+
+  // GESTION DES ACTIONS FILTRES
   const addStudentFilter = (uid) => {
     if (!uid) return;
     const match = sessionStudents.find(s => s.uid === uid);
@@ -220,7 +228,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
 
   const addQuestFilter = (id) => {
     if (!id) return;
-    const match = questsList.find(q => q.id === id);
+    const match = sessionQuestsOnly.find(q => q.id === id);
     if (match && !selectedQuests.some(q => q.id === id)) {
       setSelectedQuests([...selectedQuests, match]);
     }
@@ -284,16 +292,39 @@ export default function ClientDashboardScreen({ trees, quests }) {
           {/* COLONNE FILTRE ÉTUDIANT */}
           <div className="flex flex-col justify-between space-y-2">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Collaborateur :</label>
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Collaborateur :</label>
+                <button 
+                  onClick={() => setSelectedStudents([])} 
+                  className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                >
+                  Tous les collaborateurs
+                </button>
+              </div>
               
-              {/* Tags au-dessus du sélecteur */}
-              <div className="flex flex-wrap gap-1.5 min-h-[32px] pb-1">
-                {selectedStudents.map(st => (
-                  <span key={st.uid} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    👤 {st.name}
-                    <button onClick={() => removeStudentFilter(st.uid)} className="hover:text-blue-900 font-black ml-0.5 cursor-pointer">✕</button>
-                  </span>
-                ))}
+              {/* Zone de Tags Collaborateurs avec séparateurs de paliers */}
+              <div className="flex flex-wrap items-center gap-1.5 min-h-[36px] bg-white border border-slate-200 p-1.5 rounded-xl">
+                {sortedSelectedStudents.length === 0 ? (
+                  <span className="text-[10px] text-slate-400 italic pl-1">Tous visibles</span>
+                ) : (
+                  sortedSelectedStudents.map((st, index) => {
+                    const nodes = [];
+                    if (index === 0 || st.maxFloor !== sortedSelectedStudents[index - 1].maxFloor) {
+                      nodes.push(
+                        <span key={`tag-sep-floor-${st.maxFloor}`} className="text-[9px] font-black tracking-wider text-slate-400 uppercase px-1 bg-slate-100 rounded">
+                          P.{st.maxFloor}
+                        </span>
+                      );
+                    }
+                    nodes.push(
+                      <span key={st.uid} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        👤 {st.name}
+                        <button onClick={() => removeStudentFilter(st.uid)} className="hover:text-blue-900 font-black ml-0.5 cursor-pointer">✕</button>
+                      </span>
+                    );
+                    return nodes;
+                  })
+                )}
               </div>
             </div>
 
@@ -305,7 +336,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
               <option value="" disabled>✨ Choisir un collaborateur...</option>
               {availableStudents.map((st, index) => {
                 const items = [];
-                // Séparateur numérique imbriqué dans le flux continu au changement de Palier
                 if (index === 0 || st.maxFloor !== availableStudents[index - 1].maxFloor) {
                   items.push(
                     <option key={`sep-floor-${st.maxFloor}`} disabled className="bg-slate-100 text-slate-500 font-bold text-[10px] py-1">
@@ -326,16 +356,40 @@ export default function ClientDashboardScreen({ trees, quests }) {
           {/* COLONNE FILTRE QUÊTES */}
           <div className="flex flex-col justify-between space-y-2">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Quête :</label>
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Quête :</label>
+                <button 
+                  onClick={() => setSelectedQuests([])} 
+                  className="text-[10px] font-bold text-purple-600 hover:underline cursor-pointer"
+                >
+                  Toutes les quêtes
+                </button>
+              </div>
               
-              {/* Tags au-dessus du sélecteur */}
-              <div className="flex flex-wrap gap-1.5 min-h-[32px] pb-1">
-                {selectedQuests.map(q => (
-                  <span key={q.id} className="inline-flex items-center gap-1 bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    🎯 {q.name}
-                    <button onClick={() => removeQuestFilter(q.id)} className="hover:text-purple-900 font-black ml-0.5 cursor-pointer">✕</button>
-                  </span>
-                ))}
+              {/* Zone de Tags Quêtes avec séparateurs de difficultés */}
+              <div className="flex flex-wrap items-center gap-1.5 min-h-[36px] bg-white border border-slate-200 p-1.5 rounded-xl">
+                {sortedSelectedQuests.length === 0 ? (
+                  <span className="text-[10px] text-slate-400 italic pl-1">Toutes visibles</span>
+                ) : (
+                  sortedSelectedQuests.map((q, index) => {
+                    const nodes = [];
+                    const diff = parseInt(q.difficulty, 10);
+                    if (index === 0 || diff !== parseInt(sortedSelectedQuests[index - 1].difficulty, 10)) {
+                      nodes.push(
+                        <span key={`tag-sep-diff-${diff}`} className="text-[9px] font-black tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-1 rounded">
+                          {diff}★
+                        </span>
+                      );
+                    }
+                    nodes.push(
+                      <span key={q.id} className="inline-flex items-center gap-1 bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        🎯 {q.name}
+                        <button onClick={() => removeQuestFilter(q.id)} className="hover:text-purple-900 font-black ml-0.5 cursor-pointer">✕</button>
+                      </span>
+                    );
+                    return nodes;
+                  })
+                )}
               </div>
             </div>
 
@@ -344,11 +398,10 @@ export default function ClientDashboardScreen({ trees, quests }) {
               onChange={(e) => { addQuestFilter(e.target.value); e.target.value = ""; }}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="" disabled>✨ Choisir une quête...</option>
+              <option value="" disabled>✨ Choisir une quête ({sessionQuestsOnly.length} dispo)...</option>
               {availableQuests.map((q, index) => {
                 const items = [];
                 const diff = parseInt(q.difficulty, 10);
-                // Séparateur numérique imbriqué dans le flux continu au changement de Difficulté
                 if (index === 0 || diff !== parseInt(availableQuests[index - 1].difficulty, 10)) {
                   items.push(
                     <option key={`sep-diff-${diff}`} disabled className="bg-slate-100 text-slate-500 font-bold text-[10px] py-1">
