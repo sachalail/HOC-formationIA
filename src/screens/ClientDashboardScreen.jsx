@@ -10,7 +10,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   }); 
   const [sessionStudents, setSessionStudents] = useState([]); 
   const [sessionQuests, setSessionQuests] = useState([]); 
-  const [allProductions, setAllProductions] = useState([]); \
+  const [allProductions, setAllProductions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // FILTRES DRH PERSISTANTS
