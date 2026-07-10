@@ -3,79 +3,45 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 export default function ClientDashboardScreen({ trees, quests }) {
-  const [sessions, setSessions] = useState([]); // Sessions gérées par ce DRH
-  const [selectedSession, setSelectedSession] = useState(null); // Session actuellement sélectionnée
-  const [sessionStudents, setSessionStudents] = useState([]); // Étudiants de la session sélectionnée
-  const [allProductions, setAllProductions] = useState([]); // Toutes les productions
+  const [sessions, setSessions] = useState([]); 
+  const [selectedSession, setSelectedSession] = useState(null); 
+  const [sessionStudents, setSessionStudents] = useState([]); 
+  const [allProductions, setAllProductions] = useState([]); 
   const [loading, setLoading] = useState(true);
 
-  // FILTRE CIBLÉ SUR UNE MISSION UNIQUE
-  const [selectedQuestFilter, setSelectedQuestFilter] = useState('all');
+  // ÉTATS DES FILTRES MULTICRITÈRES (TAGS)
+  const [selectedStudents, setSelectedStudents] = useState([]); // Array d'objets { uid, name, email }
+  const [selectedQuests, setSelectedQuests] = useState([]); // Array d'objets { id, name }
 
   useEffect(() => {
     const fetchHRData = async () => {
       try {
-        // 1. Récupérer l'utilisateur DRH connecté
         const { data: { session: authSession } } = await supabase.auth.getSession();
         if (!authSession) return;
 
         const hrUserId = authSession.user.id;
 
-        // 2. Récupérer les sessions où l'utilisateur fait partie du tableau 'drh'
         const { data: sessionsData, error: sessionsError } = await supabase
           .from('sessions')
           .select('*')
-          .contains('drh_ids', JSON.stringify([hrUserId])); // On passe un tableau JS classique, Supabase s'occupe du cast JSONB
+          .contains('drh_ids', JSON.stringify([hrUserId])); 
 
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
 
-        // Sélectionner la première session par défaut s'il y en a
         if (sessionsData && sessionsData.length > 0) {
-          setSelectedSession(sessionsData[0].session_code);
+          setSelectedSession(sessionsData[0]);
         }
-      } catch (err) {
-        console.error("Erreur d'initialisation de l'espace DRH :", err);
-      } finally {
-        setLoading(false);
-      }
-    };
 
-    fetchHRData();
-  }, []);
-
-  // Déclencheur : dès qu'on change de session, on recharge les participants et leurs productions
-  useEffect(() => {
-    if (!selectedSession) return;
-    
-    const fetchSessionDetails = async () => {
-      try {
-        // 1. Trouver la session actuelle
-        const currentSess = sessions.find(s => s.session_code === selectedSession);
-        if (!currentSess) return;
-
-        // 2. Récupérer les profils des étudiants inscrits à cette session
-        const { data: studentsData, error: studentsError } = await supabase
-          .from('profiles')
+        const { data: prods, error: prodsError } = await supabase
+          .from('productions')
           .select('*')
-          .contains('session_codes', JSON.stringify([selectedSession]));
+          .order('created_at', { ascending: false });
 
-        if (studentsError) throw studentsError;
-        setSessionStudents(studentsData || []);
+        if (prodsError) throw prodsError;
 
-        // 3. Récupérer l'intégralité des rendus (productions) de ces étudiants
-        if (studentsData && studentsData.length > 0) {
-          const studentIds = studentsData.map(st => st.id);
-          
-          const { data: prodsData, error: prodsError } = await supabase
-            .from('productions')
-            .select('*')
-            .in('student_id', studentIds)
-            .order('created_at', { ascending: false });
-
-          if (prodsError) throw prodsError;
-
-          const formattedProds = (prodsData || []).map(p => ({
+        if (prods) {
+          const formatted = prods.map(p => ({
             id: p.id,
             studentId: p.student_id,
             studentEmail: p.student_email,
@@ -85,210 +51,374 @@ export default function ClientDashboardScreen({ trees, quests }) {
             file_url: p.file_url,
             date: new Date(p.created_at).toLocaleDateString('fr-FR')
           }));
-
-          setAllProductions(formattedProds);
-        } else {
-          setAllProductions([]);
+          setAllProductions(formatted);
         }
-
       } catch (err) {
-        console.error("Erreur de récupération des données de session :", err);
+        console.error("Erreur lors du chargement des données DRH:", err);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchSessionDetails();
-  }, [selectedSession, sessions]);
+    fetchHRData();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedSession || !selectedSession.session_code) {
+      setSessionStudents([]);
+      return;
+    }
+
+    const fetchStudentsProfiles = async () => {
+      try {
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .contains('session_codes', JSON.stringify([selectedSession.session_code]));
+
+        if (error) throw error;
+
+        if (profiles) {
+          const formattedStudents = profiles.map(p => {
+            // Extraction du palier max depuis le localStorage de secours de l'apprenant
+            const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${selectedSession.tree_id}`);
+            const maxFloor = savedFloor ? parseInt(savedFloor, 10) + 1 : 1;
+
+            return {
+              uid: p.id,
+              name: p.email ? p.email.split('@')[0] : "Apprenant",
+              email: p.email,
+              maxFloor: maxFloor
+            };
+          });
+          setSessionStudents(formattedStudents);
+        }
+      } catch (err) {
+        console.error("Erreur lors de la récupération automatique des étudiants :", err);
+      }
+    };
+
+    // Réinitialiser les filtres lors d'un changement de cohorte
+    setSelectedStudents([]);
+    setSelectedQuests([]);
+    fetchStudentsProfiles();
+  }, [selectedSession]);
+
+  const handleSessionChange = (e) => {
+    const sessionDocId = e.target.value;
+    const found = sessions.find(s => String(s.id) === String(sessionDocId));
+    if (found) setSelectedSession(found);
+  };
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-6 py-12 pl-24 text-center text-xs font-bold text-slate-400">
-        Chargement des données de l'Espace Client / DRH...
+      <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">
+        Chargement des données d'audit...
       </div>
     );
   }
 
-  // Informations de la session active
-  const currentSessionSafe = sessions.find(s => s.session_code === selectedSession) || { id: 'N/A', tree_id: null };
-  const currentTreeObj = trees[currentSessionSafe.tree_id];
+  if (sessions.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-8 py-12 text-center bg-white border rounded-2xl shadow-sm">
+        <h2 className="text-sm font-black text-slate-700 uppercase tracking-wider">Aucune session affectée</h2>
+        <p className="text-xs text-slate-400 mt-1">Votre compte n'est pas déclaré comme DRH sur une session active.</p>
+      </div>
+    );
+  }
 
-  // Calculer l'XP d'une quête d'après sa difficulté
-  const getPointsByDifficulty = (difficulty) => {
-    const numericDifficulty = parseInt(difficulty, 10);
-    if (numericDifficulty === 3) return 500;
-    if (numericDifficulty === 2) return 250;
+  const currentSessionSafe = selectedSession || sessions[0];
+  const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
+
+  // 1. FILTRAGE APPLIQUÉ SUR TOUTES LES DONNÉES DE LA COHORTE + SÉLECTIONS DE TAGS
+  const filteredProductions = allProductions.filter(p => {
+    const isInSession = studentIdsInCurrentSession.includes(p.studentId);
+    if (!isInSession) return false;
+
+    const matchesStudentFilter = selectedStudents.length === 0 || selectedStudents.some(s => s.uid === p.studentId);
+    const matchesQuestFilter = selectedQuests.length === 0 || selectedQuests.some(q => q.id === p.questId);
+
+    return matchesStudentFilter && matchesQuestFilter;
+  });
+
+  const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content?.startsWith("[Importé"));
+  
+  // 2. LOGIQUE DES SCORES & XP RE-CALCULÉS DYNAMIQUEMENT
+  const questsList = quests || [];
+  const getPointsByDifficulty = (diff) => {
+    const d = parseInt(diff, 10);
+    if (d === 3) return 500;
+    if (d === 2) return 250;
     return 100;
   };
 
-  // Filtrer les productions selon le filtre par mission sélectionné
-  const filteredProductions = allProductions.filter(p => {
-    if (selectedQuestFilter === 'all') return true;
-    return p.questId === selectedQuestFilter;
+  let totalXP = 0;
+  const studentsProgress = sessionStudents.map(student => {
+    const studentProds = filteredProductions.filter(p => p.studentId === student.uid);
+    const studentUniqueProds = studentProds.filter(p => !p.content?.startsWith("[Importé"));
+
+    const studentPoints = studentProds.reduce((sum, prod) => {
+      const originalQuest = questsList.find(q => q.id === prod.questId);
+      return sum + (originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100);
+    }, 0);
+    
+    totalXP += studentPoints;
+
+    return {
+      ...student,
+      xp: studentPoints,
+      livrablesCount: studentUniqueProds.length
+    };
   });
 
-  // Calcul dynamique de l'XP cumulé uniquement sur la sélection actuelle
-  const companyTotalXp = filteredProductions.reduce((sum, prod) => {
-    const originalQuest = quests.find(q => q.id === prod.questId);
-    return sum + (originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100);
-  }, 0);
+  // Taux d'engagement de la sélection courante
+  const totalStudents = sessionStudents.length;
+  const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
+  const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
+
+  // 3. GESTION DU RESTRUCTURAGE DES SÉLECTEURS (TRIÉ PAR DIFFICULTÉ / PALIER)
+  // Quêtes triées par difficulté croissante (1, puis 2, puis 3)
+  const sortedQuestsOptions = [...questsList].sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10));
+  // Étudiants rangés par Palier Max décroissant
+  const sortedStudentsOptions = [...sessionStudents].sort((a, b) => b.maxFloor - a.maxFloor);
+
+  // Fonctions d'Ajout / Retrait des Tags
+  const addStudentFilter = (uid) => {
+    if (!uid) return;
+    const match = sessionStudents.find(s => s.uid === uid);
+    if (match && !selectedStudents.some(s => s.uid === uid)) {
+      setSelectedStudents([...selectedStudents, match]);
+    }
+  };
+
+  const removeStudentFilter = (uid) => {
+    setSelectedStudents(selectedStudents.filter(s => s.uid !== uid));
+  };
+
+  const addQuestFilter = (id) => {
+    if (!id) return;
+    const match = questsList.find(q => q.id === id);
+    if (match && !selectedQuests.some(q => q.id === id)) {
+      setSelectedQuests([...selectedQuests, match]);
+    }
+  };
+
+  const removeQuestFilter = (id) => {
+    setSelectedQuests(selectedQuests.filter(q => q.id !== id));
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6">
+    <div className="max-w-7xl mx-auto px-8 py-8 space-y-6">
       
-      {/* HEADER CLIENT */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-950 text-white border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div>
-          <h2 className="text-lg font-black uppercase tracking-wider flex items-center gap-2 text-indigo-400">
-            📊 Espace Client & Pilotage RH
+      {/* BARRE HAUTE : SÉLECTION DE LA COHORTE */}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-black text-slate-700 uppercase tracking-wider whitespace-nowrap">
+            📂 Sélectionner la cohorte :
+          </label>
+          <select 
+            value={String(currentSessionSafe.id || '')} 
+            onChange={handleSessionChange}
+            className="bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg px-3 py-2 text-slate-800 outline-none focus:border-purple-500 shadow-sm min-w-[220px] cursor-pointer"
+          >
+            {sessions.map(s => (
+              <option key={String(s.id)} value={String(s.id)}>
+                📍 {s.name || `Session — ${s.session_code}`}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="text-[11px] font-medium text-slate-400">
+          Supervision de <strong className="text-slate-600">{sessions.length} session(s)</strong> actives rattachées
+        </div>
+      </div>
+
+      {/* BANNIÈRE COMMUNE (LUMINEUSE ET PRESTIGE) */}
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-2xl flex flex-wrap justify-between items-center gap-4 shadow-md">
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase font-black tracking-wider text-emerald-400">Suivi d'Acculturation Entreprise</div>
+          <h2 className="text-lg font-black tracking-tight">
+            Portail Décideur & RH — {currentSessionSafe.name || 'Ma Session'}
           </h2>
-          <p className="text-[11px] text-slate-400 font-medium">
-            Supervisez l'engagement, l'acquisition de compétences et l'XP de vos collaborateurs.
+          <p className="text-xs text-slate-300">
+            Code d'arrimage : <span className="font-mono text-emerald-400 font-bold bg-slate-800 px-2 py-0.5 rounded">{currentSessionSafe.session_code || 'N/A'}</span> | {totalStudents} collaborateur(s) inscrit(s).
           </p>
         </div>
+        <button 
+          onClick={() => alert(`📊 Génération du rapport de suivi...`)}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow-sm"
+        >
+          📥 Télécharger le rapport (.xlsx)
+        </button>
+      </div>
 
-        {/* SELECTEUR DE SESSION DIRECT */}
-        {sessions.length > 0 && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center gap-3">
-            <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Session suivie :</label>
-            <select 
-              value={selectedSession || ''} 
-              onChange={(e) => { setSelectedSession(e.target.value); setSelectedQuestFilter('all'); }}
-              className="bg-slate-950 border border-slate-700 text-emerald-400 text-xs font-mono font-bold rounded-lg px-3 py-1.5 focus:outline-none"
+      {/* CENTRE DE FILTRAGE PAR TAGS (REDISPOSÉ) */}
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-sm">
+        <div className="text-[11px] font-black uppercase text-slate-500 tracking-wider">🎛️ Centre de Tri Avancé</div>
+        
+        {/* ZONE DES TAGS ACTIFS (AU-DESSUS) */}
+        {(selectedStudents.length > 0 || selectedQuests.length > 0) && (
+          <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-200">
+            {selectedStudents.map(st => (
+              <span key={st.uid} className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-bold px-2.5 py-1 rounded-full">
+                👤 {st.name}
+                <button onClick={() => removeStudentFilter(st.uid)} className="hover:text-blue-900 font-black ml-0.5 cursor-pointer">✕</button>
+              </span>
+            ))}
+            {selectedQuests.map(q => (
+              <span key={q.id} className="inline-flex items-center gap-1.5 bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-bold px-2.5 py-1 rounded-full">
+                🎯 {q.name}
+                <button onClick={() => removeQuestFilter(q.id)} className="hover:text-purple-900 font-black ml-0.5 cursor-pointer">✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* SELECTEURS (LES ÉLÉMENTS SÉLECTIONNÉS SONT SOUSTRAITS DE LA RECHERCHE) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Collaborateur :</label>
+            <select
+              value=""
+              onChange={(e) => { addStudentFilter(e.target.value); e.target.value = ""; }}
+              className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              {sessions.map(s => (
-                <option key={s.session_code} value={s.session_code}>📍 {s.session_code}</option>
-              ))}
+              <option value="" disabled>✨ Choisir un collaborateur (trié par palier max)...</option>
+              {sortedStudentsOptions
+                .filter(st => !selectedStudents.some(sel => sel.uid === st.uid))
+                .map(st => (
+                  <option key={st.uid} value={st.uid}>
+                    P.{st.maxFloor} — {st.email}
+                  </option>
+                ))}
             </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Quête / Thème :</label>
+            <select
+              value=""
+              onChange={(e) => { addQuestFilter(e.target.value); e.target.value = ""; }}
+              className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
+            >
+              <option value="" disabled>✨ Choisir une mission (triée par difficulté)...</option>
+              {sortedQuestsOptions
+                .filter(q => !selectedQuests.some(sel => sel.id === q.id))
+                .map(q => (
+                  <option key={q.id} value={q.id}>
+                    ({q.difficulty}★) — {q.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* METRICS ROW DYNAMIQUES */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm space-y-1">
+          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Compteur de Compétences (XP sélection)</div>
+          <div className="text-3xl font-black text-slate-900">{totalXP} <span className="text-xs font-bold text-slate-400">XP</span></div>
+          <p className="text-[11px] text-slate-500 font-medium">Somme pondérée des quêtes isolées.</p>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm space-y-1">
+          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Cas Pratiques / Livrables Trouvés</div>
+          <div className="text-3xl font-black text-emerald-600">{uniqueProductionsGlobal.length} <span className="text-xs font-bold text-slate-400">Rendus</span></div>
+          <p className="text-[11px] text-slate-500 font-medium">Preuves concrètes filtrées ci-dessous.</p>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm space-y-1">
+          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Taux de Participation Ciblé</div>
+          <div className="text-3xl font-black text-purple-600">{engagementRate}%</div>
+          <p className="text-[11px] text-slate-500 font-medium">Collaborateurs répondant aux filtres définis.</p>
+        </div>
+      </div>
+
+      {/* TABLEAU SYNTHÈSE DES APPRENANTS */}
+      <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-3">
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">👥 Avancement de la Cohorte ({totalStudents})</h3>
+        {totalStudents === 0 ? (
+          <div className="text-center p-8 text-xs text-slate-400 italic">Aucun collaborateur trouvé.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-slate-400 font-bold uppercase border-b pb-2">
+                  <th className="pb-2">Collaborateur</th>
+                  <th className="pb-2">Dernier Niveau Connu</th>
+                  <th className="pb-2">Livrables (sélection)</th>
+                  <th className="pb-2 text-right">XP générée</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {studentsProgress.map(student => (
+                  <tr key={student.uid} className="hover:bg-slate-50/60">
+                    <td className="py-3 font-black text-slate-800">
+                      <div>{student.name}</div>
+                      <div className="text-[10px] text-slate-400 font-normal">{student.email}</div>
+                    </td>
+                    <td className="py-3">
+                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-bold font-mono text-[10px]">Palier {student.maxFloor}</span>
+                    </td>
+                    <td className="py-3 text-slate-500 font-semibold">{student.livrablesCount} dépôt(s)</td>
+                    <td className="py-3 text-right font-black text-emerald-600">{student.xp} XP</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {sessions.length === 0 ? (
-        <div className="bg-white border rounded-3xl p-8 text-center text-xs text-slate-400 italic font-medium shadow-sm">
-          Aucune session de formation n'est actuellement rattachée à vos droits de supervision d'entreprise.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          
-          {/* STATS & COLLABORATEURS (GAUCHE) */}
-          <div className="space-y-6">
-            
-            {/* STATS DE LA SÉLECTION ACCUMULÉES */}
-            <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider border-b pb-2">📈 Métriques de Sélection</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50 border p-3 rounded-xl text-center">
-                  <span className="block text-[9px] font-black text-slate-400 uppercase">XP Équipe Cumulé</span>
-                  <span className="text-md font-mono font-black text-slate-900">{companyTotalXp} XP</span>
-                </div>
-                <div className="bg-slate-50 border p-3 rounded-xl text-center">
-                  <span className="block text-[9px] font-black text-slate-400 uppercase">Rendus Validés</span>
-                  <span className="text-md font-mono font-black text-emerald-600">{filteredProductions.length}</span>
-                </div>
-              </div>
-              <div className="text-[10px] text-slate-400 italic text-center font-medium leading-relaxed bg-slate-50/50 p-2 rounded-xl border border-dashed">
-                Statistiques synchronisées en direct avec les critères de recherche.
-              </div>
-            </div>
-
-            {/* LISTE DES COLLABORATEURS INSCRITS */}
-            <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-3">
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex justify-between items-center">
-                <span>👥 Effectif Collaborateurs</span>
-                <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-0.5 rounded-full font-mono">{sessionStudents.length}</span>
-              </h3>
-              <p className="text-[11px] text-slate-400 leading-normal">Liste des collaborateurs rattachés à la clé active.</p>
-              
-              {sessionStudents.length === 0 ? (
-                <div className="text-xs text-slate-400 italic pt-2">Aucun apprenant inscrit à ce code.</div>
-              ) : (
-                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                  {sessionStudents.map(st => {
-                    // Compter le nombre de productions de cet étudiant sur la sélection actuelle
-                    const stepsDone = filteredProductions.filter(p => p.studentId === st.id).length;
-                    return (
-                      <div key={st.id} className="bg-slate-50 border rounded-xl p-2.5 flex justify-between items-center gap-2">
-                        <span className="text-[11px] font-bold text-slate-700 truncate">{st.student_email || st.email || "Utilisateur anonyme"}</span>
-                        <span className="text-[9px] font-mono font-bold bg-white text-slate-500 border rounded px-1.5 py-0.5 shrink-0">
-                          {stepsDone} rendu(s)
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
+      {/* REGISTRE DES RENDUS (FLUX DE PRODUCTION DES APPRENANTS) */}
+      <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-4">
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">📂 Registre d'audit des Livrables correspondants</h3>
+        
+        {uniqueProductionsGlobal.length === 0 ? (
+          <div className="text-center p-12 text-xs text-slate-400 font-medium italic bg-slate-50 rounded-xl border border-dashed">
+            Aucun livrable ne correspond aux filtres appliqués pour cette cohorte.
           </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {uniqueProductionsGlobal.map(prod => {
+              const linkedQuest = questsList.find(q => q.id === prod.questId);
+              const stars = linkedQuest ? `${linkedQuest.difficulty}★` : '';
 
-          {/* HISTORIQUE DE TOUS LES RENDUS ENREGISTRÉS (DROITE) */}
-          <div className="lg:col-span-2 space-y-4">
-            
-            {/* COMPOSANT CENTRE DE TRI / FILTRE DE MISSION EXCLUSIF */}
-            <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
-              <div className="space-y-0.5">
-                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-400">🎛️ Centre de Tri Client</h4>
-                <p className="text-[10px] text-slate-400">Isolez les résultats sur une mission spécifique.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-[10px] text-slate-300 font-bold uppercase">Mission cible :</label>
-                <select 
-                  value={selectedQuestFilter} 
-                  onChange={(e) => setSelectedQuestFilter(e.target.value)} 
-                  className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer max-w-[240px] focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="all">🎯 Toutes les missions de la session ({quests.length})</option>
-                  {quests.map(q => (
-                    <option key={q.id} value={q.id}>⚡ {q.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="border-b pb-2 flex justify-between items-center">
-              <h3 className="font-black text-xs text-slate-400 uppercase tracking-widest">
-                📂 Flux Général des Livrables ({filteredProductions.length})
-              </h3>
-              <span className="text-[11px] text-slate-500 font-mono">Parcours technique : {currentTreeObj ? currentTreeObj.name : 'N/A'}</span>
-            </div>
-
-            {filteredProductions.length === 0 ? (
-              <div className="bg-white border rounded-2xl p-12 text-center text-xs text-slate-400 font-medium italic shadow-sm">
-                Aucun livrable n'a été déposé pour les critères sélectionnés.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredProductions.map(prod => {
-                  const linkedQuest = quests.find(q => q.id === prod.questId);
-                  const difficultyStars = linkedQuest ? `${linkedQuest.difficulty}★` : '1★';
-
-                  return (
-                    <div key={prod.id} className="bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md transition-all space-y-2.5">
-                      <div className="flex justify-between items-center text-[10px]">
-                        <span className="font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                          🧑‍💻 {prod.studentEmail}
-                          {prod.file_url && (
-                            <a 
-                              href={prod.file_url} 
-                              download={`Livrable_${prod.id}`}
-                              className="ml-2 inline-flex items-center text-purple-600 hover:text-purple-800 bg-purple-50 hover:bg-purple-100 px-1.5 py-0.5 rounded font-mono font-bold text-[9px] border border-purple-200 transition-all cursor-pointer"
-                            >
-                              📄 doc livré
-                            </a>
-                          )}
-                        </span>
-                        <span className="text-slate-400 font-mono">{prod.date}</span>
-                      </div>
-                      <h4 className="font-bold text-xs text-slate-800 pt-1">🎯 Quête : {prod.questName} <span className="text-[10px] font-mono font-bold text-amber-500 ml-1">({difficultyStars})</span></h4>
-                      <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border leading-relaxed font-medium italic">"{prod.content}"</p>
+              return (
+                <div key={prod.id} className="border border-slate-100 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between gap-3 relative overflow-hidden shadow-sm">
+                  <div className="absolute top-0 bottom-0 left-0 w-1 bg-emerald-500" />
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                      <span>
+                        👤 {sessionStudents.find(s => s.uid === prod.studentId)?.name || prod.studentEmail || "Anonyme"}
+                        {prod.file_url && (
+                          <a 
+                            href={prod.file_url} 
+                            download={`Livrable_${prod.id}`}
+                            className="ml-2 inline-flex items-center text-purple-600 hover:text-purple-800 bg-purple-50 px-1.5 py-0.5 rounded font-mono font-bold text-[9px] border border-purple-100 transition-all cursor-pointer"
+                          >
+                            📄 doc joint
+                          </a>
+                        )}
+                      </span>
+                      <span className="font-mono">{prod.date}</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    <h4 className="font-bold text-xs text-slate-800 pt-1">🎯 Quête : {prod.questName} <span className="text-amber-500 text-[10px] ml-1">{stars}</span></h4>
+                    <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border leading-relaxed font-medium italic">"{prod.content}"</p>
+                  </div>
 
-        </div>
-      )}
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-semibold">
+                    <span>Réf : DRH-SESS-{String(currentSessionSafe.id).substring(0, 5).toUpperCase()}</span>
+                    <span className="text-emerald-600 font-extrabold">✓ Livrable Archivé</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
