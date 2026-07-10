@@ -55,7 +55,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
 
-        // Si on a des sessions et qu'aucune n'était sauvée, on prend la première
         if (sessionsData && sessionsData.length > 0 && !selectedSession) {
           setSelectedSession(sessionsData[0]);
         }
@@ -90,7 +89,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
     fetchHRData();
   }, []);
 
-  // Synchronisation des étudiants dès que la session active (mémoire ou fallback) change
+  // Synchronisation stricte des étudiants dès que le code de la session active réelle change
   useEffect(() => {
     if (!currentSessionSafe || !currentSessionSafe.session_code) {
       setSessionStudents([]);
@@ -126,14 +125,13 @@ export default function ClientDashboardScreen({ trees, quests }) {
     };
 
     fetchStudentsProfiles();
-  }, [currentSessionSafe?.id]); // On écoute l'ID de la session active réelle
+  }, [currentSessionSafe?.session_code]);
 
   const handleSessionChange = (e) => {
     const sessionDocId = e.target.value;
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
     if (found) {
       setSelectedSession(found);
-      // Nettoyage immédiat des filtres pour éviter les collisions inter-cohortes
       setSelectedStudents([]);
       setSelectedQuests([]);
     }
@@ -156,19 +154,28 @@ export default function ClientDashboardScreen({ trees, quests }) {
     );
   }
 
-  const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
+  // Id des étudiants inscrits dans la session active
+  const studentIdsInCurrentSession = Array.isArray(sessionStudents) 
+    ? sessionStudents.map(s => s?.uid).filter(Boolean)
+    : [];
 
   // FILTRAGE DES QUÊTES LIÉES STRICTEMENT À CET ARBRE DE SESSION
   const questsList = quests || [];
-  const sessionQuestsOnly = questsList.filter(q => String(q.tree_id) === String(currentSessionSafe.tree_id));
+  const sessionQuestsOnly = questsList.filter(q => q && String(q.tree_id) === String(currentSessionSafe.tree_id));
+  const sessionQuestIdsOnly = sessionQuestsOnly.map(q => q.id);
 
-  // FILTRAGE DES PRODUCTIONS
+  // FILTRAGE DES PRODUCTIONS SÉCURISÉ
   const filteredProductions = allProductions.filter(p => {
+    if (!p || !p.studentId) return false;
+    
     const isInSession = studentIdsInCurrentSession.includes(p.studentId);
     if (!isInSession) return false;
 
-    const matchesStudentFilter = selectedStudents.length === 0 || selectedStudents.some(s => s.uid === p.studentId);
-    const matchesQuestFilter = selectedQuests.length === 0 || selectedQuests.some(q => q.id === p.questId);
+    const activeSelectedStudents = selectedStudents.filter(s => studentIdsInCurrentSession.includes(s.uid));
+    const matchesStudentFilter = activeSelectedStudents.length === 0 || activeSelectedStudents.some(s => s.uid === p.studentId);
+
+    const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(q.id));
+    const matchesQuestFilter = activeSelectedQuests.length === 0 || activeSelectedQuests.some(q => q.id === p.questId);
 
     return matchesStudentFilter && matchesQuestFilter;
   });
@@ -184,6 +191,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
 
   let totalXP = 0;
   const studentsProgress = sessionStudents.map(student => {
+    if (!student) return null;
     const studentProds = filteredProductions.filter(p => p.studentId === student.uid);
     const studentUniqueProds = studentProds.filter(p => !p.content?.startsWith("[Importé"));
 
@@ -199,23 +207,28 @@ export default function ClientDashboardScreen({ trees, quests }) {
       xp: studentPoints,
       livrablesCount: studentUniqueProds.length
     };
-  });
+  }).filter(Boolean);
 
   const totalStudents = sessionStudents.length;
   const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
-  // CONSTITUTION DES OPTIONS POUR LES SELECTEURS
+  // OPTIONS DYNAMIQUES POUR LES SELECTEURS
   const availableStudents = [...sessionStudents]
-    .sort((a, b) => b.maxFloor - a.maxFloor)
-    .filter(st => !selectedStudents.some(sel => sel.uid === st.uid));
+    .sort((a, b) => (b?.maxFloor || 0) - (a?.maxFloor || 0))
+    .filter(st => st && !selectedStudents.some(sel => sel.uid === st.uid));
 
   const availableQuests = [...sessionQuestsOnly]
-    .sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10))
-    .filter(q => !selectedQuests.some(sel => sel.id === q.id));
+    .sort((a, b) => parseInt(a?.difficulty || 0, 10) - parseInt(b?.difficulty || 0, 10))
+    .filter(q => q && !selectedQuests.some(sel => sel.id === q.id));
 
-  const sortedSelectedStudents = [...selectedStudents].sort((a, b) => b.maxFloor - a.maxFloor);
-  const sortedSelectedQuests = [...selectedQuests].sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10));
+  const sortedSelectedStudents = [...selectedStudents]
+    .filter(s => studentIdsInCurrentSession.includes(s.uid))
+    .sort((a, b) => (b?.maxFloor || 0) - (a?.maxFloor || 0));
+
+  const sortedSelectedQuests = [...selectedQuests]
+    .filter(q => sessionQuestIdsOnly.includes(q.id))
+    .sort((a, b) => parseInt(a?.difficulty || 0, 10) - parseInt(b?.difficulty || 0, 10));
 
   const addStudentFilter = (uid) => {
     if (!uid) return;
@@ -251,7 +264,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
             📂 Sélectionner la cohorte :
           </label>
           <select 
-            value={String(currentSessionSafe.id || '')} 
+            value={String(currentSessionSafe?.id || '')} 
             onChange={handleSessionChange}
             className="bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg px-3 py-2 text-slate-800 outline-none focus:border-purple-500 shadow-sm min-w-[220px] cursor-pointer"
           >
@@ -272,10 +285,10 @@ export default function ClientDashboardScreen({ trees, quests }) {
         <div className="space-y-1">
           <div className="text-[10px] uppercase font-black tracking-wider text-emerald-400">Suivi d'Acculturation Entreprise</div>
           <h2 className="text-lg font-black tracking-tight">
-            Portail Décideur & RH — {currentSessionSafe.name || 'Ma Session'}
+            Portail Décideur & RH — {currentSessionSafe?.name || 'Ma Session'}
           </h2>
           <p className="text-xs text-slate-300">
-            Code d'arrimage : <span className="font-mono text-emerald-400 font-bold bg-slate-800 px-2 py-0.5 rounded">{currentSessionSafe.session_code || 'N/A'}</span> | {totalStudents} collaborateur(s) inscrit(s).
+            Code d'arrimage : <span className="font-mono text-emerald-400 font-bold bg-slate-800 px-2 py-0.5 rounded">{currentSessionSafe?.session_code || 'N/A'}</span> | {totalStudents} collaborateur(s) inscrit(s).
           </p>
         </div>
         <button 
@@ -491,7 +504,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {uniqueProductionsGlobal.map(prod => {
-              const linkedQuest = questsList.find(q => q.id === prod.questId);
+              const linkedQuest = questsList.find(q => q && q.id === prod.questId);
               const stars = linkedQuest ? `${linkedQuest.difficulty}★` : '';
 
               return (
@@ -500,7 +513,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
                       <span>
-                        👤 {sessionStudents.find(s => s.uid === prod.studentId)?.name || prod.studentEmail || "Anonyme"}
+                        👤 {sessionStudents.find(s => s && s.uid === prod.studentId)?.name || prod.studentEmail || "Anonyme"}
                         {prod.file_url && (
                           <a 
                             href={prod.file_url} 
@@ -518,7 +531,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-semibold">
-                    <span>Réf : DRH-SESS-{String(currentSessionSafe.id).substring(0, 5).toUpperCase()}</span>
+                    <span>Réf : DRH-SESS-{String(currentSessionSafe?.id || '').substring(0, 5).toUpperCase()}</span>
                     <span className="text-emerald-600 font-extrabold">✓ Livrable Archivé</span>
                   </div>
                 </div>
