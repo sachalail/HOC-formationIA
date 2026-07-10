@@ -160,15 +160,18 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
       return;
     }
 
+    // On prépare le nouveau tableau JavaScript propre
     const updatedSessionCodes = [...sessionCodesList, targetSession.session_code];
 
+    // SAUVEGARDE PROPRE EN JSONB
     const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ session_codes: updatedSessionCodes }) 
-      .eq('id', user.id);
+    .from('profiles')
+    .update({ 
+      session_codes: updatedSessionCodes // <-- On envoie le tableau JS brut, pas de conversion texte !
+    })
+    .eq('id', user.id);
 
-    if (updateError) {
-      alert("❌ Erreur de sauvegarde BDD.");
+if (updateError) throw updateError;
     } else {
       setSessionCodesList(updatedSessionCodes);
       setMySessionsData([...mySessionsData, { id: targetSession.id, session_code: targetSession.session_code, tree_id: targetSession.tree_id }]);
