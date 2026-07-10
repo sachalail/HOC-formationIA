@@ -654,11 +654,160 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
               <option value="not_started">❌ Non commencées</option>
             </select>
           </div>
+          {/* LISTE PAR FILTRE*/}
+          {/* 🌟 BLOC 1 : LES QUÊTES VALIDÉES (VERT) */}
+          {(portfolioFilter === 'all' || portfolioFilter === 'validated') && (
+            <div className="space-y-3">
+              <div className="border-b border-emerald-100 pb-2">
+                <h4 className="font-black text-xs text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+                  ✅ Quêtes Validées & XP Obtenus ({uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]')).length})
+                </h4>
+              </div>
+              {(() => {
+                const validatedLivrables = uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]'));
+                if (validatedLivrables.length === 0) {
+                  return <div className="bg-slate-50 border border-dashed rounded-xl p-4 text-[11px] text-slate-400 italic">Aucune quête validée pour le moment.</div>;
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {validatedLivrables.map(p => {
+                      const originalQuest = quests.find(q => q.id === p.questId);
+                      const isQuestCollab = originalQuest?.is_collaborative === true || originalQuest?.is_collaborative === 'true';
+                      return (
+                        <div key={p.id} className="bg-white border border-emerald-100 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden transition-all hover:shadow-md">
+                          <div className="absolute top-0 left-0 bottom-0 w-1 bg-emerald-500" />
+                          <div className="space-y-2.5">
+                            <div className="flex justify-between items-center text-[10px] font-bold">
+                              <span className="text-slate-400">Code : {p.questId} {isQuestCollab && '🤝'}</span>
+                              <span className="text-emerald-600">🏆 +{originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP</span>
+                            </div>
+                            <h5 className="font-black text-xs text-slate-800 leading-tight">{p.questName}</h5>
+                            
+                            {/* Rendus & Fichier */}
+                            <div className="bg-slate-50 p-2.5 rounded-xl border text-[11px] space-y-2">
+                              <p className="text-slate-600 italic">"{p.content.replace('[VALIDE_COLLAB]', '🤝 [COLLAB VALIDE]')}"</p>
+                              {p.file_url && (
+                                <a href={p.file_url} download={`livrable_${p.questId}`} className="inline-flex items-center text-[10px] font-bold text-emerald-600 hover:underline gap-1 mt-1">
+                                  📁 Ouvrir la pièce jointe
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center pt-2 border-t text-[10px] text-slate-400">
+                            <span>Fait le {p.date}</span>
+                            <button onClick={() => navigateToQuestInGame(p.questId)} className="text-emerald-700 hover:text-emerald-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-emerald-50 px-2 py-1 rounded hover:bg-emerald-100">🎯 Voir dans le Jeu ➔</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
-          {/* LISTES PAR FILTRE */}
-          {/* ... reste du portfolio à l'identique ... */}
+          {/* ⏳ BLOC 2 : LES QUÊTES EN ATTENTE (AMBRE) */}
+          {(portfolioFilter === 'all' || portfolioFilter === 'pending') && (
+            <div className="space-y-3 pt-2">
+              <div className="border-b border-amber-200 pb-2">
+                <h4 className="font-black text-xs text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                  ⏳ En Attente de Synchronisation Équipe ({uniqueLivrables.filter(p => p.content.includes('[EN_ATTENTE_COLLAB]')).length})
+                </h4>
+              </div>
+              {(() => {
+                const pendingLivrables = uniqueLivrables.filter(p => p.content.includes('[EN_ATTENTE_COLLAB]'));
+                if (pendingLivrables.length === 0) {
+                  return <div className="bg-slate-50 border border-dashed rounded-xl p-4 text-[11px] text-slate-400 italic">Aucun dépôt n'est bloqué en attente d'un partenaire.</div>;
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pendingLivrables.map(p => {
+                      const originalQuest = quests.find(q => q.id === p.questId);
+                      return (
+                        <div key={p.id} className="bg-white border border-amber-200 bg-amber-50/5 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden transition-all hover:shadow-md animate-pulse">
+                          <div className="absolute top-0 left-0 bottom-0 w-1 bg-amber-400" />
+                          <div className="space-y-2.5">
+                            <div className="flex justify-between items-center text-[10px] font-bold">
+                              <span className="text-slate-400">Code : {p.questId} 🤝</span>
+                              <span className="text-amber-600 font-medium">⏳ Blocage équipe</span>
+                            </div>
+                            <h5 className="font-black text-xs text-amber-950 leading-tight">{p.questName}</h5>
+                            
+                            {/* Rendus & Fichier */}
+                            <div className="bg-white p-2.5 rounded-xl border border-amber-100 text-[11px] space-y-2 shadow-inner">
+                              <p className="text-slate-600 italic">"{p.content.replace('[EN_ATTENTE_COLLAB]', '⏳ [EN ATTENTE]')}"</p>
+                              {p.file_url && (
+                                <a href={p.file_url} download={`livrable_${p.questId}`} className="inline-flex items-center text-[10px] font-bold text-amber-600 hover:underline gap-1 mt-1">
+                                  📁 Ouvrir le justificatif joint
+                                </a>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-amber-800 leading-tight font-medium bg-amber-50 p-2 rounded-lg">💡 Vos équipiers doivent déposer le même fichier pour libérer vos {originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100} XP.</p>
+                          </div>
+                          
+                          <div className="flex justify-between items-center pt-2 border-t text-[10px] text-slate-400">
+                            <span>Initié le {p.date}</span>
+                            <button onClick={() => navigateToQuestInGame(p.questId)} className="text-amber-700 hover:text-amber-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-amber-100/50 px-2 py-1 rounded hover:bg-amber-100">🎯 Voir dans le Jeu ➔</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ❌ BLOC 3 : LES QUÊTES NON COMMENCÉES (ARDOISE) */}
+          {(portfolioFilter === 'all' || portfolioFilter === 'not_started') && (
+            <div className="space-y-3 pt-2">
+              <div className="border-b border-slate-200 pb-2">
+                <h4 className="font-black text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  ❌ Catalogue des Missions Restantes ({quests.filter(q => !completedQuestIds.has(q.id)).length})
+                </h4>
+              </div>
+              {(() => {
+                const pendingQuests = quests.filter(q => !completedQuestIds.has(q.id));
+                if (pendingQuests.length === 0) {
+                  return <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété 100 % des missions disponibles de l'aventure !</div>;
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-80">
+                    {pendingQuests.map(q => {
+                      const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
+                      const isStartedButPending = pendingCollabQuestIds.has(q.id);
+                      return (
+                        <div key={q.id} className={`bg-slate-50 border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-4 transition-all hover:bg-white ${isQuestCollab ? 'border-purple-200 bg-purple-50/5' : 'border-slate-200'}`}>
+                          <div>
+                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                              <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
+                              <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
+                            </div>
+                            <h5 className={`font-black text-xs mt-2 leading-tight ${isQuestCollab ? 'text-purple-950' : 'text-slate-700'}`}>{isQuestCollab && '🤝 '}{q.name}</h5>
+                            <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{q.desc}"</p>
+                          </div>
+                          
+                          <div className="flex justify-between items-center pt-2 border-t text-[10px]">
+                            <span className="font-bold text-slate-400 uppercase tracking-wider text-[9px]">
+                              {isStartedButPending ? '⏳ En attente' : '❌ Non initiée'}
+                            </span>
+                            <button onClick={() => navigateToQuestInGame(q.id)} className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-200/60 px-2 py-1 rounded hover:bg-slate-200">🚀 Lancer la mission ➔</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
         </div>
       )}
     </div>
   );
 }
+
+
+          
