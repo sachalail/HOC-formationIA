@@ -40,7 +40,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
     return `collab_${questId}_${sessionCode}_${filename.replace(/[^a-zA-Z0-9]/g, '')}`.toLowerCase();
   };
 
-  // 1. RÉCUPÉRATION DE L'UTILISATEUR ET DE SES SESSIONS
+  // 1. RÉCUPÉRATION DE L'UTILISATEUR ET DE SES SESSIONS (Ajout de unlocked_floors)
   useEffect(() => {
     const getUserData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -49,7 +49,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('session_codes')
+          .select('session_codes, unlocked_floors')
           .eq('id', session.user.id)
           .single();
 
@@ -119,21 +119,48 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
     }
   }, [user]);
 
-  // PERSISTANCE DES ÉTAGES
+  // PERSISTANCE DES ÉTAGES VIA LE JSONB REQUIS DANS LES RÈGLES
   useEffect(() => {
-    if (selectedTreeId && user) {
-      localStorage.setItem(`ecolearn_floor_${user.id}_${selectedTreeId}`, unlockedFloorIndex.toString());
-    }
+    const syncFloorToSupabase = async () => {
+      if (selectedTreeId && user) {
+        // Lecture du JSONB existant d'abord pour ne pas écraser les autres arbres
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('unlocked_floors')
+          .eq('id', user.id)
+          .single();
+
+        const currentFloorsObj = profile?.unlocked_floors || {};
+        currentFloorsObj[selectedTreeId] = unlockedFloorIndex;
+
+        await supabase
+          .from('profiles')
+          .update({ unlocked_floors: currentFloorsObj })
+          .eq('id', user.id);
+      }
+    };
+    syncFloorToSupabase();
   }, [unlockedFloorIndex, user, selectedTreeId]);
 
   useEffect(() => {
-    if (selectedTreeId && user) {
-      const savedFloor = localStorage.getItem(`ecolearn_floor_${user.id}_${selectedTreeId}`);
-      const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
-      setUnlockedFloorIndex(floorIdx);
-      setCurrentFloorIndex(0); 
-      setActiveQuest(null);
-    }
+    const loadFloorFromSupabase = async () => {
+      if (selectedTreeId && user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('unlocked_floors')
+          .eq('id', user.id)
+          .single();
+
+        const currentFloorsObj = profile?.unlocked_floors || {};
+        const savedFloor = currentFloorsObj[selectedTreeId];
+        const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
+        
+        setUnlockedFloorIndex(floorIdx);
+        setCurrentFloorIndex(0); 
+        setActiveQuest(null);
+      }
+    };
+    loadFloorFromSupabase();
   }, [user, selectedTreeId]);
 
   const handleJoinSession = async (e) => {
@@ -160,18 +187,16 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
       return;
     }
 
-    // On prépare le nouveau tableau JavaScript propre
     const updatedSessionCodes = [...sessionCodesList, targetSession.session_code];
 
-    // SAUVEGARDE PROPRE EN JSONB
     const { error: updateError } = await supabase
     .from('profiles')
     .update({ 
-      session_codes: updatedSessionCodes // <-- On envoie le tableau JS brut, pas de conversion texte !
+      session_codes: updatedSessionCodes 
     })
     .eq('id', user.id);
 
-if (updateError) throw updateError;
+    if (updateError) throw updateError;
     else {
       setSessionCodesList(updatedSessionCodes);
       setMySessionsData([...mySessionsData, { id: targetSession.id, session_code: targetSession.session_code, tree_id: targetSession.tree_id }]);
@@ -307,9 +332,7 @@ if (updateError) throw updateError;
     }
   };
 
-  // 📍 Fonction intelligente de Redirection vers l'arbre de jeu
   const navigateToQuestInGame = (questId) => {
-    // 1. Trouver à quelle session et quel arbre de l'élève cette quête appartient
     let foundSessionCode = selectedSessionCode;
     let foundTreeId = selectedTreeId;
     let foundFloorIdx = 0;
@@ -317,7 +340,6 @@ if (updateError) throw updateError;
 
     if (!foundQuestObj) return;
 
-    // Parcourir les sessions actives du joueur pour localiser la quête
     for (const sessionItem of mySessionsData) {
       const associatedTree = trees[sessionItem.tree_id];
       if (associatedTree && associatedTree.floors) {
@@ -336,9 +358,8 @@ if (updateError) throw updateError;
       setSelectedTreeId(foundTreeId);
       setCurrentFloorIndex(foundFloorIdx);
       setActiveQuest(foundQuestObj);
-      setActiveTab('parcours'); // Changement d'onglet automatique !
+      setActiveTab('parcours'); 
     } else {
-      // Si aucune session active n'a encore cet arbre, on prend la première session ou on avertit
       alert("💡 Pour voir cette mission dans le parcours, assurez-vous d'avoir rejoint la session correspondante.");
     }
   };
@@ -346,7 +367,7 @@ if (updateError) throw updateError;
   const uniqueLivrables = productions.filter(p => !p.content.startsWith("[Importé"));
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
+    <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative text-slate-800 antialiased">
       <style>{`
         @keyframes customBounce {
           0% { transform: translateY(-80px); opacity: 0; }
@@ -429,12 +450,15 @@ if (updateError) throw updateError;
               if (totalPaliers === 0) return null;
 
               const safeUnlockedIndex = Math.min(unlockedFloorIndex, totalPaliers - 1);
-              const safeCurrentIndex = Math.min(currentFloorIndex, safeUnlockedIndex);
+              const safeCurrentIndex = Math.min(currentFloorIndex, totalPaliers - 1);
               const activeFloor = allFloors[safeCurrentIndex];
               
               const nextFloorRequirement = (safeUnlockedIndex + 1) * POINTS_REQUIRED_PER_FLOOR;
               const assezDePointsPourSuivant = studentPoints >= nextFloorRequirement;
               const pointsManquants = nextFloorRequirement - studentPoints;
+
+              // Détermination du verrouillage de la vue par rapport au niveau débloqué réel
+              const isFloorViewLocked = safeCurrentIndex > safeUnlockedIndex;
 
               const filteredQuestsOnFloor = (quests.filter(q => (activeFloor.quests || []).includes(q.id))).filter(quest => {
                 const matchTheme = filterTheme === 'all' || quest.theme === filterTheme;
@@ -450,7 +474,7 @@ if (updateError) throw updateError;
                       const isUnlocked = idx <= safeUnlockedIndex;
                       const isActive = idx === safeCurrentIndex;
                       return (
-                        <button key={floor.floorId} disabled={!isUnlocked} onClick={() => { setCurrentFloorIndex(idx); setActiveQuest(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer ${isActive ? 'bg-emerald-600 text-white' : isUnlocked ? 'bg-white border' : 'bg-slate-200 text-slate-400 opacity-50'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
+                        <button key={floor.floorId} onClick={() => { setCurrentFloorIndex(idx); setActiveQuest(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer ${isActive ? 'bg-emerald-600 text-white' : isUnlocked ? 'bg-white border' : 'bg-slate-200 text-slate-400 opacity-50'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
                       );
                     })}
                   </div>
@@ -458,7 +482,16 @@ if (updateError) throw updateError;
                   <div className={`flex-1 bg-white border rounded-2xl p-5 shadow-sm space-y-4 relative ${triggerDropAnimation ? 'animate-drop-bounce' : ''}`}>
                     <div className="text-[11px] border-b pb-2 text-slate-400 font-bold uppercase">Palier {activeFloor.floorId} — {trees[selectedTreeId].name}</div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+                      {/* FLOU COMPORTEMENTAL AVEC MESSAGE EXPLICITE */}
+                      {isFloorViewLocked && (
+                        <div className="absolute inset-0 bg-slate-50/40 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-3 text-center rounded-xl">
+                          <div className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-xl shadow-md border border-slate-700">
+                            🔒 Verrouillé - Rattaché à : {trees[selectedTreeId].name}
+                          </div>
+                        </div>
+                      )}
+
                       {filteredQuestsOnFloor.map(quest => {
                         const isSelected = activeQuest?.id === quest.id;
                         const isDoneHere = completedQuestIds.has(quest.id);
@@ -469,6 +502,7 @@ if (updateError) throw updateError;
                         return (
                           <button 
                             key={quest.id} 
+                            disabled={isFloorViewLocked}
                             onClick={() => setActiveQuest(quest)} 
                             className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                               isSelected 
@@ -476,14 +510,14 @@ if (updateError) throw updateError;
                                 : isDoneHere 
                                   ? 'bg-emerald-50/40 border-emerald-200' 
                                   : isPendingHere
-                                    ? 'bg-amber-50/70 border-amber-300 animate-pulse'
+                                    ? 'bg-amber-50/70 border-amber-300 '
                                     : isQuestCollab 
                                       ? 'bg-purple-50/40 border-purple-100 hover:bg-purple-50/80' 
                                       : 'bg-slate-50/80 border-slate-200/60 hover:bg-white'
                             }`}
                           >
                             <div className="flex justify-between items-center text-[10px] font-black">
-                              <span className={isQuestCollab ? "text-purple-600 uppercase" : "text-slate-400 uppercase"}>{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                              <span className={isQuestCollab ? "text-purple-600 uppercase" : "text-slate-400 uppercase"}={quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
                               {isDoneHere && <span className="text-emerald-600">Validée ✅</span>}
                               {isPendingHere && <span className="text-amber-600 font-medium">En attente coéquipier ⏳</span>}
                               {isDoneElsewhere && <span className="text-amber-600">Historique 🔄</span>}
@@ -578,11 +612,10 @@ if (updateError) throw updateError;
         </div>
       )}
 
-      {/* PORTFOLIO COMPLET - NOUVELLE VERSION 3 BLOCS DISTINCTS */}
+      {/* PORTFOLIO COMPLET - 3 BLOCS DISTINCTS RESTAURÉS */}
       {activeTab === 'portfolio' && user && (
         <div className="space-y-8">
           
-          {/* BARRE DE CONTRÔLE ET FILTRE DU HUB */}
           <div className="bg-white border rounded-2xl p-4 flex flex-wrap justify-between items-center gap-4 shadow-sm">
             <div>
               <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -606,7 +639,7 @@ if (updateError) throw updateError;
             </div>
           </div>
 
-          {/* 🌟 BLOC 1 : LES QUÊTES VALIDÉES (VERT) */}
+          {/* 🌟 BLOC 1 : LES QUÊTES VALIDÉES */}
           {(portfolioFilter === 'all' || portfolioFilter === 'validated') && (
             <div className="space-y-3">
               <div className="border-b border-emerald-100 pb-2">
@@ -634,7 +667,6 @@ if (updateError) throw updateError;
                             </div>
                             <h5 className="font-black text-xs text-slate-800 leading-tight">{p.questName}</h5>
                             
-                            {/* Rendus & Fichier */}
                             <div className="bg-slate-50 p-2.5 rounded-xl border text-[11px] space-y-2">
                               <p className="text-slate-600 italic">"{p.content.replace('[VALIDE_COLLAB]', '🤝 [COLLAB VALIDE]')}"</p>
                               {p.file_url && (
@@ -658,7 +690,7 @@ if (updateError) throw updateError;
             </div>
           )}
 
-          {/* ⏳ BLOC 2 : LES QUÊTES EN ATTENTE (AMBRE) */}
+          {/* ⏳ BLOC 2 : LES QUÊTES EN ATTENTE */}
           {(portfolioFilter === 'all' || portfolioFilter === 'pending') && (
             <div className="space-y-3 pt-2">
               <div className="border-b border-amber-200 pb-2">
@@ -685,7 +717,6 @@ if (updateError) throw updateError;
                             </div>
                             <h5 className="font-black text-xs text-amber-950 leading-tight">{p.questName}</h5>
                             
-                            {/* Rendus & Fichier */}
                             <div className="bg-white p-2.5 rounded-xl border border-amber-100 text-[11px] space-y-2 shadow-inner">
                               <p className="text-slate-600 italic">"{p.content.replace('[EN_ATTENTE_COLLAB]', '⏳ [EN ATTENTE]')}"</p>
                               {p.file_url && (
@@ -710,7 +741,7 @@ if (updateError) throw updateError;
             </div>
           )}
 
-          {/* ❌ BLOC 3 : LES QUÊTES NON COMMENCÉES (ARDOISE) */}
+          {/* ❌ BLOC 3 : LES QUÊTES NON COMMENCÉES */}
           {(portfolioFilter === 'all' || portfolioFilter === 'not_started') && (
             <div className="space-y-3 pt-2">
               <div className="border-b border-slate-200 pb-2">
