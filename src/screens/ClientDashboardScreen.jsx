@@ -35,6 +35,17 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   });
 
+  // FONCTION DE CHANGEMENT DE SESSION (Placée en haut pour être définie avant tout return ou rendu)
+  const handleSessionChange = (e) => {
+    const sessionDocId = e.target.value;
+    const found = sessions.find(s => String(s.id) === String(sessionDocId));
+    if (found) {
+      setSelectedSession(found);
+      setSelectedStudents([]);
+      setSelectedQuests([]);
+    }
+  };
+
   // SECURITÉ ANTI-FANTÔME
   const isSelectedSessionValid = selectedSession && sessions.some(s => String(s.id) === String(selectedSession.id));
   const currentSessionSafe = isSelectedSessionValid ? selectedSession : (sessions[0] || null);
@@ -65,7 +76,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
         const hrUserId = authUser.id;
 
-        // Requête standard et propre pour tableau de chaînes JSONB
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
@@ -75,7 +85,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
         if (fetchedSessions && fetchedSessions.length > 0) {
           setSessions(fetchedSessions);
-          
           const stillValid = fetchedSessions.find(s => String(s.id) === String(selectedSession?.id));
           if (!stillValid) {
             setSelectedSession(fetchedSessions[0]);
@@ -85,7 +94,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           setSelectedSession(null);
         }
 
-        // Récupération globale du registre des productions
         const { data: fetchedProductions, error: pError } = await supabase
           .from('productions')
           .select('*')
@@ -104,7 +112,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     initializeDRHData();
   }, []); 
 
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS
+  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS (FLUX PROPRE SANS BREAK)
   useEffect(() => {
     if (!currentSessionSafe) {
       setSessionStudents([]);
@@ -117,7 +125,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
         let formattedStudents = [];
         let fetchedQuestsData = [];
 
-        // A. CHARGEMENT DES ÉTUDIANTS
+        // A. CHARGEMENT DES ÉTUDIANTS VIA JSONB
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
@@ -141,7 +149,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           }
         }
 
-        // B. EXTRACTION DES QUÊTES VIA L'ARBRE ASSOCIE
+        // B. EXTRACTION DES QUÊTES VIA LES PALIERS DE L'ARBRE
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
             .from('trees')
@@ -187,13 +195,12 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           }
         }
         
-        // SÉCURITÉ : On applique les deux états d'un seul coup à la toute fin du processus asynchrone
+        // Application synchronisée des états à la fin du flux asynchrone
         setSessionStudents(formattedStudents);
         setSessionQuests(fetchedQuestsData);
 
       } catch (err) {
         console.error("Erreur de synchronisation du contexte de cohorte :", err);
-        // En cas d'erreur, on évite le crash en vidant les listes
         setSessionStudents([]);
         setSessionQuests([]);
       }
@@ -201,6 +208,12 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
+
+  // PROTECTION DE CHARGEMENT DE SÉCURITÉ
+  if (loading) {
+    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement de l'espace de pilotage...</div>;
+  }
+
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   const sessionQuestIdsOnly = sessionQuests.map(q => q.id);
@@ -412,7 +425,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 </div>
 
                 <select value="" onChange={(e) => {
-                  const match = sessionQuests.find(q => q.id === e.target.value);
+                  const match = sessionQuests.find(q => q.id === Number(e.target.value));
                   if (match) setSelectedQuests([...selectedQuests, match]);
                 }} className="w-full bg-white border text-xs rounded-xl p-2.5 font-semibold text-slate-700 outline-none">
                   <option value="" disabled>✨ Choisir une quête ({availableQuests.length} dispo)...</option>
