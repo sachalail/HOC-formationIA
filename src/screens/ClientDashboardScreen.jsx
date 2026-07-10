@@ -1,382 +1,742 @@
-// src/screens/ClientDashboardScreen.jsx
+// src/screens/StudentDashboardScreen.jsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function ClientDashboardScreen({ trees, quests }) {
-  const [sessions, setSessions] = useState([]); // Sessions gérées par ce DRH
-  const [selectedSession, setSelectedSession] = useState(null); // Session actuellement sélectionnée
-  const [sessionStudents, setSessionStudents] = useState([]); // Étudiants de la session sélectionnée
-  const [allProductions, setAllProductions] = useState([]); // Toutes les productions
-  const [loading, setLoading] = useState(true);
+export default function StudentDashboardScreen({ trees, quests }) {
+  const [user, setUser] = useState(null);
+  const [sessionCodesList, setSessionCodesList] = useState([]); 
+  const [mySessionsData, setMySessionsData] = useState([]); 
+  const [selectedSessionCode, setSelectedSessionCode] = useState(null); 
+  const [selectedTreeId, setSelectedTreeId] = useState(null); 
+  
+  const [accessCode, setAccessCode] = useState('');
+  const [activeTab, setActiveTab] = useState('parcours'); 
+  
+  // FILTRES DE JEU / CENTRE DE TRI
+  const [filterTheme, setFilterTheme] = useState('all');
+  const [filterPoints, setFilterPoints] = useState('all');
+  const [filterSession, setFilterSession] = useState('all');
+  const [selectedQuestFilter, setSelectedQuestFilter] = useState('all');
 
+  // ÉTATS DE SUIVI UNIQUE (Synchronisés avec le JSONB de Supabase)
+  const [unlockedFloorsObj, setUnlockedFloorsObj] = useState({}); 
+  const [currentFloorIndex, setCurrentFloorIndex] = useState(0); 
+  
+  // 🛡️ ÉTAT ANTI-SPAM
+  const [completedQuestIds, setCompletedQuestIds] = useState(new Set());
+
+  // PORTFOLIO EN DIRECT DEPUIS SUPABASE
+  const [productions, setProductions] = useState([]);
+
+  const [activeQuest, setActiveQuest] = useState(null); 
+  const [livrableContent, setLivrableContent] = useState(''); 
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [triggerDropAnimation, setTriggerDropAnimation] = useState(false); 
+
+  const POINTS_REQUIRED_PER_FLOOR = 300;
+
+  // 🔑 1. RÉCUPÉRATION DE L'UTILISATEUR, DE SES SESSIONS ET DE SES PALIERS (JSONB)
   useEffect(() => {
-    const fetchHRData = async () => {
-      try {
-        // 1. Récupérer l'utilisateur DRH connecté
-        const { data: { session: authSession } } = await supabase.auth.getSession();
-        if (!authSession) return;
+    const getUserData = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
 
-        const hrUserId = authSession.user.id;
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('session_codes, unlocked_floors')
+          .eq('id', session.user.id)
+          .single();
 
-        // 2. Récupérer les sessions où l'utilisateur fait partie du tableau 'drh'
-        const { data: sessionsData, error: sessionsError } = await supabase
-          .from('sessions')
-          .select('*')
-          .contains('drh_ids', JSON.stringify([hrUserId])); // On passe un tableau JS classique, Supabase s'occupe du cast JSONB
-
-        if (sessionsError) throw sessionsError;
-        setSessions(sessionsData || []);
-
-        // Sélectionner la première session par défaut s'il y en a
-        if (sessionsData && sessionsData.length > 0) {
-          setSelectedSession(sessionsData[0]);
+        if (profile && !profileError) {
+          if (Array.isArray(profile.session_codes)) {
+            setSessionCodesList(profile.session_codes);
+            fetchSessionsDetails(profile.session_codes);
+          }
+          setUnlockedFloorsObj(profile.unlocked_floors || {});
         }
-
-        // 3. Récupérer l'intégralité des livrables pour pouvoir filtrer localement par la suite
-        const { data: prods, error: prodsError } = await supabase
-          .from('productions')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (prodsError) throw prodsError;
-
-        if (prods) {
-          const formatted = prods.map(p => ({
-            id: p.id,
-            studentId: p.student_id,
-            studentEmail: p.student_email,
-            questId: p.quest_id,
-            questName: p.quest_name,
-            content: p.content,
-            file_url: p.file_url,
-            date: new Date(p.created_at).toLocaleDateString('fr-FR')
-          }));
-          setAllProductions(formatted);
-        }
-      } catch (err) {
-        console.error("Erreur lors du chargement des données DRH:", err);
-      } finally {
-        setLoading(false);
       }
     };
-
-    fetchHRData();
+    getUserData();
   }, []);
 
-  // 4. Dès que la session sélectionnée change, on récupère AUTOMATIQUEMENT ses étudiants via leur profil Supabase
+  const fetchSessionsDetails = async (codes) => {
+    if (!codes || codes.length === 0) return;
+
+    const { data: sessionsData, error } = await supabase
+      .from('sessions')
+      .select('id, session_code, tree_id')
+      .in('session_code', codes);
+
+    if (sessionsData && !error) {
+      setMySessionsData(sessionsData);
+    }
+  };
+
+  // 📥 2. SYNCHRONISATION DU PORTFOLIO
+  const fetchStudentProductions = async () => {
+    if (!user) return;
+
+    const { data: prods, error } = await supabase
+      .from('productions')
+      .select('*')
+      .eq('student_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (prods && !error) {
+      setCompletedQuestIds(new Set(prods.map(p => p.quest_id)));
+      
+      const formattedProds = prods.map(p => ({
+        id: p.id,
+        studentId: p.student_id,
+        questId: p.quest_id,
+        questName: p.quest_name,
+        content: p.content,
+        date: new Date(p.created_at).toLocaleDateString('fr-FR'),
+        file_url: p.file_url
+      }));
+      setProductions(formattedProds);
+    }
+  };
+
   useEffect(() => {
-    if (!selectedSession || !selectedSession.session_code) {
-      setSessionStudents([]);
+    if (user) {
+      fetchStudentProductions();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (selectedTreeId) {
+      setCurrentFloorIndex(0); 
+      setActiveQuest(null);
+    }
+  }, [selectedTreeId]);
+
+  // 💾 3. REJOINDRE UNE SESSION
+  const handleJoinSession = async (e) => {
+    e.preventDefault();
+    const inputCode = accessCode.trim().toUpperCase();
+    
+    if (!inputCode) return;
+    if (!user) { alert("❌ Session introuvable."); return; }
+
+    if (sessionCodesList.includes(inputCode)) {
+      alert("💡 Vous suivez déjà cette session !");
+      setAccessCode('');
       return;
     }
 
-    const fetchStudentsProfiles = async () => {
-      try {
-        const { data: profiles, error } = await supabase
-          .from('profiles')
-          .select('id, email')
-          .contains('session_codes', JSON.stringify([selectedSession.session_code]));
+    const { data: targetSession, error: sessionError } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('session_code', inputCode)
+      .single();
 
-        if (error) throw error;
+    if (sessionError || !targetSession) {
+      alert("❌ Code de session inconnu.");
+      return;
+    }
 
-        if (profiles) {
-          const formattedStudents = profiles.map(p => ({
-            uid: p.id,
-            name: p.email ? p.email.split('@')[0] : "Apprenant", // Fallback visuel sympa
-            email: p.email,
-            joinedTrees: selectedSession.tree_id ? [selectedSession.tree_id] : [] // L'unique arbre lié à cette session
-          }));
-          setSessionStudents(formattedStudents);
-        }
-      } catch (err) {
-        console.error("Erreur lors de la récupération automatique des étudiants :", err);
-      }
-    };
+    const updatedSessionCodes = [...sessionCodesList, targetSession.session_code];
 
-    fetchStudentsProfiles();
-  }, [selectedSession]);
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ session_codes: updatedSessionCodes }) 
+      .eq('id', user.id);
 
-  // Handler de changement de session dans le menu déroulant (Sécurisé en comparaison String)
-  const handleSessionChange = (e) => {
-    const sessionDocId = e.target.value;
-    const found = sessions.find(s => String(s.id) === String(sessionDocId));
-    if (found) {
-      setSelectedSession(found);
+    if (updateError) {
+      alert("❌ Erreur de sauvegarde BDD.");
+    } else {
+      setSessionCodesList(updatedSessionCodes);
+      setMySessionsData([...mySessionsData, { id: targetSession.id, session_code: targetSession.session_code, tree_id: targetSession.tree_id }]);
+      setSelectedSessionCode(targetSession.session_code);
+      setSelectedTreeId(targetSession.tree_id);
+      setCurrentFloorIndex(0);
+      setAccessCode('');
+      alert(`🎉 Session "${targetSession.session_code}" ajoutée !`);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">
-        Chargement des données d'audit...
-      </div>
-    );
-  }
+  // 🆙 4. DÉBLOCAGE DU PALIER SUIVANT DANS LE JSONB SUPABASE
+  const handleUnlockNextFloor = async (currentUnlockedIdx, totalPaliers) => {
+    if (!user || !selectedTreeId) return;
 
-  // Si le DRH n'a absolument aucune session assignée
-  if (sessions.length === 0) {
-    return (
-      <div className="max-w-7xl mx-auto px-8 py-12 text-center bg-white border rounded-2xl shadow-sm">
-        <h2 className="text-sm font-black text-slate-700 uppercase tracking-wider">Aucune session affectée</h2>
-        <p className="text-xs text-slate-400 mt-1">Votre compte n'est actuellement déclaré comme DRH sur aucune session active.</p>
-      </div>
-    );
-  }
+    const nextIndex = currentUnlockedIdx + 1;
+    if (nextIndex >= totalPaliers) return;
 
-  // Parer au cas où le state selectedSession soit temporairement null pendant un rafraîchissement
-  const currentSessionSafe = selectedSession || sessions[0];
+    const updatedFloorsObj = {
+      ...unlockedFloorsObj,
+      [selectedTreeId]: nextIndex
+    };
 
-  // FILTRAGE DYNAMIQUE DES DONNÉES DE LA COHORTE SÉLECTIONNÉE
-  const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
-  
-  const filteredProductions = allProductions.filter(p => 
-    studentIdsInCurrentSession.includes(p.studentId)
-  );
+    const { error } = await supabase
+      .from('profiles')
+      .update({ unlocked_floors: updatedFloorsObj })
+      .eq('id', user.id);
 
-  const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content?.startsWith("[Importé"));
-  let totalLivrables = uniqueProductionsGlobal.length;
-  let totalXP = 0;
+    if (error) {
+      alert("❌ Impossible de sauvegarder votre progression sur le serveur.");
+    } else {
+      setTriggerDropAnimation(true); 
+      setTimeout(() => setTriggerDropAnimation(false), 600);
+      setUnlockedFloorsObj(updatedFloorsObj);
+      setCurrentFloorIndex(nextIndex);
+      setActiveQuest(null);
+    }
+  };
 
-  // Calcul du score global d'avancement
-  const questsList = quests || [];
-  const getPointsByDifficulty = (diff) => {
-    const d = parseInt(diff, 10);
-    if (d === 3) return 500;
-    if (d === 2) return 250;
+  const getPointsByDifficulty = (difficulty) => {
+    const numericDifficulty = parseInt(difficulty, 10);
+    if (numericDifficulty === 3) return 500;
+    if (numericDifficulty === 2) return 250;
     return 100;
   };
 
-  const studentsProgress = sessionStudents.map(student => {
-    const studentProds = filteredProductions.filter(p => p.studentId === student.uid);
-    const studentUniqueProds = studentProds.filter(p => !p.content?.startsWith("[Importé"));
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    // Calcul de l'XP cumulé par l'élève
-    const studentPoints = studentProds.reduce((sum, prod) => {
-      const originalQuest = questsList.find(q => q.id === prod.questId);
-      if (originalQuest) {
-        return sum + getPointsByDifficulty(originalQuest.difficulty);
-      }
-      if (prod.questId && String(prod.questId).startsWith('quest_')) {
-        return sum + 250; // Fallback pour les quêtes natives
-      }
-      return sum + 100;
-    }, 0);
-    
-    totalXP += studentPoints;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAttachedFile({
+        name: file.name,
+        size: (file.size / 1024).toFixed(1) + " KB",
+        data: reader.result 
+      });
+    };
+    reader.readAsDataURL(file);
+  };
 
-    // Détermination du Palier max atteint (via localStorage de secours des élèves)
-    let maxFloor = 1;
-    if (Array.isArray(student.joinedTrees)) {
-      student.joinedTrees.forEach(treeId => {
-        const savedFloor = localStorage.getItem(`ecolearn_floor_${student.uid}_${treeId}`);
-        const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
-        if (floorIdx + 1 > maxFloor) {
-          maxFloor = floorIdx + 1;
+  const globalCompletedQuestIds = productions.map(p => p.questId);
+
+  const studentPoints = productions.reduce((sum, prod) => { 
+    const originalQuest = quests.find(q => q.id === prod.questId);
+    if (originalQuest) {
+      return sum + getPointsByDifficulty(originalQuest.difficulty);
+    }
+    return sum + 100; 
+  }, 0);
+
+  const handleSubmitLivrable = async (e) => {
+    if (e) e.preventDefault();
+    if (!livrableContent.trim()) return;
+    if (completedQuestIds.has(activeQuest.id)) return;
+    if (!user) return;
+
+    const pointsGagnes = getPointsByDifficulty(activeQuest.difficulty);
+
+    const { error } = await supabase
+      .from('productions')
+      .insert([
+        {
+          student_id: user.id,          
+          student_email: user.email,    
+          quest_id: activeQuest.id,     
+          quest_name: activeQuest.name,
+          content: livrableContent,     
+          file_url: attachedFile ? attachedFile.data : null 
+        }
+      ]);
+
+    if (!error) {
+      await fetchStudentProductions();
+      alert(`🎉 Livrable envoyé ! +${pointsGagnes} XP.`);
+      setLivrableContent('');
+      setAttachedFile(null);
+    }
+  };
+
+  const handleImportPreviousProduction = async () => {
+    if (completedQuestIds.has(activeQuest.id)) return;
+    if (!user) return;
+
+    const previousSubmission = productions.find(p => p.questId === activeQuest.id);
+    if (!previousSubmission) return;
+
+    const pointsGagnes = getPointsByDifficulty(activeQuest.difficulty);
+
+    const { error } = await supabase
+      .from('productions')
+      .insert([
+        {
+          student_id: user.id,
+          student_email: user.email,
+          quest_id: activeQuest.id,
+          quest_name: activeQuest.name,
+          content: `[Importé de l'historique] ${previousSubmission.content}`,
+          file_url: previousSubmission.file_url || null
+        }
+      ]);
+
+    if (!error) {
+      await fetchStudentProductions();
+      alert(`🔄 Travail synchronisé ! +${pointsGagnes} XP.`);
+    }
+  };
+
+  // Redirection depuis le portfolio vers une quête
+  const handleNavigateToQuest = (sessionCode, treeId, floorIdx, questObj) => {
+    setSelectedSessionCode(sessionCode);
+    setSelectedTreeId(treeId);
+    setCurrentFloorIndex(floorIdx);
+    setActiveQuest(questObj);
+    setActiveTab('parcours'); 
+  };
+
+  // Calcul dynamique des quêtes découvertes
+  const discoveredQuests = [];
+  mySessionsData.forEach(sessionItem => {
+    const linkedTree = trees[sessionItem.tree_id];
+    if (linkedTree && linkedTree.floors) {
+      const savedFloorValue = unlockedFloorsObj[sessionItem.tree_id];
+      const maxUnlockedIdx = savedFloorValue !== undefined ? parseInt(savedFloorValue, 10) : 0;
+      
+      linkedTree.floors.forEach((floor, fIdx) => {
+        if (fIdx <= maxUnlockedIdx) {
+          const floorQuests = quests.filter(q => (floor.quests || []).includes(q.id));
+          floorQuests.forEach(q => {
+            const isDoneHere = completedQuestIds.has(q.id);
+            if (!isDoneHere) {
+              discoveredQuests.push({
+                quest: q,
+                sessionCode: sessionItem.session_code,
+                treeId: sessionItem.tree_id,
+                floorIndex: fIdx,
+                floorId: floor.floorId,
+                treeName: linkedTree.name
+              });
+            }
+          });
         }
       });
     }
-
-    return {
-      ...student,
-      xp: studentPoints,
-      livrablesCount: studentUniqueProds.length,
-      maxFloor: maxFloor
-    };
   });
 
-  // KPI additionnelles de la vue décideur
-  const totalStudents = sessionStudents.length;
-  const countPalier1 = studentsProgress.filter(s => s.maxFloor >= 1).length;
-  const countPalier2 = studentsProgress.filter(s => s.maxFloor >= 2).length;
+  const uniqueLivrables = productions.filter(p => !p.content.startsWith("[Importé"));
+  const isActiveQuestDone = activeQuest ? completedQuestIds.has(activeQuest.id) : false;
 
-  const pctPalier1 = totalStudents > 0 ? Math.round((countPalier1 / totalStudents) * 100) : 0;
-  const pctPalier2 = totalStudents > 0 ? Math.round((countPalier2 / totalStudents) * 100) : 0;
+  // Calcul dynamique des statistiques filtrées par rapport aux missions sélectionnées
+  const filteredProductionsForStats = uniqueLivrables.filter(p => {
+    if (selectedQuestFilter === 'all') return true;
+    return p.questId === selectedQuestFilter;
+  });
 
-  const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
-  const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
+  const filteredXPStats = filteredProductionsForStats.reduce((sum, prod) => {
+    const originalQuest = quests.find(q => q.id === prod.questId);
+    return sum + (originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100);
+  }, 0);
 
   return (
-    <div className="max-w-7xl mx-auto px-8 py-8 space-y-6">
-      
-      {/* BARRE HAUTE DE SÉLECTION DE LA COHORTE DIRECTE (CORRIGÉE EN STRING) */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 border p-4 rounded-xl shadow-sm">
+    <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
+      <style>{`
+        @keyframes customBounce {
+          0% { transform: translateY(-80px); animation-timing-function: ease-in; opacity: 0; }
+          60% { transform: translateY(0); animation-timing-function: ease-out; opacity: 1; }
+          80% { transform: translateY(-10px); animation-timing-function: ease-in; }
+          100% { transform: translateY(0); }
+        }
+        .animate-drop-bounce { animation: customBounce 0.6s forwards; }
+      `}</style>
+
+      {/* BANNIÈRE SCORE */}
+      <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-wrap justify-between items-center gap-4 shadow-md">
         <div className="flex items-center gap-3">
-          <label className="text-xs font-black text-slate-700 uppercase tracking-wider whitespace-nowrap">
-            📂 Sélectionner la cohorte :
-          </label>
-          <select 
-            value={String(currentSessionSafe.id || '')} 
-            onChange={handleSessionChange}
-            className="bg-white border border-slate-200 text-xs font-bold rounded-lg px-3 py-2 text-slate-800 outline-none focus:border-purple-500 shadow-sm min-w-[220px] cursor-pointer"
-          >
-            {sessions.map(s => (
-              <option key={String(s.id)} value={String(s.id)}>
-                📍 {s.name || `Session — ${s.session_code || `ID: ${String(s.id).substring(0, 6)}`}`}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="text-[11px] font-medium text-slate-400">
-          Supervision de <strong className="text-slate-600">{sessions.length} session(s)</strong> actives rattachées
-        </div>
-      </div>
-
-      {/* HEADER BANNER */}
-      <div className="bg-slate-900 text-white p-6 rounded-2xl flex flex-wrap justify-between items-center gap-4 shadow-md">
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase font-black tracking-wider text-amber-400">Suivi d'Acculturation Entreprise</div>
-          <h2 className="text-lg font-black tracking-tight">
-            Portail Décideur & RH — {currentSessionSafe.name || 'Ma Session'}
-          </h2>
-          <p className="text-xs text-slate-400">
-            Code unique d'arrimage : <span className="font-mono text-amber-500 font-bold bg-slate-800 px-2 py-0.5 rounded">{currentSessionSafe.session_code || 'N/A'}</span> | {totalStudents} collaborateur(s) inscrit(s) dans cette cohorte.
-          </p>
-        </div>
-        <button 
-          onClick={() => alert(`📊 Génération du rapport de suivi pour ${currentSessionSafe.name || 'la session'}...`)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all cursor-pointer"
-        >
-          📥 Télécharger le rapport (.xlsx)
-        </button>
-      </div>
-
-      {/* METRICS ROW */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-1">
-          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Compteur de Compétences (XP cohorte)</div>
-          <div className="text-3xl font-black text-slate-900">{totalXP} <span className="text-xs font-bold text-slate-400">XP</span></div>
-          <p className="text-[11px] text-slate-500 font-medium">Somme stricte des quêtes validées par cette cohorte.</p>
-        </div>
-
-        <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-1">
-          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Cas Pratiques / Livrables Déposés</div>
-          <div className="text-3xl font-black text-emerald-600">{totalLivrables} <span className="text-xs font-bold text-slate-400">Rendus</span></div>
-          <p className="text-[11px] text-slate-500 font-medium">Preuves concrètes de manipulation d'outils IA.</p>
-        </div>
-
-        <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-1">
-          <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Taux d'Engagement Actif</div>
-          <div className="text-3xl font-black text-purple-600">{engagementRate}%</div>
-          <p className="text-[11px] text-slate-500 font-medium">Pourcentage de collaborateurs ayant rendu au moins 1 livrable.</p>
-        </div>
-      </div>
-
-      {/* CORPS PRINCIPAL DE L'AUDIT */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* GRAPHIQUE TAUX DE REUSSITE */}
-        <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-4 lg:col-span-1">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">📉 Taux de passage des Paliers</h3>
-          
-          <div className="space-y-4 pt-2">
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold text-slate-700">
-                <span>Palier 1</span>
-                <span>{pctPalier1}% ({countPalier1}/{totalStudents})</span>
-              </div>
-              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full" style={{ width: `${pctPalier1}%` }} />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold text-slate-700">
-                <span>Palier 2</span>
-                <span>{pctPalier2}% ({countPalier2}/{totalStudents})</span>
-              </div>
-              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-purple-600 h-full" style={{ width: `${pctPalier2}%` }} />
-              </div>
-            </div>
+          <div className="bg-emerald-500 text-slate-950 font-black px-3 py-1.5 rounded-lg text-sm shadow">
+            ✨ {studentPoints} XP TOTAL
+          </div>
+          <div className="text-xs text-slate-300">
+            Profil : <span className="font-bold text-white">{user?.email || "Chargement..."}</span>
+            {selectedSessionCode && <span> | Session active : <strong className="text-emerald-400 font-mono">{selectedSessionCode}</strong></span>}
           </div>
         </div>
-
-        {/* TABLEAU SYNTHESE REEL */}
-        <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-3 lg:col-span-2">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">👥 Synthèse par Collaborateur ({totalStudents})</h3>
-          
-          {totalStudents === 0 ? (
-            <div className="text-center p-12 text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed">
-              💡 Aucun collaborateur n'est encore associé au code "{currentSessionSafe.session_code || 'N/A'}" pour le moment.
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100 overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="text-slate-400 font-bold uppercase tracking-wider border-b">
-                    <th className="pb-2">Collaborateur</th>
-                    <th className="pb-2">Niveau Max Atteint</th>
-                    <th className="pb-2">Livrables</th>
-                    <th className="pb-2 text-right">Score d'XP</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {studentsProgress.map(student => (
-                    <tr key={student.uid} className="hover:bg-slate-50/50">
-                      <td className="py-3 font-black text-slate-800 flex flex-col">
-                        <span>{student.name}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">{student.email}</span>
-                      </td>
-                      <td className="py-3 font-medium">
-                        <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md font-bold font-mono">Palier {student.maxFloor}</span>
-                      </td>
-                      <td className="py-3 font-semibold text-slate-500">{student.livrablesCount} déposé(s)</td>
-                      <td className="py-3 text-right font-black text-emerald-600">{student.xp} XP</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
       </div>
 
-      {/* REGISTRE DES LIVRABLES DE LA SESSION */}
-      <div className="bg-white border border-slate-200/60 p-5 rounded-2xl shadow-sm space-y-4">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">📂 Registre d'audit des Livrables de la session</h3>
-        
-        {uniqueProductionsGlobal.length === 0 ? (
-          <div className="text-center p-8 text-xs text-slate-400 font-medium italic bg-slate-50 rounded-xl border border-dashed">
-            Aucun livrable n'a encore été déposé par cette cohorte.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {uniqueProductionsGlobal.map(prod => (
-              <div key={prod.id} className="border rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between gap-3 relative overflow-hidden">
-                <div className="absolute top-0 bottom-0 left-0 w-1 bg-slate-300" />
-                <div className="space-y-1.5">
-                  <div className="flex justify-between items-center text-[10px] font-bold">
-                    <span className="text-slate-900 font-black">
-                      👤 Par : {sessionStudents.find(s => s.uid === prod.studentId)?.name || prod.studentEmail || "Inconnu"}
-                      
-                      {prod.file_url && (
-                        <a 
-                          href={prod.file_url} 
-                          download={`Livrable_${prod.id}`}
-                          className="ml-2 inline-flex items-center text-purple-600 hover:text-purple-800 bg-purple-50 hover:bg-purple-100 px-1.5 py-0.5 rounded font-mono font-bold text-[9px] border border-purple-200 transition-all cursor-pointer"
+      {/* TABS */}
+      <div className="flex border-b border-slate-200 gap-4">
+        <button onClick={() => { setActiveTab('parcours'); setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 ${activeTab === 'parcours' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400'}`}>🌳 Mes Sessions & Parcours</button>
+        <button onClick={() => { setActiveTab('portfolio'); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400'}`}>📂 Mon Portfolio ({uniqueLivrables.length})</button>
+      </div>
+
+      {/* PARCOURS ACCESSIBLES */}
+      {activeTab === 'parcours' && !selectedSessionCode && (
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div className="lg:col-span-2 space-y-4">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">🧠 Vos sessions actives</h3>
+              {mySessionsData.length === 0 ? (
+                <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-2xl text-center text-xs text-slate-400 italic font-medium">
+                  Vous n'avez rejoint aucune session pour le moment. Utilisez un code d'accès à droite !
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {mySessionsData.map(sessionItem => {
+                    const linkedTree = trees[sessionItem.tree_id];
+                    return (
+                      <div key={sessionItem.session_code} className="bg-white border-2 border-slate-100 hover:border-emerald-500/30 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-6 group relative overflow-hidden">
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-slate-100 group-hover:bg-emerald-500 transition-colors" />
+                        <div>
+                          <span className="text-[10px] bg-slate-900 text-emerald-400 px-2 py-0.5 rounded font-mono font-bold uppercase">CODE : {sessionItem.session_code}</span>
+                          <h4 className="text-sm font-black text-slate-800 mt-2.5 leading-snug">
+                            Arbre : {linkedTree ? linkedTree.name : `Chargement (${sessionItem.tree_id})`}
+                          </h4>
+                        </div>
+                        <button 
+                          onClick={() => { 
+                            setSelectedSessionCode(sessionItem.session_code); 
+                            setSelectedTreeId(sessionItem.tree_id); 
+                          }} 
+                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                         >
-                          📄 doc livré
-                        </a>
-                      )}
-                    </span>
-                    <span className="text-slate-400 font-mono">{prod.date}</span>
-                  </div>
-                  <h4 className="font-bold text-xs text-slate-800 pt-1">🎯 Quête : {prod.questName}</h4>
-                  <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border leading-relaxed font-medium italic">"{prod.content}"</p>
+                          🚀 Entrer dans la session
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
+              )}
+            </div>
 
-                <div className="pt-2 border-t flex items-center justify-between text-[10px] text-slate-400 font-semibold">
-                  {/* SÉCURISÉ : On force String() sur l'ID avant le substring de secours */}
-                  <span>Réf Espace : DRH-SESS-{String(currentSessionSafe.id).substring(0, 5)}</span>
-                  <span className="text-emerald-600 font-extrabold">✓ Livrable Archivé</span>
-                </div>
+            <div className="bg-slate-50/80 border border-slate-200/60 p-5 rounded-2xl space-y-4">
+              <div>
+                <h4 className="font-black text-xs uppercase tracking-wide text-slate-800 flex items-center gap-1.5">🔑 Ajouter une session</h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed mt-1">Saisissez un nouveau code pour ajouter un espace de formation à votre liste.</p>
               </div>
-            ))}
+              <form onSubmit={handleJoinSession} className="space-y-2">
+                <input 
+                  type="text" 
+                  placeholder="Ex: ORANGE-LILLE-26" 
+                  value={accessCode} 
+                  onChange={(e) => setAccessCode(e.target.value)} 
+                  className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-emerald-500" 
+                />
+                <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-black py-3 rounded-xl transition-all uppercase tracking-wider shadow-sm cursor-pointer">
+                  Ajouter la session
+                </button>
+              </form>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
+      {/* ZONE DE JEU D'UNE SESSION ACTIVE */}
+      {activeTab === 'parcours' && selectedSessionCode && selectedTreeId && trees[selectedTreeId] && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex justify-between items-center text-xs text-slate-500 bg-white px-4 py-2 border rounded-xl shadow-sm">
+              <button onClick={() => { setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className="font-bold text-slate-400 hover:text-slate-600 cursor-pointer">⬅️ Changer de session</button>
+              <span className="font-black text-slate-700 truncate">Session : <strong className="font-mono bg-slate-100 px-2 py-0.5 rounded">{selectedSessionCode}</strong></span>
+            </div>
+
+            {(() => {
+              const allFloors = trees[selectedTreeId].floors || [];
+              const totalPaliers = allFloors.length;
+              if (totalPaliers === 0) return null;
+
+              const savedFloorValue = unlockedFloorsObj[selectedTreeId];
+              const unlockedFloorIndex = savedFloorValue !== undefined ? parseInt(savedFloorValue, 10) : 0;
+
+              const safeUnlockedIndex = Math.min(unlockedFloorIndex, totalPaliers - 1);
+              const safeCurrentIndex = Math.min(currentFloorIndex, safeUnlockedIndex);
+              const activeFloor = allFloors[safeCurrentIndex];
+              
+              const nextFloorRequirement = (safeUnlockedIndex + 1) * POINTS_REQUIRED_PER_FLOOR;
+              const assezDePointsPourSuivant = studentPoints >= nextFloorRequirement;
+              const pointsManquants = nextFloorRequirement - studentPoints;
+
+              return (
+                <div className="flex gap-4 items-stretch">
+                  <div className="flex flex-col items-center py-2 gap-3 bg-slate-100/60 px-2 rounded-xl border w-11 shrink-0">
+                    {allFloors.map((floor, idx) => {
+                      const isUnlocked = idx <= safeUnlockedIndex;
+                      const isActive = idx === safeCurrentIndex;
+                      return (
+                        <button key={floor.floorId} disabled={!isUnlocked} onClick={() => { setCurrentFloorIndex(idx); setActiveQuest(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer ${isActive ? 'bg-emerald-600 text-white' : isUnlocked ? 'bg-white border' : 'bg-slate-200 text-slate-400 opacity-50'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
+                      );
+                    })}
+                  </div>
+
+                  <div className={`flex-1 bg-white border rounded-2xl p-5 shadow-sm space-y-4 relative ${triggerDropAnimation ? 'animate-drop-bounce' : ''}`}>
+                    <div className="text-[11px] border-b pb-2 text-slate-400 font-bold uppercase">Palier {activeFloor.floorId} ({trees[selectedTreeId].name})</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {(quests.filter(q => (activeFloor.quests || []).includes(q.id))).map(quest => {
+                        const isSelected = activeQuest?.id === quest.id;
+                        const isDoneHere = completedQuestIds.has(quest.id);
+                        const isDoneElsewhere = globalCompletedQuestIds.includes(quest.id) && !isDoneHere;
+
+                        return (
+                          <button key={quest.id} onClick={() => setActiveQuest(quest)} className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${isSelected ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-500/10' : isDoneHere ? 'bg-emerald-50/60 border-emerald-200' : isDoneElsewhere ? 'bg-amber-50/50 border-amber-300 border-dashed' : 'bg-slate-50'}`}>
+                            <div className="flex justify-between items-center text-[10px] font-black">
+                              <span className="text-slate-400 uppercase">{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                              {isDoneHere && <span className="text-emerald-600 font-black">Validée ✅</span>}
+                              {isDoneElsewhere && <span className="text-amber-600 font-black">Historique 🔄</span>}
+                              {!isDoneHere && !isDoneElsewhere && <span className="text-amber-500">{quest.difficulty}★</span>}
+                            </div>
+                            <h4 className="text-xs font-bold mt-0.5 text-slate-900">{quest.name}</h4>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {safeCurrentIndex === safeUnlockedIndex && safeCurrentIndex < totalPaliers - 1 && (
+                      <div className="pt-3 border-t flex items-center justify-between text-[11px]">
+                        <div>{!assezDePointsPourSuivant ? <span>🔒 Il manque <strong className="text-slate-600">{pointsManquants} XP</strong></span> : <span className="text-emerald-600 font-bold">🌟 Prêt !</span>}</div>
+                        <button 
+                          disabled={!assezDePointsPourSuivant} 
+                          onClick={() => handleUnlockNextFloor(safeCurrentIndex, totalPaliers)} 
+                          className={`font-black px-4 py-2 rounded-xl transition-all cursor-pointer ${assezDePointsPourSuivant ? 'bg-slate-950 text-white scale-105 shadow-md' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                        >
+                          Débloquer le palier suivant ➔
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* COLONNE DE TRAVAIL / DETAILS DE MISSION */}
+          <div className="space-y-4">
+            {activeQuest ? (
+              <div className="bg-white border-2 border-purple-200 p-5 rounded-2xl shadow-md space-y-4 sticky top-24">
+                {(() => {
+                  const isDoneHere = completedQuestIds.has(activeQuest.id);
+                  const isDoneElsewhere = globalCompletedQuestIds.includes(activeQuest.id) && !isDoneHere;
+
+                  return (
+                    <>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-100 text-emerald-800' : isDoneElsewhere ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'}`}>
+                            {isDoneHere ? 'Validée' : isDoneElsewhere ? 'Fait ailleurs (Double choix)' : 'Mission Active'}
+                          </span>
+                          <h3 className="font-black text-slate-900 text-sm mt-1">{activeQuest.name}</h3>
+                        </div>
+                        <button onClick={() => setActiveQuest(null)} className="text-slate-400 text-xs font-bold">✕</button>
+                      </div>
+
+                      <p className="text-xs text-slate-600 italic">"{activeQuest.desc}"</p>
+
+                      {isDoneHere && (
+                        <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-4 text-center text-xs font-bold">
+                          ✅ Mission accomplie dans cette session !
+                        </div>
+                      )}
+
+                      {isDoneElsewhere && !isDoneHere && (
+                        <div className="space-y-4 border-t pt-3">
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center space-y-2">
+                            <p className="text-[11px] text-amber-900 font-medium leading-snug">💡 Mission déjà validée sur un autre parcours ! Vous pouvez l'importer en 1 clic :</p>
+                            <button onClick={handleImportPreviousProduction} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-black py-2 rounded-xl text-[11px] uppercase tracking-wide transition-all shadow cursor-pointer">🔄 Importer mon ancien livrable</button>
+                          </div>
+                          <div className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">— OU ALORS —</div>
+                        </div>
+                      )}
+
+                      {!isDoneHere && (
+                        <form onSubmit={handleSubmitLivrable} className="space-y-3">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Rédiger un nouveau livrable pour cette session :</label>
+                          <textarea required rows="4" value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder="Collez votre réponse ou lien..." className="w-full bg-slate-50 border rounded-xl p-3 text-xs focus:border-purple-500 focus:outline-none" />
+                          
+                          <div className="space-y-1.5 border-t pt-3">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">📁 Joindre un justificatif</label>
+                            <input type="file" onChange={handleFileChange} className="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-black file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer" />
+                            {attachedFile && <p className="text-[10px] text-emerald-600 font-bold">✓ {attachedFile.name} chargé</p>}
+                          </div>
+
+                          <button type="submit" className="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-2.5 rounded-xl text-xs uppercase shadow cursor-pointer">
+                            💾 Déposer ce nouveau rendu
+                          </button>
+                        </form>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="bg-slate-100 border border-dashed rounded-2xl p-6 text-center text-xs text-slate-400 py-12">🎯 Sélectionnez une mission pour commencer.</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PORTFOLIO TECHNIQUE */}
+      {activeTab === 'portfolio' && user && (
+        <div className="space-y-8">
+          
+          {/* EN-TÊTE STATS FILTRÉES DU PORTFOLIO */}
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-4 rounded-xl flex flex-wrap justify-between items-center gap-4 shadow-sm">
+            <div className="space-y-0.5">
+              <h4 className="text-xs font-black uppercase tracking-wider">📊 Statistiques de sélection</h4>
+              <p className="text-[11px] text-emerald-100">Basé sur vos filtres actuels de mission.</p>
+            </div>
+            <div className="flex gap-4">
+              <div className="bg-white/10 px-3 py-1.5 rounded-lg text-center">
+                <span className="block text-[10px] font-bold text-emerald-200 uppercase">XP Sélectionné</span>
+                <span className="font-mono font-black text-sm">{filteredXPStats} XP</span>
+              </div>
+              <div className="bg-white/10 px-3 py-1.5 rounded-lg text-center">
+                <span className="block text-[10px] font-bold text-emerald-200 uppercase">Missions accomplies</span>
+                <span className="font-mono font-black text-sm">{filteredProductionsForStats.length}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* MISSIONS DÉCOUVERTES (EN COURS) */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 space-y-4 shadow-sm">
+            <div className="border-b pb-2">
+              <h3 className="font-black text-xs text-purple-700 uppercase tracking-widest flex items-center gap-2">
+                🎯 Mes Missions Découvertes / En cours ({discoveredQuests.length})
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">Ces missions appartiennent à vos paliers débloqués. Cliquez pour vous y rendre instantanément.</p>
+            </div>
+            
+            {discoveredQuests.length === 0 ? (
+              <div className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-dashed">
+                Aucune mission en cours. Vous avez terminé toutes les quêtes de vos paliers actuels !
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {discoveredQuests.map(({ quest, sessionCode, treeId, floorIndex, floorId, treeName }) => (
+                  <button 
+                    key={`${sessionCode}-${quest.id}`}
+                    onClick={() => handleNavigateToQuest(sessionCode, treeId, floorIndex, quest)}
+                    className="bg-purple-50/40 hover:bg-purple-50 border-2 border-purple-100/60 hover:border-purple-400 p-4 rounded-2xl text-left shadow-sm transition-all flex flex-col justify-between gap-4 group cursor-pointer relative"
+                  >
+                    <div>
+                      <div className="flex justify-between items-center text-[9px] font-mono font-bold text-purple-500">
+                        <span>{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                        <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-mono text-[8px]">SESSION: {sessionCode}</span>
+                      </div>
+                      <h4 className="font-black text-xs text-slate-800 mt-2 group-hover:text-purple-900 leading-tight">{quest.name}</h4>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-semibold border-t pt-2 flex justify-between items-center">
+                      <span>{treeName} • P.{floorId}</span>
+                      <span className="text-purple-600 font-bold group-hover:underline">S'y rendre ➔</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* CENTRE DE TRI MIS À JOUR */}
+          <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-md">
+            <div className="space-y-0.5">
+              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">🎛️ Centre de Tri</h3>
+              <p className="text-[11px] text-slate-400">Filtrez vos réussites enregistrées.</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {/* Filtre ciblé sur une mission spécifique */}
+              <select value={selectedQuestFilter} onChange={(e) => setSelectedQuestFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer max-w-[200px]">
+                <option value="all">🎯 Filtre Mission : Toutes ({quests.length})</option>
+                {quests.map(q => (
+                  <option key={q.id} value={q.id}>⚡ {q.name}</option>
+                ))}
+              </select>
+
+              <select value={filterSession} onChange={(e) => setFilterSession(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer">
+                <option value="all">🎟️ Toutes les sessions ({sessionCodesList.length})</option>
+                {sessionCodesList.map(code => (
+                  <option key={code} value={code}>📍 Session : {code}</option>
+                ))}
+              </select>
+
+              <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer">
+                <option value="all">🌍 Toutes les catégories</option>
+                <option value="env">🌱 RSE & Environnement</option>
+                <option value="tech">⚙️ Code & Tech</option>
+              </select>
+              <select value={filterPoints} onChange={(e) => setFilterPoints(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-white cursor-pointer">
+                <option value="all">✨ Tous les scores</option>
+                <option value="100">⭐ 100 XP</option>
+                <option value="250">⭐⭐ 250 XP</option>
+                <option value="500">⭐⭐⭐ 500 XP</option>
+              </select>
+            </div>
+          </div>
+
+          {/* LES RÉUSSITES DE L'APPRENANT */}
+          <div className="space-y-4">
+            <div className="border-b border-slate-200 pb-2">
+              <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide">
+                🏆 Mes Réussites uniques <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-xs font-mono font-bold">{uniqueLivrables.length}</span>
+              </h3>
+            </div>
+            {uniqueLivrables.length === 0 ? (
+              <div className="bg-white border rounded-2xl p-8 text-center text-xs text-slate-400 italic font-medium">Aucun rendu trouvé en base de données.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {uniqueLivrables.filter(p => {
+                  const originalQuest = quests.find(q => q.id === p.questId);
+                  
+                  // Traitement logique du filtre de mission ciblée
+                  if (selectedQuestFilter !== 'all' && p.questId !== selectedQuestFilter) return false;
+
+                  // Traitement logique du filtre dynamique par session
+                  let matchesSession = true;
+                  if (filterSession !== 'all') {
+                    const targetSessionObj = mySessionsData.find(s => s.session_code === filterSession);
+                    if (targetSessionObj) {
+                      const linkedTree = trees[targetSessionObj.tree_id];
+                      const containsQuest = linkedTree?.floors?.some(floor => floor.quests?.includes(p.questId));
+                      matchesSession = !!containsQuest;
+                    } else {
+                      matchesSession = false;
+                    }
+                  }
+
+                  if (!originalQuest) return matchesSession;
+                  const pts = getPointsByDifficulty(originalQuest.difficulty);
+                  const matchTheme = filterTheme === 'all' || originalQuest.theme === filterTheme;
+                  const matchPoints = filterPoints === 'all' || pts === parseInt(filterPoints, 10);
+                  return matchesSession && matchTheme && matchPoints;
+                }).map(p => {
+                  const originalQuest = quests.find(q => q.id === p.questId);
+                  const pts = originalQuest ? getPointsByDifficulty(originalQuest.difficulty) : 100;
+                  return (
+                    <div key={p.id} className="bg-white border-2 border-slate-100 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-4 relative overflow-hidden min-h-[190px]">
+                      <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-emerald-500" />
+                      <div>
+                        <div className="flex justify-between items-center text-[10px] font-mono font-bold">
+                          <span className="uppercase text-slate-400 tracking-wider">
+                            {originalQuest?.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}
+                          </span>
+                          <span className="text-emerald-600 font-black">+{pts} XP</span>
+                        </div>
+                        
+                        <h4 className="font-black text-xs text-slate-800 mt-2.5 leading-snug">{p.questName}</h4>
+                        <p className="text-[11px] text-slate-500 line-clamp-2 bg-slate-50 p-2 rounded-xl border border-slate-100 mt-2.5 font-medium italic">"{p.content}"</p>
+                      </div>
+
+                      <div className="flex justify-between items-center border-t border-slate-100 pt-2 text-[10px]">
+                        <div>
+                          {p.file_url ? (
+                            <a 
+                              href={p.file_url} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              title="Cliquez pour ouvrir le document joint"
+                              className="text-purple-600 hover:text-purple-800 font-bold bg-purple-50 hover:bg-purple-100 border border-purple-200/40 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                              📄 Document livré ➔
+                            </a>
+                          ) : (
+                            <span className="text-slate-400 font-medium italic">
+                              📝 Texte uniquement
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-slate-400 font-medium font-mono">Soumis le {p.date}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
