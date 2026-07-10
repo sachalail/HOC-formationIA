@@ -167,20 +167,31 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const sessionQuestIdsOnly = sessionQuestsOnly.map(q => q.id);
 
   // FILTRAGE DES PRODUCTIONS SÉCURISÉ CONTRE LES CRASHS
-  const filteredProductions = allProductions.filter(p => {
-    if (!p || !p.studentId) return false;
-    
-    const isInSession = studentIdsInCurrentSession.includes(p.studentId);
-    if (!isInSession) return false;
+  // CLOISONNEMENT STRICT DES PRODUCTIONS PAR SESSION
+const filteredProductions = allProductions.filter(p => {
+  if (!p || !p.studentId) return false;
+  
+  // 1. L'étudiant doit faire partie de la session actuelle
+  const isStudentInSession = studentIdsInCurrentSession.includes(p.studentId);
+  if (!isStudentInSession) return false;
 
-    const activeSelectedStudents = selectedStudents.filter(s => studentIdsInCurrentSession.includes(s.uid));
-    const matchesStudentFilter = activeSelectedStudents.length === 0 || activeSelectedStudents.some(s => s.uid === p.studentId);
+  // 2. SÉCURITÉ DE CLOISONNEMENT : La production doit correspondre au code de la session active
+  // Si ta table production remplit bien 'session_code', on l'utilise. Sinon, on vérifie que la quête appartient à l'arbre de la session.
+  const matchesSessionCode = p.session_code ? (p.session_code === currentSessionSafe.session_code) : true;
+  const isQuestInCurrentTree = sessionQuestIdsOnly.includes(p.questId);
 
-    const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(q.id));
-    const matchesQuestFilter = activeSelectedQuests.length === 0 || activeSelectedQuests.some(q => q.id === p.questId);
+  // On refuse le rendu si ce n'est ni le bon code de session, ni une quête liée à l'arbre de cette session
+  if (!matchesSessionCode || !isQuestInCurrentTree) return false;
 
-    return matchesStudentFilter && matchesQuestFilter;
-  });
+  // 3. Application des filtres optionnels du Centre de Tri (DRH)
+  const activeSelectedStudents = selectedStudents.filter(s => studentIdsInCurrentSession.includes(s.uid));
+  const matchesStudentFilter = activeSelectedStudents.length === 0 || activeSelectedStudents.some(s => s.uid === p.studentId);
+
+  const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(q.id));
+  const matchesQuestFilter = activeSelectedQuests.length === 0 || activeSelectedQuests.some(q => q.id === p.questId);
+
+  return matchesStudentFilter && matchesQuestFilter;
+});
 
   const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content?.startsWith("[Importé"));
   
