@@ -116,10 +116,11 @@ useEffect(() => {
     const fetchCohortContext = async () => {
       try {
         if (currentSessionSafe.session_code) {
+          // REQUÊTE PROPRE ET STANDARD POUR COLONNE JSONB (Tableau de chaînes)
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
             .select('id, email')
-            .contains('session_codes', [currentSessionSafe.session_code]);
+            .contains('session_codes', JSON.stringify([currentSessionSafe.session_code])); // Syntaxe officielle Supabase / JSONB
 
           if (pError) throw pError;
 
@@ -189,20 +190,6 @@ useEffect(() => {
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
-
-  const handleSessionChange = (e) => {
-    const sessionDocId = e.target.value;
-    const found = sessions.find(s => String(s.id) === String(sessionDocId));
-    if (found) {
-      setSelectedSession(found);
-      setSelectedStudents([]);
-      setSelectedQuests([]);
-    }
-  };
-
-  if (loading) {
-    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement des données...</div>;
-  }
 
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
