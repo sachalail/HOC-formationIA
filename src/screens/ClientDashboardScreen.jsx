@@ -55,7 +55,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   }, [currentSessionSafe]);
 
-  // 1. CHARGEMENT INITIAL DES SESSIONS ASSOCIÉES AU MANAGER / DRH (REQUÊTE PROPRE JSONB)
+  // 1. CHARGEMENT INITIAL DES SESSIONS ASSOCIÉES AU MANAGER / DRH
   useEffect(() => {
     const initializeDRHData = async () => {
       try {
@@ -65,7 +65,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
         const hrUserId = authUser.id;
 
-        // Requête standard pour tableau de chaînes JSONB
+        // Requête standard et propre pour tableau de chaînes JSONB
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
@@ -104,7 +104,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     initializeDRHData();
   }, []); 
 
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS (REQUÊTE PROPRE ET SÉCURISÉE)
+  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS
   useEffect(() => {
     if (!currentSessionSafe) {
       setSessionStudents([]);
@@ -114,7 +114,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     const fetchCohortContext = async () => {
       try {
-        // A. CHARGEMENT DES ÉTUDIANTS (FONCTIONNEL & PROPRE)
+        // A. CHARGEMENT DES ÉTUDIANTS (FONCTIONNEL VIA JSONB)
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
@@ -141,7 +141,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           }
         }
 
-        // B. EXTRACTION DES QUÊTES VIA L'ARBRE (PROPRE & SANS CONFLIT DE TYPE)
+        // B. EXTRACTION DES QUÊTES VIA L'ARBRE ASSOCIE
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
             .from('trees')
@@ -152,7 +152,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           if (!tError && treeData && treeData.floors) {
             const extractedQuestIds = [];
             
-            // On parse le JSON des paliers (floors) qu'il soit stocké sous forme de String ou d'Objet direct
             const floorsObj = typeof treeData.floors === 'string' ? JSON.parse(treeData.floors) : treeData.floors;
             
             if (Array.isArray(floorsObj)) {
@@ -173,27 +172,24 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               });
             }
 
-            // Si on a trouvé des IDs de quêtes associés à cet arbre, on va chercher leurs détails
             if (extractedQuestIds.length > 0) {
-              // Filtrage unique pour éviter les doublons d'IDs dans la requête
               const uniqueQuestIds = [...new Set(extractedQuestIds)];
 
               const { data: fetchedQuests, error: qError } = await supabase
                 .from('quests')
                 .select('*')
-                .in('id', uniqueQuestIds); // Utilisation de .in() standard sur clé primaire (parfaitement propre)
+                .in('id', uniqueQuestIds); // .in standard très propre
 
               if (qError) throw qError;
 
               if (fetchedQuests) {
                 setSessionQuests(fetchedQuests);
-                return; // Succès, on stoppe ici !
+                return;
               }
             }
           }
         }
         
-        // Repli si aucun arbre ou quête trouvé
         setSessionQuests([]);
 
       } catch (err) {
@@ -203,7 +199,22 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
-  
+
+  // FONCTION DE CHANGEMENT DE SESSION (Bien déclarée à la racine du composant)
+  const handleSessionChange = (e) => {
+    const sessionDocId = e.target.value;
+    const found = sessions.find(s => String(s.id) === String(sessionDocId));
+    if (found) {
+      setSelectedSession(found);
+      setSelectedStudents([]);
+      setSelectedQuests([]);
+    }
+  };
+
+  if (loading) {
+    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement des données...</div>;
+  }
+
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   const sessionQuestIdsOnly = sessionQuests.map(q => q.id);
@@ -426,7 +437,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             </div>
           </div>
 
-          {/* TABLEAU RÉCAPITULATIF DES APPRENANTS */}
+          {/* TABLEAU RÉCAPITULATIF DES EQUIPES */}
           <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b bg-slate-50/50">
               <h3 className="text-xs font-black uppercase text-slate-800">📋 Progression Générale des Équipes</h3>
@@ -485,7 +496,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             </div>
           </div>
 
-          {/* DOSSIERS ET PORTFOLIO GLOBAL */}
+          {/* PORTFOLIO LIVRABLES */}
           <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
             <h3 className="text-xs font-black uppercase text-slate-800">📂 Registre d'audit des Livrables correspondants</h3>
             {uniqueProductionsGlobal.length === 0 ? (
