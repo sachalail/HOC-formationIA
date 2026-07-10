@@ -1,8 +1,8 @@
-// src/screens/StudentDashboardScreen.jsx
+// src/screens/ClientDashboardScreen.jsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function StudentDashboardScreen({ trees, quests }) {
+export default function ClientDashboardScreen({ trees, quests }) {
   const [user, setUser] = useState(null);
   const [sessionCodesList, setSessionCodesList] = useState([]); 
   const [mySessionsData, setMySessionsData] = useState([]); 
@@ -567,7 +567,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
           {/* EN-TÊTE STATS FILTRÉES DU PORTFOLIO */}
           <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-4 rounded-xl flex flex-wrap justify-between items-center gap-4 shadow-sm">
             <div className="space-y-0.5">
-              <h4 className="text-xs font-black uppercase tracking-wider">📊 Statistiques de sélection</h4>
+              <h4 className="text-xs font-black uppercase tracking-wider">📊 Statistiques de sélection (Vue Entreprise)</h4>
               <p className="text-[11px] text-emerald-100">Basé sur vos filtres actuels de mission.</p>
             </div>
             <div className="flex gap-4">
@@ -620,7 +620,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
             )}
           </div>
 
-          {/* CENTRE DE TRI MIS À JOUR */}
+          {/* CENTRE DE TRI */}
           <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-md">
             <div className="space-y-0.5">
               <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">🎛️ Centre de Tri</h3>
@@ -656,7 +656,7 @@ export default function StudentDashboardScreen({ trees, quests }) {
             </div>
           </div>
 
-          {/* LES RÉUSSITES DE L'APPRENANT */}
+          {/* LES RÉUSSITES */}
           <div className="space-y-4">
             <div className="border-b border-slate-200 pb-2">
               <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide">
