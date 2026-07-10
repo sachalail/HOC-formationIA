@@ -180,7 +180,7 @@ export default function DocScreen() {
                   <strong className="text-slate-300">table: productions</strong>
                   <p className="text-slate-500 text-[10px] mt-0.5">▪ student_id (uuid)</p>
                   <p className="text-slate-500 text-[10px]">▪ quest_id (text)</p>
-                  <p className="text-amber-400 text-[10px]">▪ content (text -> JSON encodé)</p>
+                  <p className="text-amber-400 text-[10px]">▪ content (text : JSON encodé)</p>
                   <p className="text-slate-500 text-[10px]">▪ file_url (text)</p>
                   <p className="text-slate-500 text-[10px]">▪ session_code (text)</p>
                 </div>
