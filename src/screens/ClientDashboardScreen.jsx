@@ -114,7 +114,10 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     const fetchCohortContext = async () => {
       try {
-        // A. CHARGEMENT DES ÉTUDIANTS (FONCTIONNEL VIA JSONB)
+        let formattedStudents = [];
+        let fetchedQuestsData = [];
+
+        // A. CHARGEMENT DES ÉTUDIANTS
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
@@ -124,7 +127,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           if (pError) throw pError;
 
           if (profiles) {
-            const formattedStudents = profiles.map(p => {
+            formattedStudents = profiles.map(p => {
               const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${currentSessionSafe.tree_id}`);
               const maxFloor = savedFloor ? parseInt(savedFloor, 10) + 1 : 1;
               
@@ -135,9 +138,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 maxFloor: maxFloor
               };
             });
-            setSessionStudents(formattedStudents);
-          } else {
-            setSessionStudents([]);
           }
         }
 
@@ -151,7 +151,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
           if (!tError && treeData && treeData.floors) {
             const extractedQuestIds = [];
-            
             const floorsObj = typeof treeData.floors === 'string' ? JSON.parse(treeData.floors) : treeData.floors;
             
             if (Array.isArray(floorsObj)) {
@@ -178,43 +177,30 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               const { data: fetchedQuests, error: qError } = await supabase
                 .from('quests')
                 .select('*')
-                .in('id', uniqueQuestIds); // .in standard très propre
+                .in('id', uniqueQuestIds);
 
               if (qError) throw qError;
-
               if (fetchedQuests) {
-                setSessionQuests(fetchedQuests);
-                return;
+                fetchedQuestsData = fetchedQuests;
               }
             }
           }
         }
         
-        setSessionQuests([]);
+        // SÉCURITÉ : On applique les deux états d'un seul coup à la toute fin du processus asynchrone
+        setSessionStudents(formattedStudents);
+        setSessionQuests(fetchedQuestsData);
 
       } catch (err) {
         console.error("Erreur de synchronisation du contexte de cohorte :", err);
+        // En cas d'erreur, on évite le crash en vidant les listes
+        setSessionStudents([]);
+        setSessionQuests([]);
       }
     };
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
-
-  // FONCTION DE CHANGEMENT DE SESSION (Bien déclarée à la racine du composant)
-  const handleSessionChange = (e) => {
-    const sessionDocId = e.target.value;
-    const found = sessions.find(s => String(s.id) === String(sessionDocId));
-    if (found) {
-      setSelectedSession(found);
-      setSelectedStudents([]);
-      setSelectedQuests([]);
-    }
-  };
-
-  if (loading) {
-    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement des données...</div>;
-  }
-
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   const sessionQuestIdsOnly = sessionQuests.map(q => q.id);
