@@ -172,7 +172,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
     .eq('id', user.id);
 
 if (updateError) throw updateError;
-    } else {
+    else {
       setSessionCodesList(updatedSessionCodes);
       setMySessionsData([...mySessionsData, { id: targetSession.id, session_code: targetSession.session_code, tree_id: targetSession.tree_id }]);
       setSelectedSessionCode(targetSession.session_code);
