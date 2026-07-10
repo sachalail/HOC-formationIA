@@ -3,13 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 export default function ClientDashboardScreen({ trees, quests }) {
-  const [sessions, setSessions] = useState([]); 
+  const [sessions, setSessions] = useState([]); // Sessions gérées par ce DRH
   const [selectedSession, setSelectedSession] = useState(() => {
     const saved = sessionStorage.getItem('drh_selected_session');
     return saved ? JSON.parse(saved) : null;
   }); 
-  const [sessionStudents, setSessionStudents] = useState([]); 
-  const [allProductions, setAllProductions] = useState([]); 
+  const [sessionStudents, setSessionStudents] = useState([]); // Étudiants de la session sélectionnée
+  const [allProductions, setAllProductions] = useState([]); // Toutes les productions
   const [loading, setLoading] = useState(true);
 
   // ÉTATS DES FILTRES PERSISTANTS
@@ -22,7 +22,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Source de vérité unique pour la session active
+  // Source de vérité unique pour la session active (Priorité 1 puis Priorité 2)
   const currentSessionSafe = selectedSession || sessions[0] || null;
 
   useEffect(() => {
@@ -55,6 +55,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
 
+        // Si on a des sessions et qu'aucune n'est stockée, on initialise proprement selectedSession
         if (sessionsData && sessionsData.length > 0 && !selectedSession) {
           setSelectedSession(sessionsData[0]);
         }
@@ -89,7 +90,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
     fetchHRData();
   }, []);
 
-  // Synchronisation stricte des étudiants dès que le code de la session active réelle change
+  // Synchronisation des étudiants dès que la session active réelle change de session_code
   useEffect(() => {
     if (!currentSessionSafe || !currentSessionSafe.session_code) {
       setSessionStudents([]);
@@ -132,6 +133,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
     if (found) {
       setSelectedSession(found);
+      // Nettoyage immédiat pour forcer le recalcul propre des filtres et éviter les collisions
       setSelectedStudents([]);
       setSelectedQuests([]);
     }
@@ -164,7 +166,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const sessionQuestsOnly = questsList.filter(q => q && String(q.tree_id) === String(currentSessionSafe.tree_id));
   const sessionQuestIdsOnly = sessionQuestsOnly.map(q => q.id);
 
-  // FILTRAGE DES PRODUCTIONS SÉCURISÉ
+  // FILTRAGE DES PRODUCTIONS SÉCURISÉ CONTRE LES CRASHS
   const filteredProductions = allProductions.filter(p => {
     if (!p || !p.studentId) return false;
     
