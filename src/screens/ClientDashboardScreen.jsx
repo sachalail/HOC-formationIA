@@ -5,7 +5,6 @@ import { supabase } from '../supabaseClient';
 export default function ClientDashboardScreen({ trees, quests }) {
   const [sessions, setSessions] = useState([]); 
   const [selectedSession, setSelectedSession] = useState(() => {
-    // Anti-reset : récupération de la session sauvegardée
     const saved = sessionStorage.getItem('drh_selected_session');
     return saved ? JSON.parse(saved) : null;
   }); 
@@ -23,7 +22,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Sauvegarde des filtres dans le sessionStorage dès qu'ils changent
   useEffect(() => {
     sessionStorage.setItem('drh_filter_students', JSON.stringify(selectedStudents));
   }, [selectedStudents]);
@@ -54,7 +52,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
 
-        // Assigner la session par défaut uniquement si aucune n'est déjà mémorisée
         if (sessionsData && sessionsData.length > 0 && !selectedSession) {
           setSelectedSession(sessionsData[0]);
         }
@@ -199,11 +196,16 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
-  // TRI DES OPTIONS DE RECHERCHE
-  const sortedQuestsOptions = [...questsList].sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10));
-  const sortedStudentsOptions = [...sessionStudents].sort((a, b) => b.maxFloor - a.maxFloor);
+  // TRIS DES ENSEMBLES DE RECHERCHE RESTANTS
+  const availableStudents = sortedStudentsOptions = [...sessionStudents]
+    .sort((a, b) => b.maxFloor - a.maxFloor)
+    .filter(st => !selectedStudents.some(sel => sel.uid === st.uid));
 
-  // AJOUT/RETRAIT DES FILTRES
+  const availableQuests = sortedQuestsOptions = [...questsList]
+    .sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10))
+    .filter(q => !selectedQuests.some(sel => sel.id === q.id));
+
+  // FONCTIONS DE SELECTION
   const addStudentFilter = (uid) => {
     if (!uid) return;
     const match = sessionStudents.find(s => s.uid === uid);
@@ -231,7 +233,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
   return (
     <div className="max-w-7xl mx-auto px-8 py-8 space-y-6">
       
-      {/* SÉLECTION COHORTE */}
+      {/* SELECTION COHORTE */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
         <div className="flex items-center gap-3">
           <label className="text-xs font-black text-slate-700 uppercase tracking-wider whitespace-nowrap">
@@ -273,7 +275,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         </button>
       </div>
 
-      {/* BLOC DE TRI DOUBLE COLONNES (TAGS + SÉLECTEURS ASSOCIES) */}
+      {/* BLOC DE TRI DOUBLE COLONNES */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-sm">
         <div className="text-[11px] font-black uppercase text-slate-500 tracking-wider">🎛️ Centre de Tri Avancé</div>
         
@@ -284,7 +286,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Collaborateur :</label>
               
-              {/* Zone de Tags Collaborateurs */}
+              {/* Tags au-dessus du sélecteur */}
               <div className="flex flex-wrap gap-1.5 min-h-[32px] pb-1">
                 {selectedStudents.map(st => (
                   <span key={st.uid} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -300,35 +302,33 @@ export default function ClientDashboardScreen({ trees, quests }) {
               onChange={(e) => { addStudentFilter(e.target.value); e.target.value = ""; }}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="" disabled>✨ Sélectionner un collaborateur...</option>
-              {sortedStudentsOptions
-                .filter(st => !selectedStudents.some(sel => sel.uid === st.uid))
-                .map((st, index, arr) => {
-                  const items = [];
-                  // Si c'est le tout premier élément ou qu'il y a un changement de palier
-                  if (index === 0 || st.maxFloor !== arr[index - 1].maxFloor) {
-                    items.push(
-                      <option key={`sep-floor-${st.maxFloor}`} disabled className="bg-slate-100 font-bold text-slate-500 text-[10px]">
-                        ─── COLLABORATEURS AU PALIER {st.maxFloor} ───
-                      </option>
-                    );
-                  }
+              <option value="" disabled>✨ Choisir un collaborateur...</option>
+              {availableStudents.map((st, index) => {
+                const items = [];
+                // Séparateur numérique imbriqué dans le flux continu au changement de Palier
+                if (index === 0 || st.maxFloor !== availableStudents[index - 1].maxFloor) {
                   items.push(
-                    <option key={st.uid} value={st.uid}>
-                      Palier {st.maxFloor} — {st.email}
+                    <option key={`sep-floor-${st.maxFloor}`} disabled className="bg-slate-100 text-slate-500 font-bold text-[10px] py-1">
+                      ── Palier {st.maxFloor} ──
                     </option>
                   );
-                  return items;
-                })}
+                }
+                items.push(
+                  <option key={st.uid} value={st.uid}>
+                    {st.email}
+                  </option>
+                );
+                return items;
+              })}
             </select>
           </div>
 
           {/* COLONNE FILTRE QUÊTES */}
           <div className="flex flex-col justify-between space-y-2">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Quête / Thème :</label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Filtrer par Quête :</label>
               
-              {/* Zone de Tags Quêtes */}
+              {/* Tags au-dessus du sélecteur */}
               <div className="flex flex-wrap gap-1.5 min-h-[32px] pb-1">
                 {selectedQuests.map(q => (
                   <span key={q.id} className="inline-flex items-center gap-1 bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -344,27 +344,25 @@ export default function ClientDashboardScreen({ trees, quests }) {
               onChange={(e) => { addQuestFilter(e.target.value); e.target.value = ""; }}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="" disabled>✨ Sélectionner une mission...</option>
-              {sortedQuestsOptions
-                .filter(q => !selectedQuests.some(sel => sel.id === q.id))
-                .map((q, index, arr) => {
-                  const items = [];
-                  const diff = parseInt(q.difficulty, 10);
-                  // Si c'est la première quête ou s'il y a un changement de niveau de difficulté
-                  if (index === 0 || parseInt(q.difficulty, 10) !== parseInt(arr[index - 1].difficulty, 10)) {
-                    items.push(
-                      <option key={`sep-diff-${diff}`} disabled className="bg-slate-100 font-bold text-slate-500 text-[10px]">
-                        ─── MISSIONS DIFFICULTÉ {diff}★ ───
-                      </option>
-                    );
-                  }
+              <option value="" disabled>✨ Choisir une quête...</option>
+              {availableQuests.map((q, index) => {
+                const items = [];
+                const diff = parseInt(q.difficulty, 10);
+                // Séparateur numérique imbriqué dans le flux continu au changement de Difficulté
+                if (index === 0 || diff !== parseInt(availableQuests[index - 1].difficulty, 10)) {
                   items.push(
-                    <option key={q.id} value={q.id}>
-                      ({q.difficulty}★) — {q.name}
+                    <option key={`sep-diff-${diff}`} disabled className="bg-slate-100 text-slate-500 font-bold text-[10px] py-1">
+                      ── Difficulté {diff}★ ──
                     </option>
                   );
-                  return items;
-                })}
+                }
+                items.push(
+                  <option key={q.id} value={q.id}>
+                    {q.name}
+                  </option>
+                );
+                return items;
+              })}
             </select>
           </div>
 
@@ -392,7 +390,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         </div>
       </div>
 
-      {/* SYNTHÈSE COHORTE */}
+      {/* TABLEAU SYNTHÈSE COHORTE */}
       <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-3">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">👥 Avancement de la Cohorte ({totalStudents})</h3>
         {totalStudents === 0 ? (
