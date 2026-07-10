@@ -58,13 +58,25 @@ export default function App() {
         setUserRole(profile.role); 
       }
 
+      // A. On vérifie si tu es le manager d'une session
       const { data: managedSessions } = await supabase
         .from('sessions')
         .select('id')
         .eq('manager_id', user.id)
         .limit(1);
 
-      setIsManager(managedSessions && managedSessions.length > 0);
+      // B. NOUVEAU : On vérifie SI ton ID est présent dans les drh_ids d'une session
+      const { data: hrSessions } = await supabase
+        .from('sessions')
+        .select('id')
+        .contains('drh_ids', JSON.stringify([user.id]))
+        .limit(1);
+
+      const isSessionManager = managedSessions && managedSessions.length > 0;
+      const isSessionHR = hrSessions && hrSessions.length > 0;
+
+      // Tu as l'accès si tu es manager de la session OU si tu t'es assigné les droits RH
+      setIsManager(isSessionManager || isSessionHR);
 
       await loadSupabaseData();
 
