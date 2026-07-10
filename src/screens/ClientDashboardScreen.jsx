@@ -12,7 +12,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const [allProductions, setAllProductions] = useState([]); 
   const [loading, setLoading] = useState(true);
 
-  // ÉTATS DES FILTRES PERSISTANTS (Anti-reset au changement d'onglet / Alt+Tab)
+  // ÉTATS DES FILTRES PERSISTANTS
   const [selectedStudents, setSelectedStudents] = useState(() => {
     const saved = sessionStorage.getItem('drh_filter_students');
     return saved ? JSON.parse(saved) : [];
@@ -21,6 +21,9 @@ export default function ClientDashboardScreen({ trees, quests }) {
     const saved = sessionStorage.getItem('drh_filter_quests');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Source de vérité unique pour la session active
+  const currentSessionSafe = selectedSession || sessions[0] || null;
 
   useEffect(() => {
     sessionStorage.setItem('drh_filter_students', JSON.stringify(selectedStudents));
@@ -52,6 +55,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
         if (sessionsError) throw sessionsError;
         setSessions(sessionsData || []);
 
+        // Si on a des sessions et qu'aucune n'était sauvée, on prend la première
         if (sessionsData && sessionsData.length > 0 && !selectedSession) {
           setSelectedSession(sessionsData[0]);
         }
@@ -86,8 +90,9 @@ export default function ClientDashboardScreen({ trees, quests }) {
     fetchHRData();
   }, []);
 
+  // Synchronisation des étudiants dès que la session active (mémoire ou fallback) change
   useEffect(() => {
-    if (!selectedSession || !selectedSession.session_code) {
+    if (!currentSessionSafe || !currentSessionSafe.session_code) {
       setSessionStudents([]);
       return;
     }
@@ -97,13 +102,13 @@ export default function ClientDashboardScreen({ trees, quests }) {
         const { data: profiles, error } = await supabase
           .from('profiles')
           .select('id, email')
-          .contains('session_codes', JSON.stringify([selectedSession.session_code]));
+          .contains('session_codes', JSON.stringify([currentSessionSafe.session_code]));
 
         if (error) throw error;
 
         if (profiles) {
           const formattedStudents = profiles.map(p => {
-            const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${selectedSession.tree_id}`);
+            const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${currentSessionSafe.tree_id}`);
             const maxFloor = savedFloor ? parseInt(savedFloor, 10) + 1 : 1;
 
             return {
@@ -121,13 +126,14 @@ export default function ClientDashboardScreen({ trees, quests }) {
     };
 
     fetchStudentsProfiles();
-  }, [selectedSession]);
+  }, [currentSessionSafe?.id]); // On écoute l'ID de la session active réelle
 
   const handleSessionChange = (e) => {
     const sessionDocId = e.target.value;
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
     if (found) {
       setSelectedSession(found);
+      // Nettoyage immédiat des filtres pour éviter les collisions inter-cohortes
       setSelectedStudents([]);
       setSelectedQuests([]);
     }
@@ -141,7 +147,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
     );
   }
 
-  if (sessions.length === 0) {
+  if (sessions.length === 0 || !currentSessionSafe) {
     return (
       <div className="max-w-7xl mx-auto px-8 py-12 text-center bg-white border rounded-2xl shadow-sm">
         <h2 className="text-sm font-black text-slate-700 uppercase tracking-wider">Aucune session affectée</h2>
@@ -150,13 +156,13 @@ export default function ClientDashboardScreen({ trees, quests }) {
     );
   }
 
-  const currentSessionSafe = selectedSession || sessions[0];
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
 
-  // FILTRAGE DES QUÊTES LIÉES UNIQUEMENT À CET ARBRE DE SESSION
+  // FILTRAGE DES QUÊTES LIÉES STRICTEMENT À CET ARBRE DE SESSION
   const questsList = quests || [];
   const sessionQuestsOnly = questsList.filter(q => String(q.tree_id) === String(currentSessionSafe.tree_id));
 
+  // FILTRAGE DES PRODUCTIONS
   const filteredProductions = allProductions.filter(p => {
     const isInSession = studentIdsInCurrentSession.includes(p.studentId);
     if (!isInSession) return false;
@@ -199,21 +205,18 @@ export default function ClientDashboardScreen({ trees, quests }) {
   const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
-  // SÉLECTION DES APPRENANTS DISPONIBLES DANS LE MENU DÉROULANT
+  // CONSTITUTION DES OPTIONS POUR LES SELECTEURS
   const availableStudents = [...sessionStudents]
     .sort((a, b) => b.maxFloor - a.maxFloor)
     .filter(st => !selectedStudents.some(sel => sel.uid === st.uid));
 
-  // SÉLECTION DES QUÊTES DE LA SESSION DISPONIBLES DANS LE MENU DÉROULANT
   const availableQuests = [...sessionQuestsOnly]
     .sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10))
     .filter(q => !selectedQuests.some(sel => sel.id === q.id));
 
-  // TRI DES TAGS SÉLECTIONNÉS POUR PERMETTRE L'AFFICHAGE DES SÉPARATEURS PAR PALIER / DIFFICULTÉ
   const sortedSelectedStudents = [...selectedStudents].sort((a, b) => b.maxFloor - a.maxFloor);
   const sortedSelectedQuests = [...selectedQuests].sort((a, b) => parseInt(a.difficulty, 10) - parseInt(b.difficulty, 10));
 
-  // GESTION DES ACTIONS FILTRES
   const addStudentFilter = (uid) => {
     if (!uid) return;
     const match = sessionStudents.find(s => s.uid === uid);
@@ -302,7 +305,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
                 </button>
               </div>
               
-              {/* Zone de Tags Collaborateurs avec séparateurs de paliers */}
               <div className="flex flex-wrap items-center gap-1.5 min-h-[36px] bg-white border border-slate-200 p-1.5 rounded-xl">
                 {sortedSelectedStudents.length === 0 ? (
                   <span className="text-[10px] text-slate-400 italic pl-1">Tous visibles</span>
@@ -333,7 +335,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
               onChange={(e) => { addStudentFilter(e.target.value); e.target.value = ""; }}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="" disabled>✨ Choisir un collaborateur...</option>
+              <option value="" disabled>✨ Choisir un collaborateur ({availableStudents.length} dispo)...</option>
               {availableStudents.map((st, index) => {
                 const items = [];
                 if (index === 0 || st.maxFloor !== availableStudents[index - 1].maxFloor) {
@@ -366,7 +368,6 @@ export default function ClientDashboardScreen({ trees, quests }) {
                 </button>
               </div>
               
-              {/* Zone de Tags Quêtes avec séparateurs de difficultés */}
               <div className="flex flex-wrap items-center gap-1.5 min-h-[36px] bg-white border border-slate-200 p-1.5 rounded-xl">
                 {sortedSelectedQuests.length === 0 ? (
                   <span className="text-[10px] text-slate-400 italic pl-1">Toutes visibles</span>
@@ -398,7 +399,7 @@ export default function ClientDashboardScreen({ trees, quests }) {
               onChange={(e) => { addQuestFilter(e.target.value); e.target.value = ""; }}
               className="w-full bg-white border border-slate-200 text-xs rounded-xl p-2.5 outline-none font-semibold text-slate-700 shadow-sm cursor-pointer"
             >
-              <option value="" disabled>✨ Choisir une quête ({sessionQuestsOnly.length} dispo)...</option>
+              <option value="" disabled>✨ Choisir une quête ({availableQuests.length} dispo)...</option>
               {availableQuests.map((q, index) => {
                 const items = [];
                 const diff = parseInt(q.difficulty, 10);
