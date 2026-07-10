@@ -15,7 +15,7 @@ export default function DocScreen() {
           <p className="text-[11px] text-indigo-200 font-medium">Cartographie des fonctionnalités et architecture de données</p>
         </div>
         <div className="bg-indigo-500/20 text-indigo-300 font-bold px-3 py-1.5 rounded-xl text-[10px] uppercase border border-indigo-500/30">
-          v2.5 — Architecture Schema
+          v2.6 — Database Visual Enhancements
         </div>
       </div>
 
@@ -99,7 +99,7 @@ export default function DocScreen() {
                 <span className="text-base">🌳</span> 2. Sessions & Progression Persistante Supabase
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Anciennement basé sur le localStorage volatile du navigateur, le suivi des paliers est désormais entièrement **sanctuarisé en base de données** pour assurer une continuité inter-appareils.
+                Le suivi des paliers est entièrement **sanctuarisé en base de données** pour assurer une continuité inter-appareils.
               </p>
               <ul className="space-y-2 text-xs text-slate-600 pl-1">
                 <li className="flex items-start gap-2">
@@ -246,83 +246,119 @@ export default function DocScreen() {
 
       {/* 📊 NOUVEL ONGLET : 5. ARCHITECTURE BASE DE DONNÉES */}
       {activeTab === 'bdd' && (
-        <div className="space-y-6 animate-fadeIn">
+        <div className="space-y-8 animate-fadeIn">
           
-          {/* Grille des Tables Natives */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <span className="text-base">🗄️</span> Répertoire des Tables & Contraintes PostgreSql
-              </h3>
-              <span className="bg-amber-100 text-amber-800 text-[10px] font-mono px-2 py-0.5 rounded font-bold">Relational Schema</span>
-            </div>
+          {/* Légende du code couleur */}
+          <div className="bg-slate-100 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center gap-4 text-xs font-mono">
+            <span className="text-slate-700 font-bold font-sans">🎨 Code Couleur des Types :</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-100 border border-purple-300 inline-block"></span><span className="text-purple-700 font-bold">uuid</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-300 inline-block"></span><span className="text-blue-700 font-bold">text</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-300 inline-block"></span><span className="text-amber-700 font-bold">jsonb</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-pink-100 border border-pink-300 inline-block"></span><span className="text-pink-700 font-bold">boolean / integer / bigint</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-200 border border-slate-400 inline-block"></span><span className="text-slate-700 font-bold">timestamp</span></span>
+          </div>
 
+          {/* DÉBUT DU TABLEAU COMPLET RE-STRUCTURÉ */}
+          <div className="bg-white border border-slate-300 rounded-3xl shadow-md overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-[11px] font-mono text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-900 text-slate-200 text-[10px] uppercase tracking-wider">
-                    <th className="p-2.5 rounded-l-lg">Table</th>
-                    <th className="p-2.5">Colonne</th>
-                    <th className="p-2.5">Type PostgreSQL</th>
-                    <th className="p-2.5 text-center">Null Accepté</th>
-                    <th className="p-2.5 rounded-r-lg">Valeur par défaut / Contrainte</th>
+                  <tr className="bg-slate-950 text-slate-200 text-[10px] uppercase tracking-wider">
+                    <th className="p-3 pl-4 w-1/5">Table</th>
+                    <th className="p-3 w-1/5">Colonne</th>
+                    <th className="p-3 w-1/5">Type PostgreSQL</th>
+                    <th className="p-3 text-center w-32">Null Accepté</th>
+                    <th className="p-3 pr-4">Valeur par défaut / Contraintes</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {/* PRODUCTIONS */}
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK]</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">created_at</td><td className="p-2">timestamp with time zone</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">now()</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">student_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (FK profiles.id)</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">student_email</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">quest_id</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">quest_name</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-amber-600 font-bold">content</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Contient JSON encrypté)</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">file_url</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Chaîne Base64 ou URL)</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">file_hash</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Signature Unique Équipe)</td></tr>
-                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">session_code</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+                <tbody className="divide-y divide-slate-200">
 
-                  {/* PROFILES */}
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK / Auth]</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-slate-700">email</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-slate-700">role</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-indigo-600">'user'::text</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-purple-600 font-bold">session_codes</td><td className="p-2">jsonb</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-purple-600">'[]'::jsonb</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-purple-600 font-bold">unlocked_floors</td><td className="p-2">jsonb</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-purple-600">'{"{}"}'::jsonb</td></tr>
+                  {/* SECTION : PRODUCTIONS */}
+                  <tr className="bg-slate-900 text-white font-sans text-xs font-black">
+                    <td colSpan="5" className="p-3 pl-4 tracking-wide bg-gradient-to-r from-slate-900 to-slate-800">
+                      📂 TABLE : productions <span className="font-mono text-[10px] text-slate-400 font-normal ml-2">(Rendus de livrables et historiques d'exercices)</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 font-bold text-slate-400">productions</td><td className="p-3 text-slate-900 font-bold">id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-bold border border-purple-200">uuid</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid() <span className="text-[10px] font-mono bg-purple-50 text-purple-600 border border-purple-200 px-1 rounded font-bold">PRIMARY KEY</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">created_at</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold border border-slate-200">timestamp with tz</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-500 font-sans">now()</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">student_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">uuid</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1 rounded">(Foreign Key ➔ profiles.id)</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">student_email</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">quest_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">quest_name</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-amber-700 font-bold">content</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-amber-600 font-sans font-bold">null <span className="font-normal text-slate-500">(Contient le JSON stringifié crypté de la quête et statuts)</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">file_url</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null (Chaîne de stockage Base64 ou URL brute du bucket)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">file_hash</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null (Signature unique générée pour le verrouillage collaboratif)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">productions</td><td className="p-3 text-slate-700">session_code</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
 
-                  {/* QUESTS */}
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK]</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">desc</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">theme</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (env / tech)</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">difficulty</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null ('1', '2', '3')</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">owner_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">visibility</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">'private'::text</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">name</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-indigo-600 font-bold">is_collaborative</td><td className="p-2">boolean</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-indigo-600">false</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-indigo-600 font-bold">required_partners</td><td className="p-2">integer</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-indigo-600">1</td></tr>
+                  {/* SECTION : PROFILES */}
+                  <tr className="bg-slate-900 text-white font-sans text-xs font-black">
+                    <td colSpan="5" className="p-3 pl-4 tracking-wide bg-gradient-to-r from-slate-900 to-slate-800 border-t-4 border-slate-950">
+                      👤 TABLE : profiles <span className="font-mono text-[10px] text-slate-400 font-normal ml-2">(Utilisateurs, permissions rôles et sauvegardes de paliers)</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 font-bold text-slate-400">profiles</td><td className="p-3 text-slate-900 font-bold">id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-bold border border-purple-200">uuid</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid() <span className="text-[10px] font-mono bg-purple-50 text-purple-600 border border-purple-200 px-1 rounded font-bold">PK / Link Auth.users</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">profiles</td><td className="p-3 text-slate-700">email</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">profiles</td><td className="p-3 text-slate-700">role</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-indigo-600 font-bold">'user'::text</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">profiles</td><td className="p-3 text-amber-700 font-bold">session_codes</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">jsonb</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-purple-600 font-bold">'[]'::jsonb <span className="font-normal text-slate-400 font-sans">(Tableau des codes classes de l'apprenant)</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">profiles</td><td className="p-3 text-emerald-600 font-bold">unlocked_floors</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">jsonb</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-purple-600 font-bold">'{"{}"}'::jsonb <span className="font-normal text-emerald-600 font-sans">(Sauvegarde persistante des paliers max par arbre)</span></td></tr>
 
-                  {/* SESSIONS */}
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">bigint</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">[PK] Identity</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-emerald-600 font-bold">session_code</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">[UK] Clé d'accès</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-slate-700">tree_id</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (ID de l'arbre associé)</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-slate-700">manager_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-slate-700">created_by</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-purple-600 font-bold">drh_ids</td><td className="p-2">jsonb</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-purple-600">'[]'::jsonb (Accès Client)</td></tr>
+                  {/* SECTION : QUESTS */}
+                  <tr className="bg-slate-900 text-white font-sans text-xs font-black">
+                    <td colSpan="5" className="p-3 pl-4 tracking-wide bg-gradient-to-r from-slate-900 to-slate-800 border-t-4 border-slate-950">
+                      ⚔️ TABLE : quests <span className="font-mono text-[10px] text-slate-400 font-normal ml-2">(Catalogue des missions de jeu configurables par le Studio)</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 font-bold text-slate-400">quests</td><td className="p-3 text-slate-900 font-bold">id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-bold border border-purple-200">uuid</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid() [PK]</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-slate-700">desc</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-slate-700">theme</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1 rounded">('env' / 'tech')</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-slate-700">difficulty</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1 rounded">('1' / '2' / '3' pour calcul XP)</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-slate-700">owner_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">uuid</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid()</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-slate-700">visibility</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-500 font-sans">'private'::text</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-slate-700">name</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-indigo-600 font-bold">is_collaborative</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-pink-100 text-pink-700 font-bold border border-pink-200">boolean</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-indigo-600 font-sans font-bold">false</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">quests</td><td className="p-3 text-indigo-600 font-bold">required_partners</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-pink-100 text-pink-700 font-bold border border-pink-200">integer</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-indigo-600 font-sans font-bold">1 <span className="font-normal text-slate-500">(Nombre de coéquipiers requis pour valider le réseau)</span></td></tr>
 
-                  {/* SHARED PERMISSIONS */}
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">bigint</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null [PK]</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-slate-700">entity_type</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null ('tree' / 'quest')</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-slate-700">entity_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-slate-700">shared_with_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+                  {/* SECTION : SESSIONS */}
+                  <tr className="bg-slate-900 text-white font-sans text-xs font-black">
+                    <td colSpan="5" className="p-3 pl-4 tracking-wide bg-gradient-to-r from-slate-900 to-slate-800 border-t-4 border-slate-950">
+                      🏫 TABLE : sessions <span className="font-mono text-[10px] text-slate-400 font-normal ml-2">(Instances de cours reliant un groupe d'élèves à un arbre de paliers)</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 font-bold text-slate-400">sessions</td><td className="p-3 text-slate-900 font-bold">id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-pink-100 text-pink-700 font-bold border border-pink-200">bigint</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-500 font-sans">Identity <span className="text-[10px] font-mono bg-purple-50 text-purple-600 border border-purple-200 px-1 rounded font-bold">PK</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">sessions</td><td className="p-3 text-emerald-600 font-bold">session_code</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-500 font-sans"><span className="text-[10px] font-mono bg-amber-50 text-amber-700 border border-amber-200 px-1 rounded font-bold">UNIQUE KEY</span> (ex: ORANGE-LILLE-26)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">sessions</td><td className="p-3 text-slate-700">tree_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null (ID de l'arbre structurel attaché)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">sessions</td><td className="p-3 text-slate-700">manager_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">uuid</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid()</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">sessions</td><td className="p-3 text-slate-700">created_by</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">uuid</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid()</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">sessions</td><td className="p-3 text-purple-600 font-bold">drh_ids</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">jsonb</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-purple-600 font-bold">'[]'::jsonb <span className="font-normal text-slate-400 font-sans">(Liste des managers clients autorisés en lecture)</span></td></tr>
 
-                  {/* TREES */}
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK]</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-slate-700">name</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-purple-600 font-bold">floors</td><td className="p-2">jsonb</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Structure de l'arbre)</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-slate-700">owner_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
-                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-slate-700">visibility</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">'private'::text</td></tr>
+                  {/* SECTION : SHARED PERMISSIONS */}
+                  <tr className="bg-slate-900 text-white font-sans text-xs font-black">
+                    <td colSpan="5" className="p-3 pl-4 tracking-wide bg-gradient-to-r from-slate-900 to-slate-800 border-t-4 border-slate-950">
+                      🔗 TABLE : shared_permissions <span className="font-mono text-[10px] text-slate-400 font-normal ml-2">(Passerelle de partage d'arbres ou de quêtes privées inter-formateurs)</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 font-bold text-slate-400">shared_permissions</td><td className="p-3 text-slate-900 font-bold">id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-pink-100 text-pink-700 font-bold border border-pink-200">bigint</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-400 font-sans">null [PK]</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">shared_permissions</td><td className="p-3 text-slate-700">entity_type</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-400 font-sans">null <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1 rounded">('tree' / 'quest')</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">shared_permissions</td><td className="p-3 text-slate-700">entity_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">uuid</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">shared_permissions</td><td className="p-3 text-slate-700">shared_with_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">uuid</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+
+                  {/* SECTION : TREES */}
+                  <tr className="bg-slate-900 text-white font-sans text-xs font-black">
+                    <td colSpan="5" className="p-3 pl-4 tracking-wide bg-gradient-to-r from-slate-900 to-slate-800 border-t-4 border-slate-950">
+                      🌲 TABLE : trees <span className="font-mono text-[10px] text-slate-400 font-normal ml-2">(Architecture structurelle des parcours ordonnés par étages)</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 font-bold text-slate-400">trees</td><td className="p-3 text-slate-900 font-bold">id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-bold border border-purple-200">uuid</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid() [PK]</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">trees</td><td className="p-3 text-slate-700">name</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-red-600 font-bold">NO</td><td className="p-3 text-slate-400 font-sans">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">trees</td><td className="p-3 text-purple-600 font-bold">floors</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">jsonb</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-400 font-sans">null <span className="text-purple-600 font-mono font-bold">(Matrice ordonnée des paliers et des listes de quêtes associées)</span></td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">trees</td><td className="p-3 text-slate-700">owner_id</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">uuid</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-500 font-sans">gen_random_uuid()</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-3 pl-4 text-slate-400">trees</td><td className="p-3 text-slate-700">visibility</td><td className="p-2"><span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">text</span></td><td className="p-3 text-center text-emerald-600 font-bold">YES</td><td className="p-3 text-slate-500 font-sans">'private'::text</td></tr>
+
                 </tbody>
               </table>
             </div>
           </div>
+          {/* FIN DU TABLEAU */}
 
           {/* Spécifications Schémas JSONB Spécifiques */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -334,7 +370,7 @@ export default function DocScreen() {
                 <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">JSONB Object</span>
               </div>
               <p className="text-[11px] text-slate-400 font-sans leading-tight">
-                Structure de hachage associant l'UUID racine d'un arbre de jeu à l'index maximum (base 0) débloqué de manière persistante par l'élève.
+                Structure de hachage associant l'UUID racine d'un arbre de jeu à l'index maximum (base 0) débloqué de manière dynamique.
               </p>
               <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-pink-400 text-[11px] overflow-x-auto">
 {`{
@@ -351,7 +387,7 @@ export default function DocScreen() {
                 <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">JSONB Array</span>
               </div>
               <p className="text-[11px] text-slate-400 font-sans leading-tight">
-                Tableau ordonné définissant l'architecture des niveaux d'un parcours, portant les listes ordonnées d'identifiants de quêtes.
+                Tableau ordonné définissant l'architecture des niveaux d'un parcours, portant les listes de quêtes.
               </p>
               <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-indigo-300 text-[11px] overflow-x-auto">
 {`[
