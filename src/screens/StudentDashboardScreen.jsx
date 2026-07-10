@@ -741,49 +741,117 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
             </div>
           )}
 
-          {/* ❌ BLOC 3 : LES QUÊTES NON COMMENCÉES */}
-          {(portfolioFilter === 'all' || portfolioFilter === 'not_started') && (
-            <div className="space-y-3 pt-2">
-              <div className="border-b border-slate-200 pb-2">
-                <h4 className="font-black text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  ❌ Catalogue des Missions Restantes ({quests.filter(q => !completedQuestIds.has(q.id)).length})
-                </h4>
-              </div>
-              {(() => {
-                const pendingQuests = quests.filter(q => !completedQuestIds.has(q.id));
-                if (pendingQuests.length === 0) {
-                  return <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété 100 % des missions disponibles de l'aventure !</div>;
-                }
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-80">
-                    {pendingQuests.map(q => {
-                      const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
-                      const isStartedButPending = pendingCollabQuestIds.has(q.id);
-                      return (
-                        <div key={q.id} className={`bg-slate-50 border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-4 transition-all hover:bg-white ${isQuestCollab ? 'border-purple-200 bg-purple-50/5' : 'border-slate-200'}`}>
-                          <div>
-                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
-                              <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
-                              <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
-                            </div>
-                            <h5 className={`font-black text-xs mt-2 leading-tight ${isQuestCollab ? 'text-purple-950' : 'text-slate-700'}`}>{isQuestCollab && '🤝 '}{q.name}</h5>
-                            <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{q.desc}"</p>
-                          </div>
-                          
-                          <div className="flex justify-between items-center pt-2 border-t text-[10px]">
-                            <span className="font-bold text-slate-400 uppercase tracking-wider text-[9px]">
-                              {isStartedButPending ? '⏳ En attente' : '❌ Non initiée'}
-                            </span>
-                            <button onClick={() => navigateToQuestInGame(q.id)} className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-200/60 px-2 py-1 rounded hover:bg-slate-200">🚀 Lancer la mission ➔</button>
-                          </div>
-                        </div>
-                      );
-                    })}
+          {/* ❌ BLOC 3 : CATALOGUE DES MISSIONS RESTANTES DES PARCOURS REJOINTS */}
+{(portfolioFilter === 'all' || portfolioFilter === 'not_started') && (
+  <div className="space-y-3 pt-2">
+    <div className="border-b border-slate-200 pb-2">
+      <h4 className="font-black text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+        ❌ Catalogue des Missions Restantes de mes Parcours
+      </h4>
+    </div>
+    {(() => {
+      // 1. Collecter toutes les quêtes appartenant aux arbres des sessions rejointes par l'étudiant
+      const joinedTreeIds = mySessionsData.map(s => s.tree_id).filter(Boolean);
+      
+      // On filtre le catalogue global des quêtes pour ne garder que celles non complétées ET présentes dans un de nos arbres
+      const pendingQuests = quests.filter(q => {
+        const isNotDone = !completedQuestIds.has(q.id);
+        const isInJoinedTrees = joinedTreeIds.some(treeId => {
+          const tree = trees[treeId];
+          const floors = tree?.floors || [];
+          return floors.some(floor => (floor.quests || []).map(id => String(id)).includes(String(q.id)));
+        });
+        return isNotDone && isInJoinedTrees;
+      });
+
+      if (pendingQuests.length === 0) {
+        return <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété toutes les missions de vos parcours rejoints !</div>;
+      }
+
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {pendingQuests.map(q => {
+            const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
+            const isStartedButPending = pendingCollabQuestIds.has(q.id);
+
+            // 🔍 2. Calcul du verrouillage spécifique : retrouver l'arbre et vérifier son niveau débloqué
+            let isQuestLockedInCatalogue = false;
+            let associatedTreeName = "un arbre verrouillé";
+
+            // On trouve l'arbre associé à cette quête parmi nos sessions rejointes
+            const matchingTreeId = joinedTreeIds.find(treeId => {
+              const tree = trees[treeId];
+              const floors = tree?.floors || [];
+              return floors.some(floor => (floor.quests || []).map(id => String(id)).includes(String(q.id)));
+            });
+
+            if (matchingTreeId && trees[matchingTreeId]) {
+              const currentTree = trees[matchingTreeId];
+              const floorsArray = currentTree.floors || [];
+              
+              // Trouver l'index du palier pour cette quête dans cet arbre
+              const floorIndexForQuest = floorsArray.findIndex(floor => (floor.quests || []).map(id => String(id)).includes(String(q.id)));
+              
+              // Déterminer l'index max débloqué pour cet arbre précis via la configuration lue en bdd (unlockedFloorIndex pour la session active, ou fallback s'il s'agit d'un autre arbre rejoint)
+              let currentUnlockedIndexForThisTree = unlockedFloorIndex;
+              if (selectedTreeId !== matchingTreeId) {
+                // Si l'étudiant regarde le catalogue mais que la quête appartient à un autre de ses arbres rejoints, 
+                // la logique s'appuie sur unlockedFloorIndex mis à jour par le useEffect, mais par sécurité on vérifie l'index.
+                currentUnlockedIndexForThisTree = unlockedFloorIndex; 
+              }
+
+              // Si le palier de la quête est supérieur à ce que l'étudiant a débloqué sur cet arbre
+              if (floorIndexForQuest !== -1 && floorIndexForQuest > currentUnlockedIndexForThisTree) {
+                isQuestLockedInCatalogue = true;
+                associatedTreeName = currentTree.name || "cet arbre";
+              }
+            }
+
+            return (
+              <div 
+                key={q.id} 
+                className={`border border-dashed p-5 rounded-2xl flex flex-col justify-between gap-4 transition-all relative overflow-hidden bg-slate-50 ${
+                  isQuestLockedInCatalogue ? 'select-none' : 'hover:bg-white'
+                } ${isQuestCollab ? 'border-purple-200' : 'border-slate-200'}`}
+              >
+                {/* 🔒 EFFET DE FLOU SI LA QUÊTE RELEVE D'UN PALIER ENCORE BLOQUÉ DANS SON ARBRE */}
+                {isQuestLockedInCatalogue && (
+                  <div className="absolute inset-0 bg-slate-50/40 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-3 text-center">
+                    <div className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-xl shadow-md border border-slate-700">
+                      🔒 Verrouillé - Rattaché à : {associatedTreeName}
+                    </div>
                   </div>
-                );
-              })()}
-            </div>
-          )}
+                )}
+
+                <div className={isQuestLockedInCatalogue ? 'opacity-20' : ''}>
+                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                    <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'} {isQuestCollab && '🤝'}</span>
+                    <span className="text-slate-500 font-mono">{isQuestCollab ? 'Co-op' : `${q.difficulty}★`}</span>
+                  </div>
+                  <h5 className={`font-black text-xs mt-2 leading-tight ${isQuestCollab ? 'text-purple-950' : 'text-slate-700'}`}>{isQuestCollab && <span className="mr-1">🤝</span>}{q.name}</h5>
+                  <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{q.desc}"</p>
+                </div>
+                
+                <div className={`flex justify-between items-center pt-2 border-t text-[10px] ${isQuestLockedInCatalogue ? 'opacity-20' : ''}`}>
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[9px]">
+                    {isStartedButPending ? '⏳ En attente' : '❌ Non initiée'}
+                  </span>
+                  <button 
+                    disabled={isQuestLockedInCatalogue}
+                    onClick={() => navigateToQuestInGame(q.id)} 
+                    className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-200/60 px-2 py-1 rounded hover:bg-slate-200 disabled:opacity-30"
+                  >
+                    🚀 Lancer la mission ➔
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    })()}
+  </div>
+)}
 
         </div>
       )}
