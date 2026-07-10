@@ -159,39 +159,104 @@ export default function DocScreen() {
       )}
 
       {/* CONTENU : 2. FORMATEUR (STUDIO) */}
-      {activeTab === 'formateur' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fadeIn">
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <span className="text-base">🧠</span> Interface de Conception du Studio
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Le Studio permet aux formateurs de manager l'intégralité du cycle de vie des briques de jeu : création des missions, ordonnancement des paliers d'arbres et ouverture des instances de session.
-              </p>
-              <ul className="space-y-2 text-xs text-slate-600 pl-1">
-                <li className="flex items-start gap-2">
-                  <span className="text-purple-500 mt-0.5">✔</span>
-                  <span><strong>Création Graphique de Missions :</strong> Formulaire complet avec thématique, niveau de difficulté (1★ à 3★) pour le barème XP, et l'activation coopérative avec configuration de `required_partners`.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-purple-500 mt-0.5">✔</span>
-                  <span><strong>Éditeur d'Arbre Augmenté :</strong> Glisser-déposer et injection d'IDs de quêtes directement au sein de la structure JSONB `floors` de la table `trees` pour matérialiser les étages.</span>
-                </li>
-              </ul>
-            </div>
+{activeTab === 'formateur' && (
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fadeIn">
+    <div className="lg:col-span-2 space-y-6">
+      
+      {/* BLOC 1 */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+          <span className="text-base">🧠</span> 1. Gestion & Conception des Quêtes (Le Catalogue)
+        </h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Le Studio permet aux formateurs de manager l'intégralité du cycle de vie des briques de jeu : création des missions, barème d'XP et mode réseau.
+        </p>
+        <ul className="space-y-2 text-xs text-slate-600 pl-1">
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Formulaire de Création :</strong> Saisie du nom, description, thématique (tag coloré) et difficulté (1★ à 3★) qui calibre automatiquement le barème d'XP (Difficulté × 300 XP).</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Configuration Réseau Co-op :</strong> Activation du drapeau <code className="bg-slate-100 px-1 rounded text-pink-600 font-mono">is_collaborative</code> et définition du seuil de coéquipiers requis via <code className="bg-slate-100 px-1 rounded text-pink-600 font-mono">required_partners</code>.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Visibilité Strict :</strong> Attribution automatique du <code className="bg-slate-100 px-1 rounded text-slate-700 font-mono">owner_id</code> et gestion du statut de visibilité (<code className="text-slate-800 font-bold">private</code> ou <code className="text-emerald-600 font-bold">public</code>).</span>
+          </li>
+        </ul>
+      </div>
+
+      {/* BLOC 2 */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+          <span className="text-base">🌲</span> 2. Éditeur d'Arbre Augmenté & Paliers
+        </h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Interface visuelle d'ordonnancement pour structurer la progression pédagogique des parcours.
+        </p>
+        <ul className="space-y-2 text-xs text-slate-600 pl-1">
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Création d'Étages :</strong> Ajout dynamique de paliers successifs numérotés pour segmenter l'apprentissage.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Assignation de Missions :</strong> Menu de sélection des quêtes disponibles et injection directe de leurs UUIDs au sein de la structure JSONB <code className="bg-slate-100 px-1 rounded text-amber-700 font-mono">floors</code> de la table <code className="text-purple-700 font-bold">trees</code>.</span>
+          </li>
+        </ul>
+      </div>
+
+      {/* BLOC 3 */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+          <span className="text-base">🏫</span> 3. Instances de Sessions & Monitoring Réseau
+        </h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Génération des environnements de cours et suivi de l'avancement des classes.
+        </p>
+        <ul className="space-y-2 text-xs text-slate-600 pl-1">
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Codes Classes Uniques :</strong> Génération de clés d'accès textuelles (ex: <code className="bg-slate-800 text-slate-200 font-mono px-1 rounded">ORANGE-LILLE-26</code>) mappées sur la table <code className="font-bold">sessions</code>.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Passerelle de Partage :</strong> Système d'invitation inter-formateurs écrivant dans <code className="font-bold">shared_permissions</code> pour déléguer les droits d'écriture sur des arbres/quêtes privés.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-purple-500 mt-0.5">✔</span>
+            <span><strong>Revue de Livrables :</strong> Monitoring des productions, lecture des zones de textes décodées et accès aux pièces jointes avec possibilité de forcer manuellement une validation.</span>
+          </li>
+        </ul>
+      </div>
+
+    </div>
+
+    {/* SIDEBAR TECH */}
+    <div className="space-y-4">
+      <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 space-y-3">
+        <h4 className="font-black text-purple-400 uppercase text-[11px] tracking-wider">🗄️ Modèle de Données Studio</h4>
+        <div className="space-y-2 text-[10px] font-mono">
+          <div className="p-2 bg-slate-950 rounded border border-slate-800">
+            <strong className="text-purple-400">table: quests</strong>
+            <p className="text-slate-400 mt-0.5">▪ is_collaborative (bool)</p>
+            <p className="text-slate-400">▪ required_partners (int)</p>
+            <p className="text-slate-500">▪ owner_id, visibility, difficulty</p>
           </div>
-          <div className="space-y-4">
-            <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
-              <h4 className="font-black text-purple-400 uppercase text-[11px]">🌲 Configuration JSONB</h4>
-              <p className="text-slate-400 font-mono text-[10px] leading-tight">
-                La table <code className="text-purple-300">trees</code> porte le champ <code className="text-slate-300">floors</code> qui ordonne l'arborescence structurelle globale consommée par les apprenants.
-              </p>
-            </div>
+          <div className="p-2 bg-slate-950 rounded border border-slate-800">
+            <strong className="text-amber-400">table: trees</strong>
+            <p className="text-amber-300 mt-0.5">▪ floors (jsonb array)</p>
+          </div>
+          <div className="p-2 bg-slate-950 rounded border border-slate-800">
+            <strong className="text-pink-400">table: shared_permissions</strong>
+            <p className="text-slate-400 mt-0.5">▪ entity_type, entity_id, shared_with_id</p>
           </div>
         </div>
-      )}
-
+      </div>
+    </div>
+  </div>
+)}
       {/* CONTENU : 3. DRH / CLIENT */}
       {activeTab === 'drh' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fadeIn">
