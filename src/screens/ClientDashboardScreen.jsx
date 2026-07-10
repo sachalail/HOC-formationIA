@@ -35,7 +35,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   });
 
-  // SECURITÉ ANTI-FANTÔME : On vérifie si la session sélectionnée fait partie des sessions réelles chargées
+  // SECURITÉ COMPARAISON STRICTE SÉCURISÉE EN STRING
   const isSelectedSessionValid = selectedSession && sessions.some(s => String(s.id) === String(selectedSession.id));
   const currentSessionSafe = isSelectedSessionValid ? selectedSession : (sessions[0] || null);
 
@@ -47,7 +47,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     sessionStorage.setItem('drh_filter_quests', JSON.stringify(selectedQuests));
   }, [selectedQuests]);
 
-  // Synchronisation sécurisée de la session en mémoire
   useEffect(() => {
     if (currentSessionSafe) {
       sessionStorage.setItem('drh_selected_session', JSON.stringify(currentSessionSafe));
@@ -62,11 +61,15 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
       try {
         setLoading(true);
         const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) return;
+        if (!authUser) {
+          console.log("❌ Aucun utilisateur authentifié trouvé dans Supabase Auth.");
+          return;
+        }
 
         const hrUserId = authUser.id;
+        console.log("👤 ID de ton compte utilisateur connecté :", hrUserId);
 
-        // Récupération en temps réel des sessions de ce DRH
+        // Récupération des sessions de ce DRH
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
@@ -74,11 +77,13 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
         if (sError) throw sError;
 
+        console.log("📊 Sessions trouvées en BDD pour cet ID :", fetchedSessions);
+
         if (fetchedSessions && fetchedSessions.length > 0) {
           setSessions(fetchedSessions);
           
-          // Si la session stockée en mémoire n'est pas dans la liste fraîche de la BDD, on bascule sur la première disponible
-          const stillValid = fetchedSessions.find(s => s.id === selectedSession?.id);
+          // Comparaison souple (String) pour éviter les conflits de types (ex: Numéro vs UUID)
+          const stillValid = fetchedSessions.find(s => String(s.id) === String(selectedSession?.id));
           if (!stillValid) {
             setSelectedSession(fetchedSessions[0]);
           }
@@ -104,7 +109,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     };
 
     initializeDRHData();
-  }, []); // Exécution unique au montage du composant
+  }, []); 
 
   // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS DEPUIS SUPABASE
   useEffect(() => {
@@ -116,7 +121,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     const fetchCohortContext = async () => {
       try {
-        // A. Récupération des profils étudiants rattachés au code session
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
@@ -143,7 +147,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           }
         }
 
-        // B. Extraction des quêtes à partir du schéma JSON de l'arbre
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
             .from('trees')
@@ -310,7 +313,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
       {/* COMPOSANT INTRODUCTIF SANS SESSION */}
       {!currentSessionSafe && (
         <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed text-xs font-mono text-slate-400">
-          Aucun espace de session actif configuré pour votre profil d'audit.
+          Aucun espace de session actif configuré pour votre profil d'audit. Vérifiez vos liaisons de table ou la console.
         </div>
       )}
 
@@ -429,7 +432,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             </div>
           </div>
 
-          {/* TABLEAU RÉCAPITULATIF DES APPRENANTS */}
+          {/* TABLEAU RÉCAPITULATIF */}
           <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b bg-slate-50/50">
               <h3 className="text-xs font-black uppercase text-slate-800">📋 Progression Générale des Équipes</h3>
@@ -488,7 +491,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             </div>
           </div>
 
-          {/* DOSSIERS ET PORTFOLIO GLOBAL */}
+          {/* PORTFOLIO LIVRABLES */}
           <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
             <h3 className="text-xs font-black uppercase text-slate-800">📂 Registre d'audit des Livrables correspondants</h3>
             {uniqueProductionsGlobal.length === 0 ? (
