@@ -517,7 +517,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                             }`}
                           >
                             <div className="flex justify-between items-center text-[10px] font-black">
-                              <span className={isQuestCollab ? "text-purple-600 uppercase" : "text-slate-400 uppercase"}={quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                              <span className={isQuestCollab ? "text-purple-600 uppercase" : "text-slate-400 uppercase"}>{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
                               {isDoneHere && <span className="text-emerald-600">Validée ✅</span>}
                               {isPendingHere && <span className="text-amber-600 font-medium">En attente coéquipier ⏳</span>}
                               {isDoneElsewhere && <span className="text-amber-600">Historique 🔄</span>}
