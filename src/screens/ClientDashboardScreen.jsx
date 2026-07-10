@@ -35,7 +35,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   });
 
-  // SECURITÉ COMPARAISON STRICTE SÉCURISÉE EN STRING
+  // SECURITÉ ANTI-FANTÔME
   const isSelectedSessionValid = selectedSession && sessions.some(s => String(s.id) === String(selectedSession.id));
   const currentSessionSafe = isSelectedSessionValid ? selectedSession : (sessions[0] || null);
 
@@ -55,57 +55,56 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   }, [currentSessionSafe]);
 
-  // 1. CHARGEMENT INITIAL DES SESSIONS ASSOCIÉES AU MANAGER / DRH
-useEffect(() => {
-  const initializeDRHData = async () => {
-    try {
-      setLoading(true);
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return;
+  // 1. CHARGEMENT INITIAL DES SESSIONS ASSOCIÉES AU MANAGER / DRH (REQUÊTE PROPRE JSONB)
+  useEffect(() => {
+    const initializeDRHData = async () => {
+      try {
+        setLoading(true);
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
 
-      const hrUserId = authUser.id;
+        const hrUserId = authUser.id;
 
-      // REQUÊTE NATIVE ET PROPRE POUR COLONNE JSONB contenant un Array de Strings
-      const { data: fetchedSessions, error: sError } = await supabase
-        .from('sessions')
-        .select('*')
-        .contains('drh_ids', JSON.stringify([hrUserId])); // Match parfait avec ["ton-uuid"]
+        // Requête standard pour tableau de chaînes JSONB
+        const { data: fetchedSessions, error: sError } = await supabase
+          .from('sessions')
+          .select('*')
+          .contains('drh_ids', JSON.stringify([hrUserId]));
 
-      if (sError) throw sError;
+        if (sError) throw sError;
 
-      if (fetchedSessions && fetchedSessions.length > 0) {
-        setSessions(fetchedSessions);
-        
-        // Validation et ré-aiguillage souple
-        const stillValid = fetchedSessions.find(s => String(s.id) === String(selectedSession?.id));
-        if (!stillValid) {
-          setSelectedSession(fetchedSessions[0]);
+        if (fetchedSessions && fetchedSessions.length > 0) {
+          setSessions(fetchedSessions);
+          
+          const stillValid = fetchedSessions.find(s => String(s.id) === String(selectedSession?.id));
+          if (!stillValid) {
+            setSelectedSession(fetchedSessions[0]);
+          }
+        } else {
+          setSessions([]);
+          setSelectedSession(null);
         }
-      } else {
-        setSessions([]);
-        setSelectedSession(null);
+
+        // Récupération globale du registre des productions
+        const { data: fetchedProductions, error: pError } = await supabase
+          .from('productions')
+          .select('*')
+          .order('id', { ascending: false });
+
+        if (pError) throw pError;
+        if (fetchedProductions) setAllProductions(fetchedProductions);
+
+      } catch (err) {
+        console.error("Erreur d'initialisation du tableau de bord client :", err);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      // Récupération globale du registre des productions
-      const { data: fetchedProductions, error: pError } = await supabase
-        .from('productions')
-        .select('*')
-        .order('id', { ascending: false });
+    initializeDRHData();
+  }, []); 
 
-      if (pError) throw pError;
-      if (fetchedProductions) setAllProductions(fetchedProductions);
-
-    } catch (err) {
-      console.error("Erreur d'initialisation du tableau de bord client :", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  initializeDRHData();
-}, []);
-
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS DEPUIS SUPABASE
+  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS (REQUÊTE PROPRE JSONB)
   useEffect(() => {
     if (!currentSessionSafe) {
       setSessionStudents([]);
@@ -116,11 +115,11 @@ useEffect(() => {
     const fetchCohortContext = async () => {
       try {
         if (currentSessionSafe.session_code) {
-          // REQUÊTE PROPRE ET STANDARD POUR COLONNE JSONB (Tableau de chaînes)
+          // Requête standard pour tableau de chaînes JSONB sur les profils
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
             .select('id, email')
-            .contains('session_codes', JSON.stringify([currentSessionSafe.session_code])); // Syntaxe officielle Supabase / JSONB
+            .contains('session_codes', JSON.stringify([currentSessionSafe.session_code]));
 
           if (pError) throw pError;
 
@@ -190,6 +189,21 @@ useEffect(() => {
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
+
+  // LA FONCTION RÉALIMENTÉE ET SÉCURISÉE
+  const handleSessionChange = (e) => {
+    const sessionDocId = e.target.value;
+    const found = sessions.find(s => String(s.id) === String(sessionDocId));
+    if (found) {
+      setSelectedSession(found);
+      setSelectedStudents([]);
+      setSelectedQuests([]);
+    }
+  };
+
+  if (loading) {
+    return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement des données...</div>;
+  }
 
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
@@ -294,7 +308,7 @@ useEffect(() => {
       {/* COMPOSANT INTRODUCTIF SANS SESSION */}
       {!currentSessionSafe && (
         <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed text-xs font-mono text-slate-400">
-          Aucun espace de session actif configuré pour votre profil d'audit. Vérifiez vos liaisons de table ou la console.
+          Aucun espace de session actif configuré pour votre profil d'audit.
         </div>
       )}
 
@@ -413,7 +427,7 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* TABLEAU RÉCAPITULATIF */}
+          {/* TABLEAU RÉCAPITULATIF DES APPRENANTS */}
           <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b bg-slate-50/50">
               <h3 className="text-xs font-black uppercase text-slate-800">📋 Progression Générale des Équipes</h3>
@@ -472,7 +486,7 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* PORTFOLIO LIVRABLES */}
+          {/* DOSSIERS ET PORTFOLIO GLOBAL */}
           <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-4">
             <h3 className="text-xs font-black uppercase text-slate-800">📂 Registre d'audit des Livrables correspondants</h3>
             {uniqueProductionsGlobal.length === 0 ? (
