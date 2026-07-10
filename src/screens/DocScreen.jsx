@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 
 export default function DocScreen() {
-  const [activeTab, setActiveTab] = useState('user'); // 'user', 'formateur', 'drh', 'admin'
+  const [activeTab, setActiveTab] = useState('user'); // 'user', 'formateur', 'drh', 'admin', 'bdd'
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8 space-y-6 pl-24">
@@ -12,14 +12,14 @@ export default function DocScreen() {
           <h2 className="text-lg font-black uppercase tracking-wider flex items-center gap-2">
             📚 Centre de Documentation Technico-Fonctionnel
           </h2>
-          <p className="text-[11px] text-indigo-200 font-medium">Cartographie des fonctionnalités de la plateforme par rôle</p>
+          <p className="text-[11px] text-indigo-200 font-medium">Cartographie des fonctionnalités et architecture de données</p>
         </div>
         <div className="bg-indigo-500/20 text-indigo-300 font-bold px-3 py-1.5 rounded-xl text-[10px] uppercase border border-indigo-500/30">
-          v2.4 — Supabase Native
+          v2.5 — Architecture Schema
         </div>
       </div>
 
-      {/* Navigation entre les rôles de l'application */}
+      {/* Navigation principale de la documentation */}
       <div className="flex border-b border-slate-200 overflow-x-auto pb-px gap-2">
         <button 
           onClick={() => setActiveTab('user')} 
@@ -53,14 +53,20 @@ export default function DocScreen() {
         >
           ⚡ Super Admin
         </button>
+        <button 
+          onClick={() => setActiveTab('bdd')} 
+          className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 px-4 whitespace-nowrap transition-all cursor-pointer ${
+            activeTab === 'bdd' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          🗄️ Architecture BDD
+        </button>
       </div>
 
       {/* CONTENU : 1. APPRENANT (USER) */}
       {activeTab === 'user' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fadeIn">
           <div className="lg:col-span-2 space-y-6">
-            
-            {/* SECTION 1 */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                 <span className="text-base">📂</span> 1. Système de Portfolio & Hub de Suivi Clean
@@ -88,7 +94,6 @@ export default function DocScreen() {
               </ul>
             </div>
 
-            {/* SECTION 2 */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                 <span className="text-base">🌳</span> 2. Sessions & Progression Persistante Supabase
@@ -109,38 +114,9 @@ export default function DocScreen() {
                   <span className="text-emerald-500 mt-0.5">✔</span>
                   <span><strong>Déblocage de Palier à Conditions :</strong> Calcul mathématique strict de la somme des points XP accumulés **uniquement via les quêtes validées**. Le bouton « Palier suivant ➔ » reste verrouillé tant que le score actuel est inférieur à la formule : <code className="bg-slate-100 font-mono text-slate-800 px-1 rounded text-[11px]">300 XP × IndexPalierSuivant</code>.</span>
                 </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 mt-0.5">✔</span>
-                  <span><strong>Animation Drop :</strong> Le passage d'un palier déclenche une animation d'impact vertical (`animate-drop-bounce`) simulant l'ancrage physique du nouvel étage de jeu.</span>
-                </li>
               </ul>
             </div>
 
-            {/* SECTION 3 */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <span className="text-base">⚙️</span> 3. Moteur de Tri & Barème XP
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Affichage ciblé du contenu pour éviter la surcharge cognitive de l'élève lors de sa progression.
-              </p>
-              <ul className="space-y-2 text-xs text-slate-600 pl-1">
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 mt-0.5">✔</span>
-                  <span><strong>Filtres Combinatoires :</strong> Tri instantané au sein du palier actif par Thématique (🌍 RSE, ⚙️ Tech) et par Mode de jeu (👤 Solo, 👥 Co-op).</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 mt-0.5">✔</span>
-                  <span><strong>Navigation par Paliers :</strong> Grille de boutons dynamique affichant l'icône de cadenas 🔒 pour tous les paliers supérieurs à la valeur maximale contenue dans `unlocked_floors[selectedTreeId]`.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 mt-0.5">✔</span>
-                  <span><strong>Barème de Difficulté :</strong> Attribution et calcul dynamique automatisé des points : <strong>100 XP</strong> (1★ / Facile), <strong>250 XP</strong> (2★ / Moyenne), ou <strong>500 XP</strong> (3★ / Difficile).</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* SECTION 4 */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                 <span className="text-base">🤝</span> 4. Validation Réseau Co-op & Import Historique
@@ -157,41 +133,26 @@ export default function DocScreen() {
                   <span className="text-purple-600 mt-0.5">🛡️</span>
                   <span><strong>Moteur Double Dépôt Multi-Joueurs ($N$ Coéquipiers) :</strong> Si l'apprenant est le premier à déposer le fichier joint (obligatoire en coop), la quête passe au statut `pending` et bloque ses points. Au dépôt du $N$-ième partenaire (`required_partners`), le moteur scanne la table `productions`, bascule automatiquement tous les anciens dépôts liés au même hash sur `validated` et débloque les XP en direct pour toute l'équipe.</span>
                 </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-purple-600 mt-0.5">🔄</span>
-                  <span><strong>Passerelle d'Importation d'Historique :</strong> Si l'élève a déjà validé une mission dans un autre parcours ou une classe passée, le système détecte la concordance globale dans `productions`. Un bouton magique <em>« Importer mon travail 🔄 »</em> apparaît, lui permettant de cloner son livrable dans la session active et de récupérer instantanément ses points sans re-saisie.</span>
-                </li>
               </ul>
             </div>
-
           </div>
 
-          {/* COLONNE SPECIFICATIONS BASE DE DONNEES USER */}
           <div className="space-y-4">
             <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 space-y-3">
               <h4 className="text-xs font-black uppercase tracking-wider text-emerald-400">📊 Schéma BDD Mobilisé</h4>
               <div className="space-y-2 text-[11px] font-mono">
                 <div className="p-2 bg-slate-950 rounded border border-slate-800">
                   <strong className="text-slate-300">table: profiles</strong>
-                  <p className="text-slate-500 text-[10px] mt-0.5">▪ session_codes (jsonb, default '[]')</p>
-                  <p className="text-emerald-400 text-[10px]">▪ unlocked_floors (jsonb, default '{"{}"}')</p>
+                  <p className="text-slate-500 text-[10px] mt-0.5">▪ session_codes (jsonb)</p>
+                  <p className="text-emerald-400 text-[10px]">▪ unlocked_floors (jsonb)</p>
                 </div>
                 <div className="p-2 bg-slate-950 rounded border border-slate-800">
                   <strong className="text-slate-300">table: productions</strong>
-                  <p className="text-slate-500 text-[10px] mt-0.5">▪ student_id (uuid)</p>
-                  <p className="text-slate-500 text-[10px]">▪ quest_id (text)</p>
-                  <p className="text-amber-400 text-[10px]">▪ content (text : JSON encodé)</p>
-                  <p className="text-slate-500 text-[10px]">▪ file_url (text)</p>
-                  <p className="text-slate-500 text-[10px]">▪ session_code (text)</p>
+                  <p className="text-slate-500 text-[10px] mt-0.5">▪ student_id, quest_id, session_code</p>
+                  <p className="text-amber-400 text-[10px]">▪ content (text formaté JSON)</p>
+                  <p className="text-slate-500 text-[10px]">▪ file_url, file_hash</p>
                 </div>
               </div>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl text-xs text-amber-900 space-y-1">
-              <strong className="block">💡 Note Technique Sécurité :</strong>
-              <p className="leading-tight opacity-90">
-                L'injection du statut (`pending` ou `validated`) et du hash d'équipe s'effectue au sein du champ `content` via les helpers `encodeProductionContent` et `parseProductionContent`. Le texte reste 100% pur pour l'élève à l'affichage mais structuré pour la base de données.
-              </p>
             </div>
           </div>
         </div>
@@ -211,35 +172,21 @@ export default function DocScreen() {
               <ul className="space-y-2 text-xs text-slate-600 pl-1">
                 <li className="flex items-start gap-2">
                   <span className="text-purple-500 mt-0.5">✔</span>
-                  <span><strong>Création Graphique de Missions :</strong> Formulaire complet intégrant le choix de la thématique, le niveau de difficulté (1★ à 3★) pour le barème XP, et l'activation du drapeau collaboratif avec le curseur du nombre de partenaires requis.</span>
+                  <span><strong>Création Graphique de Missions :</strong> Formulaire complet avec thématique, niveau de difficulté (1★ à 3★) pour le barème XP, et l'activation coopérative avec configuration de `required_partners`.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-purple-500 mt-0.5">✔</span>
-                  <span><strong>Éditeur d'Arbre Augmenté :</strong> Glisser-déposer et injection d'IDs de quêtes directement au sein de la structure JSONB `floors` de la table `trees` pour matérialiser les étages physiques du parcours.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-purple-500 mt-0.5">✔</span>
-                  <span><strong>Génération instantanée de Sessions :</strong> Bouton d'initialisation d'espace avec création d'un `session_code` unique et affectation instantanée d'un arbre racine pour le groupe.</span>
+                  <span><strong>Éditeur d'Arbre Augmenté :</strong> Glisser-déposer et injection d'IDs de quêtes directement au sein de la structure JSONB `floors` de la table `trees` pour matérialiser les étages.</span>
                 </li>
               </ul>
             </div>
           </div>
-
           <div className="space-y-4">
-            <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-purple-400">📊 Schéma BDD Mobilisé</h4>
-              <div className="space-y-2 text-[11px] font-mono">
-                <div className="p-2 bg-slate-950 rounded border border-slate-800">
-                  <strong className="text-slate-300">table: quests</strong>
-                  <p className="text-slate-500 text-[10px] mt-0.5">▪ name, desc, theme, difficulty</p>
-                  <p className="text-slate-500 text-[10px]">▪ is_collaborative (boolean)</p>
-                  <p className="text-slate-500 text-[10px]">▪ required_partners (integer)</p>
-                </div>
-                <div className="p-2 bg-slate-950 rounded border border-slate-800">
-                  <strong className="text-slate-300">table: trees</strong>
-                  <p className="text-purple-400 text-[10px]">▪ floors (jsonb structural architecture)</p>
-                </div>
-              </div>
+            <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
+              <h4 className="font-black text-purple-400 uppercase text-[11px]">🌲 Configuration JSONB</h4>
+              <p className="text-slate-400 font-mono text-[10px] leading-tight">
+                La table <code className="text-purple-300">trees</code> porte le champ <code className="text-slate-300">floors</code> qui ordonne l'arborescence structurelle globale consommée par les apprenants.
+              </p>
             </div>
           </div>
         </div>
@@ -254,30 +201,21 @@ export default function DocScreen() {
                 <span className="text-base">💼</span> Console Analytique d'Entreprise
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Destiné aux commanditaires des formations (DRH, Managers RSE), cet écran offre une vision macro et analytique de la progression des collaborateurs sans droit d'édition sur le contenu des quêtes.
+                Destiné aux commanditaires des formations (DRH, Managers RSE), cet écran offre une vision macro et analytique de la progression des collaborateurs sans droit d'édition.
               </p>
               <ul className="space-y-2 text-xs text-slate-600 pl-1">
                 <li className="flex items-start gap-2">
                   <span className="text-blue-500 mt-0.5">✔</span>
-                  <span><strong>Suivi du Taux de Complétion :</strong> Tableaux de bord synthétisant le volume total d'XP généré par session et par équipe.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-500 mt-0.5">✔</span>
-                  <span><strong>Accès en Lecture Seule :</strong> Restriction de sécurité stricte interdisant la création ou la modification de quêtes et d'arbres.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-500 mt-0.5">✔</span>
-                  <span><strong>Export de Livrables :</strong> Consultation et téléchargement des productions validées pour évaluer la montée en compétences globale sur les thématiques RSE / Tech.</span>
+                  <span><strong>Suivi Macro :</strong> Lecture analytique du taux de complétion, extraction des volumes d'XP générés par session et consultation des livrables sans droits de modification (sécurité d'écriture).</span>
                 </li>
               </ul>
             </div>
           </div>
-
           <div className="space-y-4">
             <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
               <h4 className="font-black text-blue-400 uppercase text-[11px]">🔐 Restriction RLS & Rôles</h4>
               <p className="text-slate-400 font-mono text-[10px] leading-tight">
-                Les profils possédant le rôle <code className="text-blue-300">"client"</code> sont rattachés aux sessions via le champ <code className="text-slate-300">drh_ids</code> de la table <code className="text-slate-300">sessions</code>, limitant leur visibilité aux seuls périmètres autorisés.
+                Les profils possédant le rôle <code className="text-blue-300">"client"</code> sont rattachés aux sessions via le champ <code className="text-slate-300">drh_ids</code> (JSONB) de la table <code className="text-slate-300">sessions</code>.
               </p>
             </div>
           </div>
@@ -298,28 +236,142 @@ export default function DocScreen() {
               <ul className="space-y-2 text-xs text-slate-600 pl-1">
                 <li className="flex items-start gap-2">
                   <span className="text-red-500 mt-0.5">✔</span>
-                  <span><strong>Infiltration de Compte (Impersonation) :</strong> Possibilité technique pour l'administrateur de "se glisser" instantanément dans la session de n'importe quel élève ou formateur pour inspecter son portfolio, recalculer ses scores ou forcer le déblocage d'un palier `unlocked_floors` buggé.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-red-500 mt-0.5">✔</span>
-                  <span><strong>Bouton de Déconnexion d'Urgence :</strong> Système de rollback pour quitter le mode infiltré et reprendre instantanément les privilèges de l'administrateur racine sans re-saisie d'identifiants.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-red-500 mt-0.5">✔</span>
-                  <span><strong>Supervision des Permissions partagées :</strong> Lecture brute de la table `shared_permissions` pour résoudre les conflits de visibilité d'arbres ou de quêtes privées.</span>
+                  <span><strong>Infiltration de Compte (Impersonation) :</strong> Permet de tester le rendu d'un élève ou formateur, d'ajuster son champ `unlocked_floors` en direct ou de nettoyer son portfolio.</span>
                 </li>
               </ul>
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="space-y-4">
-            <div className="bg-red-950/40 border border-red-900/40 p-4 rounded-2xl text-xs text-red-200 space-y-2">
-              <strong className="block text-red-400 uppercase font-black text-[10px] tracking-wide">⚠️ Alerte Pouvoir Critique :</strong>
-              <p className="leading-tight text-[11px] opacity-90">
-                L'infiltration modifie temporairement la variable globale d'utilisateur actif au niveau du point d'entrée de l'application (<code className="font-mono text-white">App.jsx</code>), permettant de tester le rendu exact des animations et des blocages de boutons sans altérer la session d'authentification Supabase initiale.
-              </p>
+      {/* 📊 NOUVEL ONGLET : 5. ARCHITECTURE BASE DE DONNÉES */}
+      {activeTab === 'bdd' && (
+        <div className="space-y-6 animate-fadeIn">
+          
+          {/* Grille des Tables Natives */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <span className="text-base">🗄️</span> Répertoire des Tables & Contraintes PostgreSql
+              </h3>
+              <span className="bg-amber-100 text-amber-800 text-[10px] font-mono px-2 py-0.5 rounded font-bold">Relational Schema</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] font-mono text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 text-slate-200 text-[10px] uppercase tracking-wider">
+                    <th className="p-2.5 rounded-l-lg">Table</th>
+                    <th className="p-2.5">Colonne</th>
+                    <th className="p-2.5">Type PostgreSQL</th>
+                    <th className="p-2.5 text-center">Null Accepté</th>
+                    <th className="p-2.5 rounded-r-lg">Valeur par défaut / Contrainte</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {/* PRODUCTIONS */}
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK]</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">created_at</td><td className="p-2">timestamp with time zone</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">now()</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">student_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (FK profiles.id)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">student_email</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">quest_id</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">quest_name</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-amber-600 font-bold">content</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Contient JSON encrypté)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">file_url</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Chaîne Base64 ou URL)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">file_hash</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Signature Unique Équipe)</td></tr>
+                  <tr className="hover:bg-slate-50/80"><td className="p-2 font-bold text-slate-900">productions</td><td className="p-2 text-slate-700">session_code</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+
+                  {/* PROFILES */}
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK / Auth]</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-slate-700">email</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-slate-700">role</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-indigo-600">'user'::text</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-purple-600 font-bold">session_codes</td><td className="p-2">jsonb</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-purple-600">'[]'::jsonb</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">profiles</td><td className="p-2 text-purple-600 font-bold">unlocked_floors</td><td className="p-2">jsonb</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-purple-600">'{"{}"}'::jsonb</td></tr>
+
+                  {/* QUESTS */}
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK]</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">desc</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">theme</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (env / tech)</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">difficulty</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null ('1', '2', '3')</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">owner_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">visibility</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">'private'::text</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-slate-700">name</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-indigo-600 font-bold">is_collaborative</td><td className="p-2">boolean</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-indigo-600">false</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">quests</td><td className="p-2 text-indigo-600 font-bold">required_partners</td><td className="p-2">integer</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-indigo-600">1</td></tr>
+
+                  {/* SESSIONS */}
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">bigint</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">[PK] Identity</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-emerald-600 font-bold">session_code</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">[UK] Clé d'accès</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-slate-700">tree_id</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (ID de l'arbre associé)</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-slate-700">manager_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-slate-700">created_by</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">sessions</td><td className="p-2 text-purple-600 font-bold">drh_ids</td><td className="p-2">jsonb</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-purple-600">'[]'::jsonb (Accès Client)</td></tr>
+
+                  {/* SHARED PERMISSIONS */}
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">bigint</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null [PK]</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-slate-700">entity_type</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null ('tree' / 'quest')</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-slate-700">entity_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">shared_permissions</td><td className="p-2 text-slate-700">shared_with_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null</td></tr>
+
+                  {/* TREES */}
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-emerald-600 font-bold">id</td><td className="p-2">uuid</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-500">gen_random_uuid() [PK]</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-slate-700">name</td><td className="p-2">text</td><td className="p-2 text-center text-red-600 font-bold">NO</td><td className="p-2 text-slate-400">null</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-purple-600 font-bold">floors</td><td className="p-2">jsonb</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-400">null (Structure de l'arbre)</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-slate-700">owner_id</td><td className="p-2">uuid</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">gen_random_uuid()</td></tr>
+                  <tr className="bg-slate-50/40 hover:bg-slate-50"><td className="p-2 font-bold text-slate-900">trees</td><td className="p-2 text-slate-700">visibility</td><td className="p-2">text</td><td className="p-2 text-center text-emerald-600">YES</td><td className="p-2 text-slate-500">'private'::text</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
+
+          {/* Spécifications Schémas JSONB Spécifiques */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* JSONB MAP DE PROGRESSION */}
+            <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl border border-slate-800 space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-emerald-400 font-bold">⚙️ profiles.unlocked_floors</span>
+                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">JSONB Object</span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-sans leading-tight">
+                Structure de hachage associant l'UUID racine d'un arbre de jeu à l'index maximum (base 0) débloqué de manière persistante par l'élève.
+              </p>
+              <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-pink-400 text-[11px] overflow-x-auto">
+{`{
+  "3b2d56a1-8761-410c...": 2, // Palier 3 débloqué
+  "a8f7612c-1102-991b...": 0  // Palier 1 (par défaut)
+}`}
+              </pre>
+            </div>
+
+            {/* JSONB MAP DES PALIERS DE L'ARBRE */}
+            <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl border border-slate-800 space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-purple-400 font-bold">🌲 trees.floors</span>
+                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">JSONB Array</span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-sans leading-tight">
+                Tableau ordonné définissant l'architecture des niveaux d'un parcours, portant les listes ordonnées d'identifiants de quêtes.
+              </p>
+              <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-indigo-300 text-[11px] overflow-x-auto">
+{`[
+  {
+    "floorId": 1,
+    "quests": [
+      "8076be11-...", 
+      "129a00b4-..."
+    ]
+  },
+  {
+    "floorId": 2,
+    "quests": ["f47ac10b-..."]
+  }
+]`}
+              </pre>
+            </div>
+
+          </div>
+
         </div>
       )}
 
