@@ -649,126 +649,192 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             )
           )}
 
-          {/* ONGLET B : GESTION DES SESSIONS */}
-          {activeTab === 'sessions' && (
-            <div className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm space-y-4">
-              <h2 className="text-md font-black text-blue-900 uppercase tracking-wide">🔗 Paramètres de distribution (Sessions)</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
-                <div>
-                  <label className="block text-slate-700 mb-1">Sélectionner la session :</label>
-                  <select 
-                    value={activeSessionId || ''} 
-                    onChange={(e) => setActiveSessionId(e.target.value)} 
-                    className="w-full bg-slate-100 border p-2.5 rounded-xl text-slate-800 focus:outline-none cursor-pointer"
-                  >
-                    <option value="" disabled>-- Choisir une session --</option>
-                    {sessions.map(s => (
-                      <option key={s.id} value={s.id}>
-                        Session : {s.session_code || `Sans Code (${s.id.substring(0, 5)})`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 mb-1">Relier à l'Arbre pédagogique :</label>
-                  <select 
-                    value={currentSession?.tree_id || ""} 
-                    disabled={!currentSession}
-                    onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value })} 
-                    className={`w-full p-2.5 rounded-xl focus:outline-none border transition-all ${
-                      currentSession ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-400'
-                    }`}
-                  >
-                    <option value="">-- Aucun arbre lié --</option>
-                    {Object.values(trees || {}).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </div>
+          {/* CONTENU ONGLET 2 : GESTION DES SESSIONS & CALENDRIER TIMELINE */}
+      {activeTab === 'sessions' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          
+          {/* COLONNE CALENDRIER DES SESSIONS REGROUPÉES PAR JOURNÉE */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="bg-white border rounded-2xl p-4 space-y-4 shadow-sm">
+              <div className="flex justify-between items-center border-b pb-2">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider">📅 Calendrier de Formation</h3>
+                <button 
+                  onClick={() => { 
+                    if (Object.keys(trees).length === 0) { alert("Créez d'abord un arbre !"); return; } 
+                    setSelectedTreeId(Object.keys(trees)[0]); 
+                    setActiveModal('session'); 
+                  }} 
+                  className="text-[10px] bg-slate-900 text-white font-bold px-2 py-1 rounded hover:bg-slate-800 cursor-pointer"
+                >
+                  ➕ Créer
+                </button>
               </div>
 
-              {currentSession?.tree_id && trees[currentSession.tree_id] && (
-                <div className="p-3 bg-slate-50 border rounded-xl text-xs flex items-center justify-between text-slate-700 font-medium">
-                  <span>ℹ️ L'arbre lié possède des quêtes collaboratives.</span>
-                  <span className="font-bold text-purple-800">
-                    👥 Groupe recommandé : {trees[currentSession.tree_id].max_team_constraint || 1} pers. minimum
-                  </span>
+              {Object.keys(sessionsByDate).length === 0 ? (
+                <p className="text-xs text-slate-400 italic p-2 text-center">Aucune session enregistrée.</p>
+              ) : (
+                <div className="space-y-4">
+                  {Object.keys(sessionsByDate).sort().map(dateStr => (
+                    <div key={dateStr} className="space-y-1.5">
+                      <div className="text-[10px] font-black text-purple-900 uppercase tracking-wider bg-purple-50 px-2 py-1 rounded">
+                        🗓️ {new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                      </div>
+                      <div className="space-y-1 pl-1">
+                        {sessionsByDate[dateStr].map(session => {
+                          const linkedTree = trees[session.tree_id];
+                          const blockCount = session.timeline_blocks?.length || 0;
+                          return (
+                            <button 
+                              key={session.id} 
+                              onClick={() => setSelectedSession(session)}
+                              className={`w-full text-left p-3 border rounded-xl text-xs transition-all flex flex-col gap-1.5 shadow-xs cursor-pointer ${selectedSession?.id === session.id ? 'border-purple-600 bg-purple-50/30 ring-1 ring-purple-600/10' : 'bg-white hover:border-slate-300'}`}
+                            >
+                              <div className="flex justify-between items-center w-full">
+                                <span className="font-mono font-bold bg-slate-900 text-emerald-400 px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase">{session.session_code}</span>
+                                <span className="text-[9px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold">{blockCount} blocs</span>
+                              </div>
+                              <span className="font-bold text-slate-700 truncate">Arbre : {linkedTree ? linkedTree.name : 'Inconnu'}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
+            </div>
+          </div>
 
-              <div className="pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          {/* PANNEAU DE CONFIGURATION DU PLANNING DE LA JOURNÉE */}
+          <div className="lg:col-span-2 space-y-4">
+            {selectedSession ? (
+              <div className="bg-white border rounded-2xl p-5 shadow-sm space-y-6">
                 
-                {/* CODE UNIQUE */}
-                <div className="bg-purple-50 text-purple-800 p-3.5 rounded-xl border border-purple-100 space-y-1">
-                  <span className="text-[10px] uppercase font-black text-purple-500 block">Code unique Apprenant</span>
-                  <p className="text-[11px] text-slate-600 leading-tight">Distribuez ce code pour arrimer vos élèves à cette session.</p>
-                  <div className="text-sm font-mono font-black tracking-widest bg-white border rounded-lg p-2 text-center text-purple-900 mt-2 select-all">
-                    {currentSession ? (currentSession.session_code || "CODE VIDE ⚠️") : "Sélectionnez une session..."}
+                {/* ENTÊTE DE LA SESSION OUVERTE */}
+                <div className="flex justify-between items-start border-b pb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold bg-slate-900 text-emerald-400 px-2 py-0.5 rounded uppercase">{selectedSession.session_code}</span>
+                      <span className="text-xs text-slate-500 font-medium">
+                        Journée du {new Date(selectedSession.created_at).toLocaleDateString('fr-FR')}
+                      </span>
+                    </div>
+                    <h3 className="font-black text-slate-900 text-sm mt-2">
+                      Architecture active : {trees[selectedSession.tree_id]?.name || 'Chargement...'}
+                    </h3>
                   </div>
+                  <button onClick={() => setSelectedSession(null)} className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer">Fermer ✕</button>
                 </div>
 
-                {/* OBSERVATEURS DRH */}
-                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-2 relative">
-                  <span className="text-[10px] uppercase font-black text-slate-500 block">Observateurs DRH rattachés</span>
-                  <input 
-                    type="text" 
-                    placeholder={currentSession ? "Chercher par email..." : "En attente de session..."} 
-                    disabled={!currentSession}
-                    value={drhSearchQuery} 
-                    onChange={(e) => setDrhSearchQuery(e.target.value)} 
-                    className="w-full bg-white border text-xs rounded-lg p-2 focus:outline-none focus:border-purple-500 disabled:bg-slate-100 disabled:text-slate-400" 
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
                   
-                  {drhSuggestions.length > 0 && (
-                    <div className="absolute left-0 right-0 mt-1 bg-white border rounded-xl shadow-xl max-h-32 overflow-y-auto z-50 text-xs divide-y">
-                      {drhSuggestions.map(u => (
-                        <button 
-                          key={u.id} 
-                          type="button" 
-                          onClick={() => handleAddDRH(u)} 
-                          className="w-full text-left px-3 py-2 hover:bg-purple-50 font-medium flex justify-between items-center"
-                        >
-                          <span>{u.email}</span>
-                          <span className="text-[10px] bg-slate-100 px-1 rounded text-slate-400">{u.role || 'DRH'}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {currentSession && Array.isArray(currentSession.drh_ids) && currentSession.drh_ids.length > 0 ? (
-                      currentSession.drh_ids.map(id => {
-                        let cachedEmails = {};
-                        try {
-                          cachedEmails = JSON.parse(localStorage.getItem('drh_emails') || '{}');
-                        } catch(e) { cachedEmails = {}; }
-                        const displayName = cachedEmails[id] || `Manager (${id.substring(0, 5)})`;
-
-                        return (
-                          <span key={id} className="text-[11px] bg-slate-900 text-white font-medium px-2.5 py-1 rounded-lg flex items-center gap-2 shadow-xs">
-                            <span>{displayName}</span>
-                            <button 
-                              type="button"
-                              onClick={() => handleRemoveDRH(id)} 
-                              className="text-red-400 hover:text-red-500 font-bold text-xs transition-colors focus:outline-none"
-                              title="Retirer ce manager"
-                            >
-                              ✕
-                            </button>
-                          </span>
-                        );
-                      })
+                  {/* AFFICHAGE DE LA TIMELINE DU CALENDRIER */}
+                  <div className="md:col-span-3 space-y-3">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">⏱️ Déroulé & Paliers de la Journée</h4>
+                    
+                    {(!selectedSession.timeline_blocks || selectedSession.timeline_blocks.length === 0) ? (
+                      <div className="border-2 border-dashed border-slate-100 rounded-xl p-6 text-center text-xs text-slate-400 italic">
+                        Aucun bloc de planning configuré. Utilisez le formulaire de droite pour organiser la journée.
+                      </div>
                     ) : (
-                      <span className="text-[11px] text-slate-400 italic">
-                        {currentSession ? "Aucun manager assigné à cette session." : "Veuillez choisir une session."}
-                      </span>
+                      <div className="relative border-l-2 border-purple-200 pl-4 ml-2 space-y-4 py-1">
+                        {selectedSession.timeline_blocks.map((block) => (
+                          <div key={block.id} className="relative bg-slate-50 border p-3 rounded-xl shadow-xs space-y-1 transition-all hover:bg-white group">
+                            {/* Point indicateur visuel sur l'axe du calendrier */}
+                            <div className="absolute w-2.5 h-2.5 bg-purple-600 rounded-full -left-[19.5px] top-4 border-2 border-white shadow-xs" />
+                            
+                            <div className="flex justify-between items-start gap-2">
+                              <span className="text-[10px] bg-purple-900 text-purple-100 font-mono font-bold px-1.5 py-0.5 rounded">
+                                {block.start} ➔ {block.end}
+                              </span>
+                              <button 
+                                onClick={() => handleDeleteTimelineBlock(block.id)}
+                                className="text-[10px] text-red-500 opacity-0 group-hover:opacity-100 font-bold cursor-pointer transition-all"
+                              >
+                                Supprimer
+                              </button>
+                            </div>
+                            <h5 className="text-xs font-black text-slate-800">{block.title}</h5>
+                            {block.desc && <p className="text-[11px] text-slate-400 font-medium italic">"{block.desc}"</p>}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
+
+                  {/* FORMULAIRE D'INSERTION DE BLOC (REPAS, BRUNCH, PALIER COORDONNÉ...) */}
+                  <div className="md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-3">
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">🧩 Insérer un bloc</h4>
+                    
+                    <form onSubmit={handleAddTimelineBlock} className="space-y-3 text-xs">
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-0.5">Type ou titre du bloc :</label>
+                        <input 
+                          type="text" 
+                          required 
+                          placeholder="Ex: Palier 1 : Fondations / Repas" 
+                          value={newBlockTitle} 
+                          onChange={(e) => setNewBlockTitle(e.target.value)} 
+                          className="w-full bg-white border rounded-lg p-2 font-medium" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-0.5">Détail indicatif (Optionnel) :</label>
+                        <textarea 
+                          rows="2" 
+                          placeholder="Ex: Briefing de démarrage / Repas libre en salle" 
+                          value={newBlockDesc} 
+                          onChange={(e) => setNewBlockDesc(e.target.value)} 
+                          className="w-full bg-white border rounded-lg p-2" 
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-slate-600 font-bold mb-0.5">Début (Heure) :</label>
+                          <input 
+                            type="time" 
+                            required 
+                            value={newBlockStart} 
+                            onChange={(e) => setNewBlockStart(e.target.value)} 
+                            className="w-full bg-white border rounded-lg p-2 font-mono font-bold" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-600 font-bold mb-0.5">Fin (Heure) :</label>
+                          <input 
+                            type="time" 
+                            required 
+                            value={newBlockEnd} 
+                            onChange={(e) => setNewBlockEnd(e.target.value)} 
+                            className="w-full bg-white border rounded-lg p-2 font-mono font-bold" 
+                          />
+                        </div>
+                      </div>
+                      <button 
+                        type="submit" 
+                        className="w-full bg-purple-700 hover:bg-purple-800 text-white font-bold py-2 rounded-lg text-xs mt-1 transition-all cursor-pointer shadow-xs"
+                      >
+                        ➕ Ajouter à la journée
+                      </button>
+                    </form>
+                  </div>
+
                 </div>
 
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="bg-slate-50 border-2 border-dashed p-12 rounded-3xl text-center text-xs text-slate-400 italic">
+                Sélectionnez une carte de session dans le calendrier à gauche pour structurer son déroulé ou y insérer vos blocs (ex: repas, pauses, paliers).
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+    </div>
+  );
+}
 
         </div>
 
