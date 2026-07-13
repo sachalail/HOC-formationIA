@@ -659,6 +659,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <div className="flex justify-between items-center border-b pb-2">
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider">📅 Calendrier de Formation</h3>
                 <button 
+                  type="button"
                   onClick={() => { 
                     if (Object.keys(trees).length === 0) { alert("Créez d'abord un arbre !"); return; } 
                     setSelectedTreeId(Object.keys(trees)[0]); 
@@ -686,6 +687,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           return (
                             <button 
                               key={session.id} 
+                              type="button"
                               onClick={() => setSelectedSession(session)}
                               className={`w-full text-left p-3 border rounded-xl text-xs transition-all flex flex-col gap-1.5 shadow-xs cursor-pointer ${selectedSession?.id === session.id ? 'border-purple-600 bg-purple-50/30 ring-1 ring-purple-600/10' : 'bg-white hover:border-slate-300'}`}
                             >
@@ -723,7 +725,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       Architecture active : {trees[selectedSession.tree_id]?.name || 'Chargement...'}
                     </h3>
                   </div>
-                  <button onClick={() => setSelectedSession(null)} className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer">Fermer ✕</button>
+                  <button type="button" onClick={() => setSelectedSession(null)} className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer">Fermer ✕</button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
@@ -748,6 +750,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 {block.start} ➔ {block.end}
                               </span>
                               <button 
+                                type="button"
                                 onClick={() => handleDeleteTimelineBlock(block.id)}
                                 className="text-[10px] text-red-500 opacity-0 group-hover:opacity-100 font-bold cursor-pointer transition-all"
                               >
@@ -835,8 +838,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     </div>
   );
 }
-
-        </div>
 
         {/* POOL DES MISSIONS DE DROITE */}
         <div className="space-y-6">
