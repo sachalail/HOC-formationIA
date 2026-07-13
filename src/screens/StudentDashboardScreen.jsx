@@ -464,7 +464,9 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
               const activeFloor = allFloors[safeCurrentIndex];
               
               const nextFloorRequirement = (safeUnlockedIndex + 1) * POINTS_REQUIRED_PER_FLOOR;
-              const assezDePointsPourSuivant = studentPoints >= nextFloorRequirement;
+              // Vérifie si toutes les quêtes rattachées au palier en cours sont présentes dans completedQuestIds
+              const toutesQuetesPalierCompletes = activeFloor.quests && activeFloor.quests.length > 0 && activeFloor.quests.every(qId => completedQuestIds.has(Number(qId)) || completedQuestIds.has(String(qId)));
+              const assezDePointsPourSuivant = studentPoints >= nextFloorRequirement || toutesQuetesPalierCompletes;
               const pointsManquants = nextFloorRequirement - studentPoints;
 
               // Détermination du verrouillage de la vue par rapport au niveau débloqué réel
