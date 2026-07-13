@@ -102,7 +102,8 @@ export default function App() {
           // 🤝 FIX: Conservation des données collaboratives après actualisation de la page
           is_collaborative: q.is_collaborative,
           required_partners: q.required_partners,
-          sharing: { type: q.visibility || 'private', allowedUsers: [q.owner_id] }
+          sharing: { type: q.visibility || 'private', allowedUsers: [q.owner_id] },
+          required_deliverable: q.required_deliverable
         }));
         setQuests(formattedQuests);
       }
