@@ -650,6 +650,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           )}
 
           {/* ONTLET B : GESTION DES SESSIONS */}
+          {/* ONGLET B : GESTION DES SESSIONS */}
 {activeTab === 'sessions' && (
   <div className="space-y-4">
     <div className="bg-white p-6 rounded-xl border border-blue-200 shadow-sm space-y-4">
@@ -874,6 +875,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     )}
   </div>
 )}
+
 
         {/* POOL DES MISSIONS DE DROITE */}
         <div className="space-y-6">
