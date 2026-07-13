@@ -587,6 +587,14 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
                       <p className="text-xs text-slate-600 italic">"{activeQuest.desc}"</p>
 
+                      {/* ✨ AJOUT : Ligne livrable demandé */}
+                      {activeQuest.required_deliverable && (
+                        <div className="mt-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide block mb-0.5">📋 Livrable demandé :</span>
+                          <p className="text-xs font-medium text-slate-700">{activeQuest.required_deliverable}</p>
+                        </div>
+                      )}
+
                       {isDoneHere && <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-3 text-center text-xs font-bold">✅ Mission validée avec votre équipe !</div>}
 
                       {isPendingHere && (
