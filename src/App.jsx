@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import LoginScreen from './screens/LoginScreen';
 import StudioScreen from './screens/StudioScreen';
+import QuestLinkerScreen from './screens/QuestLinkerScreen'; // <-- NOUVEL IMPORT
 import StudentDashboardScreen from './screens/StudentDashboardScreen';
 import ClientDashboardScreen from './screens/ClientDashboardScreen';
 import AdminScreen from './screens/AdminScreen'; 
@@ -149,6 +150,7 @@ export default function App() {
   const getDynamicSubtitle = () => {
     switch (currentScreen) {
       case 'formateur': return "Espace Formateur & Administration";
+      case 'linker': return "Liaison & Catalogue de Quêtes"; // <-- SOUS-TITRE NOUVEL ÉCRAN
       case 'apprenant': return "Espace Apprenant & Progression";
       case 'client': return "Espace Décideur & Suivi RH";
       case 'admin': return "Panel Super Administration";
@@ -204,7 +206,10 @@ export default function App() {
           <button onClick={() => setCurrentScreen('apprenant')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'apprenant' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>🎮 Apprenant</button>
 
           {(userRole === 'formateur' || userRole === 'admin') && (
-            <button onClick={() => setCurrentScreen('formateur')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'formateur' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>🛠️ Studio (Concepteur)</button>
+            <>
+              <button onClick={() => setCurrentScreen('formateur')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'formateur' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>🛠️ Studio (Concepteur)</button>
+              <button onClick={() => setCurrentScreen('linker')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'linker' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>🔗 Liaison & Catalogue</button>
+            </>
           )}
 
           {(isManager || userRole === 'admin') && (
@@ -239,6 +244,15 @@ export default function App() {
       <main className="transition-all duration-200">
         {currentScreen === 'formateur' && (
           <StudioScreen 
+            trees={trees} 
+            setTrees={setTrees} 
+            quests={quests} 
+            setQuests={setQuests} 
+          />
+        )}
+        {/* RENDU DE L'ÉCRAN DE LIAISON ET CATALOGUE */}
+        {currentScreen === 'linker' && (
+          <QuestLinkerScreen 
             trees={trees} 
             setTrees={setTrees} 
             quests={quests} 
