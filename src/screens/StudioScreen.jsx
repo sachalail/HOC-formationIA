@@ -230,32 +230,33 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
   };
 
-  // --- LOGIQUE DE VALIDATION CHRONOLOGIQUE STRICTE SUR LES PALIERS ---
+  // --- NOUVELLE LOGIQUE ET VALIDATION DE PLACEMENT GLOBALE ET FLEXIBLE ---
   const getPlacementValidation = (floorId, targetIndex, timeline, draggedItem) => {
     if (!floorId) return { isValid: true };
     
-    // 1. On clone la timeline actuelle
+    // 1. On clone la timeline de test
     let checkTimeline = [...timeline];
     
-    // 2. Si l'élément provient de la timeline, on le retire temporairement pour ne pas fausser le calcul
-    if (draggedItem?.source === 'timeline') {
+    // 2. Si l'élément provient de la timeline (repositionnement), on l'enlève pour éviter qu'il ne se compare avec lui-même !
+    if (draggedItem && draggedItem.source === 'timeline') {
       checkTimeline.splice(draggedItem.index, 1);
     }
     
-    // 3. On reconstruit une timeline "virtuelle" avec le nouvel élément inséré à la position cible demandée
-    const virtualTimeline = [...checkTimeline];
-    const adjustedTargetIndex = draggedItem?.source === 'timeline' && targetIndex > draggedItem.index 
-      ? targetIndex - 1 
-      : targetIndex;
-      
-    virtualTimeline.splice(adjustedTargetIndex, 0, { type: 'palier', floorId });
+    // 3. Ajustement de l'index d'insertion si on décale vers le bas
+    let adjustedTargetIndex = targetIndex;
+    if (draggedItem && draggedItem.source === 'timeline' && targetIndex > draggedItem.index) {
+      adjustedTargetIndex = targetIndex - 1;
+    }
+    
+    // 4. On insère notre palier virtuellement dans la timeline épurée
+    checkTimeline.splice(adjustedTargetIndex, 0, { type: 'palier', floorId });
 
-    // 4. On extrait la suite des numéros de paliers présents dans cette configuration virtuelle
-    const virtualPaliers = virtualTimeline
+    // 5. On extrait uniquement la liste ordonnée des numéros de paliers présents
+    const virtualPaliers = checkTimeline
       .filter(item => item?.type === 'palier')
       .map(item => item.floorId);
 
-    // 5. La position est valide uniquement si la liste finale des paliers est triée de manière strictement croissante
+    // 6. La position est valide ssi la suite des paliers est triée de façon strictement croissante
     let isValid = true;
     for (let i = 0; i < virtualPaliers.length - 1; i++) {
       if (virtualPaliers[i] >= virtualPaliers[i + 1]) {
@@ -267,26 +268,24 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return { isValid };
   };
 
-  // --- DETECTE SI UN PALIER EST "VERROUILLÉ" (Un seul emplacement physique valide possible) ---
+  // --- PERMET DE DETECTER SI UN PALIER EST COMPLÈTEMENT BLOQUÉ DANS LE PLANNING ACTUEL ---
   const isFloorLocked = (blockId, floorId, timeline) => {
     if (!floorId) return false;
-    
-    // Trouver l'index de ce bloc
     const index = timeline.findIndex(b => b.id === blockId);
     if (index === -1) return false;
 
-    // On teste toutes les positions d'insertion possibles (de 0 à N)
     let validPositionsCount = 0;
-    const draggedItemDummy = { source: 'timeline', index };
+    const dummyDraggedItem = { source: 'timeline', index };
 
+    // On teste toutes les positions d'insertions théoriques de 0 à N
     for (let i = 0; i <= timeline.length; i++) {
-      const { isValid } = getPlacementValidation(floorId, i, timeline, draggedItemDummy);
+      const { isValid } = getPlacementValidation(floorId, i, timeline, dummyDraggedItem);
       if (isValid) {
         validPositionsCount++;
       }
     }
 
-    // S'il n'y a qu'une seule et unique position légitime, le palier est verrouillé
+    // S'il n'y a qu'une seule et unique position possible (sa position actuelle), il est verrouillé
     return validPositionsCount <= 1;
   };
 
@@ -299,7 +298,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const { isValid } = getPlacementValidation(floor.floorId, targetIndex, timeline, draggedPlanningItem);
       
       if (!isValid) {
-        alert(`🚫 Placement impossible.\nLe Palier ${floor.floorId} doit respecter l'ordre chronologique des autres paliers déjà présents.`);
+        alert(`🚫 Placement impossible.\nLe Palier ${floor.floorId} doit respecter l'ordre chronologique croissant des autres paliers.`);
         setActiveDropIndex(null); 
         setDraggedPlanningItem(null);
         return;
@@ -333,7 +332,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       if (movedBlock.type === 'palier') {
         const { isValid } = getPlacementValidation(movedBlock.floorId, targetIndex, currentSession.planning, draggedPlanningItem);
         if (!isValid) {
-          alert(`🚫 Déplacement invalide pour le Palier ${movedBlock.floorId} (L'ordre chronologique des paliers doit être préservé).`);
+          alert(`🚫 Déplacement invalide pour le Palier ${movedBlock.floorId} (L'ordre chronologique des paliers doit être respecté).`);
           setActiveDropIndex(null); 
           setDraggedPlanningItem(null);
           return;
@@ -707,18 +706,19 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             }
 
                             if (dragFloorId) {
+                              // Utilisation de la nouvelle validation dynamique prenant en compte l'élément draggué
                               const validation = getPlacementValidation(dragFloorId, index, currentSession.planning, draggedPlanningItem);
                               isTargetIndexValid = validation.isValid;
                             }
                           }
 
-                          // Vérifie si ce palier de la timeline est verrouillé (aucun autre move possible)
+                          // Vérifie dynamiquement si le palier est verrouillé
                           const isLocked = block.type === 'palier' && isFloorLocked(block.id, block.floorId, currentSession.planning);
 
                           return (
                             <React.Fragment key={block.id}>
                               
-                              {/* ZONE DE DÉPÔT SÉLECTIVE (N'affiche que si l'emplacement est chronologiquement accessible) */}
+                              {/* ZONE DE DÉPÔT CHRONOLOGIQUEMENT COHÉRENTE */}
                               {(!draggedPlanningItem || isTargetIndexValid) && (
                                 <div 
                                   onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
@@ -752,11 +752,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
-                                  {/* Poignée de drag modifiée : Cadenas si verrouillé */}
+                                  {/* Cadenas si verrouillé ou poignée classique si déplaçable */}
                                   {isLocked ? (
                                     <span 
-                                      className="text-slate-400 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1"
-                                      title="Ce palier ne peut pas être déplacé à un autre endroit (bloqué par les autres paliers)"
+                                      className="text-amber-500 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1"
+                                      title="Ce palier ne peut pas être déplacé à un autre endroit car il est bloqué par les autres paliers."
                                     >
                                       🔒
                                     </span>
@@ -808,7 +808,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           );
                         })}
 
-                        {/* INDICATEUR DE FIN DE TIMELINE (Masqué s'il n'est pas accessible chronologiquement) */}
+                        {/* DERNIER INDICATEUR DE FIN DE TIMELINE */}
                         {(currentSession.planning || []).length > 0 && (
                           (() => {
                             const lastIndex = currentSession.planning.length;
