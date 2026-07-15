@@ -309,8 +309,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         id: `palier-${floor.floorId}-${Date.now()}`,
         type: 'palier',
         floorId: floor.floorId,
-        // Modification 1 : Suppression de " : Sans nom" à côté du palier
-        name: `🎯 Palier ${floor.floorId}`,
+        name: `🎯 Palier ${floor.floorId} : ${floor.name || 'Sans nom'}`,
         desc: `${(floor.quests || []).length} activités associées à ce niveau.`,
         color: '#7c3aed',
         duration: 45
@@ -758,32 +757,39 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
-                                  {/* Modification 3 : Résolution du bug de drag & drop sur la poignée des blocs de paliers */}
-                                  <span 
-                                    draggable={!isLocked}
-                                    onDragStart={(e) => {
-                                      if (isLocked) {
-                                        e.preventDefault();
-                                        return;
-                                      }
-                                      e.stopPropagation();
-                                      setDraggedPlanningItem({ source: 'timeline', index });
-                                    }}
-                                    onDragEnd={() => {
-                                      setTimeout(() => {
-                                        setDraggedPlanningItem(null);
-                                        setActiveDropIndex(null);
-                                      }, 0);
-                                    }}
-                                    className={`font-bold text-sm select-none p-1.5 rounded-md ${
-                                      isLocked 
-                                        ? 'text-amber-500 cursor-not-allowed' 
-                                        : 'text-slate-400 cursor-grab active:cursor-grabbing hover:bg-slate-100'
-                                    }`}
-                                    title={isLocked ? "Ce palier ne peut pas être déplacé à un autre endroit car il est bloqué par les autres paliers." : "Glisser pour réorganiser"}
-                                  >
-                                    {isLocked ? '🔒' : '⠿'}
-                                  </span>
+                                  {/* Cadenas si verrouillé ou poignée classique si déplaçable */}
+                                  {isLocked ? (
+                                    <span 
+                                      className="text-amber-500 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1"
+                                      title="Ce palier ne peut pas être déplacé à un autre endroit car il est bloqué par les autres paliers."
+                                    >
+                                      🔒
+                                    </span>
+                                  ) : (
+                                    <span 
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.stopPropagation();
+                                        // On utilise un setTimeout(..., 0) pour forcer React à repousser son re-render
+                                        // à la micro-tâche suivante. Cela permet au navigateur d'initier le drag HTML5
+                                        // sans interruption visuelle et d'éviter que le drag ne s'annule immédiatement.
+                                        const dragData = { source: 'timeline', index };
+                                        setTimeout(() => {
+                                          setDraggedPlanningItem(dragData);
+                                        }, 0);
+                                      }}
+                                      onDragEnd={() => {
+                                        // Nettoyage asynchrone sécurisé de l'arbre
+                                        setTimeout(() => {
+                                          setDraggedPlanningItem(null);
+                                          setActiveDropIndex(null);
+                                        }, 0);
+                                      }}
+                                      className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
+                                    >
+                                      ⠿
+                                    </span>
+                                  )}
                                   
                                   <div className="min-w-0">
                                     <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
@@ -892,36 +898,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, name: e.target.value })}
                           className="w-full border rounded p-1.5 bg-slate-50 font-extrabold text-xs"
                         />
-                        
-                        {/* Modification 2 : Ajout d'un champ modifiable et copiable pour le code couleur hexadécimal */}
-                        <div className="space-y-1">
-                          <label className="block text-[9px] uppercase font-bold text-slate-400">Couleur Hexadécimale :</label>
-                          <div className="flex gap-2 items-center">
-                            <input 
-                              type="color" 
-                              value={customBlockConfig.color} 
-                              onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, color: e.target.value })}
-                              className="w-8 h-8 rounded cursor-pointer border border-slate-300 shrink-0"
-                            />
-                            <input 
-                              type="text" 
-                              maxLength="7"
-                              value={customBlockConfig.color} 
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                if (value.startsWith('#') || value.length <= 6) {
-                                  setCustomBlockConfig({ ...customBlockConfig, color: value.startsWith('#') ? value : `#${value}` });
-                                }
-                              }}
-                              className="w-full border rounded p-1 text-xs font-mono font-semibold"
-                              placeholder="#000000"
-                            />
-                          </div>
-                        </div>
-
                         <div 
                           draggable
-                          onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
+                          onDragStart={() => {
+                            const dragData = { source: 'palette-custom' };
+                            setTimeout(() => {
+                              setDraggedPlanningItem(dragData);
+                            }, 0);
+                          }}
                           onDragEnd={() => {
                             setTimeout(() => {
                               setDraggedPlanningItem(null);
@@ -940,35 +924,31 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       {linkedTree ? (
                         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
-                          {/* Modification 4 : Filtrer les paliers déjà insérés pour ne plus les afficher à droite */}
-                          {(linkedTree.floors || [])
-                            .filter(floor => !(currentSession.planning || []).some(block => block.type === 'palier' && block.floorId === floor.floorId))
-                            .map(floor => (
-                              <div
-                                key={floor.floorId}
-                                draggable
-                                onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                                onDragEnd={() => {
-                                  setTimeout(() => {
-                                    setDraggedPlanningItem(null);
-                                    setActiveDropIndex(null);
-                                  }, 0);
-                                }}
-                                className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
-                              >
-                                <div className="min-w-0">
-                                  {/* Suppression de " : Sans nom" ici également */}
-                                  <span className="font-extrabold text-xs text-purple-900 block truncate">🎯 Palier {floor.floorId}</span>
-                                  <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
-                                </div>
-                                <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
+                          {(linkedTree.floors || []).map(floor => (
+                            <div
+                              key={floor.floorId}
+                              draggable
+                              onDragStart={() => {
+                                const dragData = { source: 'palette-palier', data: floor };
+                                setTimeout(() => {
+                                  setDraggedPlanningItem(dragData);
+                                }, 0);
+                              }}
+                              onDragEnd={() => {
+                                setTimeout(() => {
+                                  setDraggedPlanningItem(null);
+                                  setActiveDropIndex(null);
+                                }, 0);
+                              }}
+                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
+                            >
+                              <div className="min-w-0">
+                                <span className="font-extrabold text-xs text-purple-900 block truncate">🎯 Palier {floor.floorId}</span>
+                                <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
                               </div>
-                            ))}
-                          {/* Message informatif si tous les paliers ont été placés */}
-                          {(linkedTree.floors || [])
-                            .filter(floor => !(currentSession.planning || []).some(block => block.type === 'palier' && block.floorId === floor.floorId)).length === 0 && (
-                              <p className="text-[10px] text-slate-400 italic text-center py-2">Tous les paliers de l'arbre ont été insérés dans le planning.</p>
-                            )}
+                              <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500">
