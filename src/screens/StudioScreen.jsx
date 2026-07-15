@@ -86,21 +86,31 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   }, []);
 
   const fetchSessions = async (userId) => {
-    const { data, error } = await supabase.from('sessions').select('*').order('created_at', { ascending: false }).eq('created_by', userId);
-    if (data && !error) {
-      setSessions(data);
-      
-      const allDrhIds = data.flatMap(s => s.drh_ids || []);
-      if (allDrhIds.length > 0) {
-        const { data: profiles } = await supabase.from('profiles').select('id, email').in('id', allDrhIds);
-        if (profiles) {
-          const emailCache = JSON.parse(localStorage.getItem('drh_emails') || '{}');
-          profiles.forEach(p => { emailCache[p.id] = p.email; });
-          localStorage.setItem('drh_emails', JSON.stringify(emailCache));
-        }
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .eq('created_by', userId);
+
+  if (data && !error) {
+    // S'assurer que chaque session récupérée a bien un tableau pour 'planning'
+    const mappedSessions = data.map(s => ({
+      ...s,
+      planning: s.planning || []
+    }));
+    setSessions(mappedSessions);
+    
+    const allDrhIds = mappedSessions.flatMap(s => s.drh_ids || []);
+    if (allDrhIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id, email').in('id', allDrhIds);
+      if (profiles) {
+        const emailCache = JSON.parse(localStorage.getItem('drh_emails') || '{}');
+        profiles.forEach(p => { emailCache[p.id] = p.email; });
+        localStorage.setItem('drh_emails', JSON.stringify(emailCache));
       }
     }
-  };
+  }
+};
 
   const fetchTrees = async () => {
     const { data, error } = await supabase.from('trees').select('*');
