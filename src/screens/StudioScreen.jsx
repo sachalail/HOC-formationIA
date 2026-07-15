@@ -280,13 +280,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     // On teste toutes les positions d'insertions théoriques de 0 à N
     for (let i = 0; i <= timeline.length; i++) {
       const { isValid } = getPlacementValidation(floorId, i, timeline, dummyDraggedItem);
-      if (isValid) {
+      // Supprime de l'équation les emplacements équivalents à sa position actuelle pour le calcul du cadenas
+      const isActualSpot = (i === index || i === index + 1);
+      if (isValid && !isActualSpot) {
         validPositionsCount++;
       }
     }
 
-    // S'il n'y a qu'une seule et unique position possible (sa position actuelle), il est verrouillé
-    return validPositionsCount <= 1;
+    // S'il n'y a aucun autre emplacement valide disponible à part sa position d'origine, il est verrouillé
+    return validPositionsCount === 0;
   };
 
   const handleTimelineDrop = (targetIndex) => {
@@ -345,7 +347,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     updateCurrentSessionInState({ planning: timeline });
     setActiveDropIndex(null);
-    setDraggedPlanningItem(null);
+    // Timeout micro-tâche pour s'assurer que le dragend HTML5 soit purgé correctement avant de libérer le state
+    setTimeout(() => {
+      setDraggedPlanningItem(null);
+    }, 0);
   };
 
   const removePlanningBlock = (blockId) => {
@@ -693,8 +698,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                         {(currentSession.planning || []).map((block, index) => {
                           let isTargetIndexValid = true;
+                          const isBeingDragged = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && draggedPlanningItem.index === index;
 
-                          if (draggedPlanningItem) {
+                          // Bloque le dépôt sur l'emplacement actuel direct (à gauche/droite de l'élément en cours de déplacement)
+                          const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
+                                                 (index === draggedPlanningItem.index || index === draggedPlanningItem.index + 1);
+
+                          if (draggedPlanningItem && !isImmediateSpot) {
                             let dragFloorId = null;
                             if (draggedPlanningItem.source === 'palette-palier') {
                               dragFloorId = draggedPlanningItem.data?.floorId;
@@ -706,10 +716,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             }
 
                             if (dragFloorId) {
-                              // Utilisation de la nouvelle validation dynamique prenant en compte l'élément draggué
                               const validation = getPlacementValidation(dragFloorId, index, currentSession.planning, draggedPlanningItem);
                               isTargetIndexValid = validation.isValid;
                             }
+                          } else if (isImmediateSpot) {
+                            // On empêche d'afficher l'emplacement vert sur l'index d'origine direct (déplacement inutile)
+                            isTargetIndexValid = false;
                           }
 
                           // Vérifie dynamiquement si le palier est verrouillé
@@ -718,8 +730,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           return (
                             <React.Fragment key={block.id}>
                               
-                              {/* ZONE DE DÉPÔT CHRONOLOGIQUEMENT COHÉRENTE */}
-                              {(!draggedPlanningItem || isTargetIndexValid) && (
+                              {/* ZONE DE DÉPÔT COHÉRENTE ET NON-REDONDANTE */}
+                              {draggedPlanningItem && isTargetIndexValid && (
                                 <div 
                                   onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
                                   onDragLeave={() => setActiveDropIndex(null)}
@@ -727,9 +739,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
                                     activeDropIndex === index 
                                       ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
-                                      : draggedPlanningItem 
-                                        ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
-                                        : 'bg-transparent h-2 border-none'
+                                      : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
                                   }`}
                                 >
                                   {activeDropIndex === index && (
@@ -739,15 +749,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               )}
                               
                               <div 
-                                draggable={!isLocked}
-                                onDragStart={() => {
-                                  if (!isLocked) {
-                                    setDraggedPlanningItem({ source: 'timeline', index });
-                                  }
-                                }}
-                                onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
-                                className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all ${
+                                className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
                                   isLocked ? 'opacity-95' : ''
+                                } ${
+                                  isBeingDragged ? 'opacity-40 border-dashed bg-slate-50 border-slate-300' : ''
                                 }`}
                                 style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
                               >
@@ -761,7 +766,24 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                       🔒
                                     </span>
                                   ) : (
-                                    <span className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm">⠿</span>
+                                    <span 
+                                      draggable
+                                      onDragStart={(e) => {
+                                        // Évite d'autres effets bizarres de sélection
+                                        e.stopPropagation();
+                                        setDraggedPlanningItem({ source: 'timeline', index });
+                                      }}
+                                      onDragEnd={() => {
+                                        // Nettoyage asynchrone sécurisé de l'arbre
+                                        setTimeout(() => {
+                                          setDraggedPlanningItem(null);
+                                          setActiveDropIndex(null);
+                                        }, 0);
+                                      }}
+                                      className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
+                                    >
+                                      ⠿
+                                    </span>
                                   )}
                                   
                                   <div className="min-w-0">
@@ -814,7 +836,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             const lastIndex = currentSession.planning.length;
                             let isTargetIndexValid = true;
 
-                            if (draggedPlanningItem) {
+                            const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
+                                                   (lastIndex === draggedPlanningItem.index || lastIndex === draggedPlanningItem.index + 1);
+
+                            if (draggedPlanningItem && !isImmediateSpot) {
                               let dragFloorId = null;
                               if (draggedPlanningItem.source === 'palette-palier') {
                                 dragFloorId = draggedPlanningItem.data?.floorId;
@@ -827,9 +852,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning, draggedPlanningItem);
                                 isTargetIndexValid = validation.isValid;
                               }
+                            } else {
+                              isTargetIndexValid = false;
                             }
 
-                            if (draggedPlanningItem && !isTargetIndexValid) return null;
+                            if (!isTargetIndexValid) return null;
 
                             return (
                               <div 
@@ -839,9 +866,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
                                   activeDropIndex === lastIndex 
                                     ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
-                                    : draggedPlanningItem 
-                                      ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
-                                      : 'bg-transparent h-2 border-none'
+                                    : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
                                 }`}
                               >
                                 {activeDropIndex === lastIndex && (
@@ -871,8 +896,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <div 
                           draggable
                           onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
-                          onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
-                          className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs"
+                          onDragEnd={() => {
+                            setTimeout(() => {
+                              setDraggedPlanningItem(null);
+                              setActiveDropIndex(null);
+                            }, 0);
+                          }}
+                          className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs select-none"
                           style={{ borderLeftWidth: '5px', borderLeftColor: customBlockConfig.color }}
                         >
                           <span className="font-extrabold text-xs truncate">{customBlockConfig.name}</span>
@@ -889,8 +919,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               key={floor.floorId}
                               draggable
                               onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                              onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
-                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all"
+                              onDragEnd={() => {
+                                setTimeout(() => {
+                                  setDraggedPlanningItem(null);
+                                  setActiveDropIndex(null);
+                                }, 0);
+                              }}
+                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
                             >
                               <div className="min-w-0">
                                 <span className="font-extrabold text-xs text-purple-900 block truncate">🎯 Palier {floor.floorId}</span>
