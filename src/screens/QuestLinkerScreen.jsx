@@ -20,7 +20,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   // États de sélection
   const [activeTreeId, setActiveTreeId] = useState("");
   
-  // Modale active ('quest', 'tree', 'tree_browser' ou null)
+  // Modale active ('quest', 'tree', 'tree_browser', 'quest_library' ou null)
   const [activeModal, setActiveModal] = useState(null); 
 
   // États des formulaires
@@ -31,7 +31,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [newTreeName, setNewTreeName] = useState('');
   const [newFloorMode, setNewFloorMode] = useState('static');
 
-  // AJOUT DES ÉTATS POUR LE MODE COLLABORATIF
+  // Mode collaboratif
   const [isCollaborative, setIsCollaborative] = useState(false);
   const [requiredPartners, setRequiredPartners] = useState(2);
 
@@ -40,9 +40,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [filterTheme, setFilterTheme] = useState('all'); 
   const [filterDifficulty, setFilterDifficulty] = useState('all'); 
 
-  // ✨ NOUVEAUX ÉTATS POUR LA GESTION ET EXPLORATION DES ARBRES
+  // Gestion et exploration des arbres
   const [treeBrowserTab, setTreeBrowserTab] = useState('local'); // 'local' ou 'shared'
   const [treeSearchQuery, setTreeSearchQuery] = useState('');
+
+  // --- ÉTATS POUR LA BIBLIOTHÈQUE DE QUÊTES (NOUVEAU POP-UP) ---
+  const [libraryTab, setLibraryTab] = useState('local'); // 'local' ou 'global'
+  const [librarySelectedTreeId, setLibrarySelectedTreeId] = useState('all'); // 'all' ou ID de l'arbre
+  const [librarySearchQuery, setLibrarySearchQuery] = useState('');
 
   // 1. CHARGEMENT INITIAL
   useEffect(() => {
@@ -74,11 +79,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const currentTree = trees[activeTreeId];
-
-  // Vérification de propriété de l'arbre actif
   const isOwnerOfCurrentTree = currentTree && currentTree.owner_id === currentUserId;
 
-  // FILTRAGE DES QUÊTES ACCESSIBLES (POOL DE DROITE)
+  // Filtrage du Pool de Missions de droite (Catalogue)
   const safeQuestsList = quests || [];
   const filteredQuests = safeQuestsList.filter(q => {
     if (!q) return false;
@@ -89,7 +92,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return matchesSearch && matchesTheme && matchesDifficulty;
   }).sort((a, b) => (a.theme || '').localeCompare(b.theme || ''));  
 
-  // Calcul automatique de la contrainte maximale d'équipe sur l'arbre
+  // Calcul automatique de la contrainte max d'équipe
   const recalculateAndSaveMaxTeamConstraint = async (treeId, floorsArray) => {
     if (!treeId || !floorsArray) return;
     const attachedQuestIds = floorsArray.flatMap(f => f.quests || []);
@@ -118,7 +121,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // 2. LOGIQUE DE SAUVEGARDE ET SYNCHRONISATION SUPABASE
+  // Sauvegarde
   const handleSaveChanges = async () => {
     if (currentTree) {
       if (!isOwnerOfCurrentTree) {
@@ -140,7 +143,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     } 
   };
 
-  // ✨ LOGIQUE DE PARTAGE DE L'ARBRE (Passage en visibilité public)
+  // Partage
   const handleShareTree = async () => {
     if (!currentTree) return;
     if (!isOwnerOfCurrentTree) {
@@ -162,11 +165,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           [currentTree.id]: { ...prev[currentTree.id], visibility: 'public' }
         }));
       }
-      alert(`🌍 L'arbre "${currentTree.name}" est désormais partagé et accessible à l'ensemble de la communauté !`);
+      alert(`🌍 L'arbre "${currentTree.name}" est désormais partagé et accessible à la communauté !`);
     }
   };
 
-  // ✨ LOGIQUE DE DUPLICATION D'UN ARBRE PARTAGÉ EN LOCAL
+  // Duplication d'arbre
   const handleDuplicateTreeAsLocal = async (treeToCopy) => {
     if (!treeToCopy) return;
 
@@ -191,10 +194,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
     setActiveTreeId(data.id);
     setActiveModal(null);
-    alert(`📥 Une copie locale éditable de l'arbre "${treeToCopy.name}" a été ajoutée à votre espace !`);
+    alert(`📥 Une copie locale de l'arbre "${treeToCopy.name}" a été ajoutée !`);
   };
 
-  // MODIFICATION DE L'ARBRE DANS LE STATE LOCAL
   const updateCurrentTreeInState = (updatedFields) => {
     if (!currentTree) return;
     if (!isOwnerOfCurrentTree) return; 
@@ -206,7 +208,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // LOGIQUE INTERACTIVE DES PALIERS (FLOORS)
+  // Paliers
   const handleAddFloor = () => {
     if (!currentTree || !isOwnerOfCurrentTree) return;
     const floors = currentTree.floors ? [...currentTree.floors] : [];
@@ -279,7 +281,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
   };
 
-  // ACTIONS DE CRÉATION (MODALES)
+  // Création
   const handleCreateTree = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!newTreeName.trim()) return;
@@ -335,6 +337,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setActiveModal(null);
   };
 
+  // Liste filtrée d'explorateur d'arbres
   const filteredBrowsedTrees = Object.values(trees || {}).filter(t => {
     if (!t) return false;
     const matchesSearch = (t.name || '').toLowerCase().includes(treeSearchQuery.toLowerCase());
@@ -343,6 +346,62 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     } else {
       return matchesSearch && t.visibility === 'public';
     }
+  });
+
+  // --- LOGIQUE D'EXTRACTION DES QUÊTES POUR LA BIBLIOTHÈQUE ---
+  const getAllQuestsFromTrees = (mode) => {
+    const targetTrees = Object.values(trees || {}).filter(t => {
+      if (mode === 'local') return t.owner_id === currentUserId;
+      return t.visibility === 'public';
+    });
+
+    if (mode === 'local' && librarySelectedTreeId !== 'all') {
+      const selected = targetTrees.find(t => t.id === librarySelectedTreeId);
+      return selected ? extractQuestsFromTree(selected) : [];
+    }
+
+    let allExtracted = [];
+    targetTrees.forEach(t => {
+      allExtracted = [...allExtracted, ...extractQuestsFromTree(t)];
+    });
+
+    // Supprimer les doublons éventuels par ID de quête
+    const uniqueQuests = [];
+    const seenIds = new Set();
+    allExtracted.forEach(item => {
+      if (!seenIds.has(item.quest.id)) {
+        seenIds.add(item.quest.id);
+        uniqueQuests.push(item);
+      }
+    });
+
+    return uniqueQuests;
+  };
+
+  const extractQuestsFromTree = (tree) => {
+    const list = [];
+    if (!tree || !tree.floors) return list;
+    tree.floors.forEach(floor => {
+      const floorQuests = floor.quests || [];
+      floorQuests.forEach(qId => {
+        const found = safeQuestsList.find(quest => quest.id === qId);
+        if (found) {
+          list.push({
+            quest: found,
+            treeName: tree.name,
+            floorId: floor.floorId
+          });
+        }
+      });
+    });
+    return list;
+  };
+
+  const libraryItems = getAllQuestsFromTrees(libraryTab).filter(item => {
+    const q = item.quest;
+    const matchesSearch = q.name.toLowerCase().includes(librarySearchQuery.toLowerCase()) || 
+                          q.desc.toLowerCase().includes(librarySearchQuery.toLowerCase());
+    return matchesSearch;
   });
 
   return (
@@ -522,55 +581,83 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           )}
         </div>
 
-        {/* COLONNE DE DROITE : POOL GLOBAL DES MISSIONS & CRÉATION RAPIDE */}
+        {/* COLONNE DE DROITE : OUTILS DE CONCEPTION (RECTANGULAIRES) & CATALOGUE */}
         <div className="lg:col-span-1 space-y-6">
           
-          {/* CRÉATION DE CONTENUS & PARAMÈTRES (ACTIONS DU STUDIO) */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">🛠️ Outils de Conception</h3>
+          {/* MENU D'OUTILS DE CONCEPTION (Nouveau Design Rectangulaire Inspiré du Dessin) */}
+          <div className="bg-white border-2 border-slate-900 rounded-xl overflow-hidden shadow-md">
+            {/* Header du bloc d'outils */}
+            <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider">🛠️ Outils de Conception</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            </div>
             
-            <button 
-              onClick={() => setActiveModal('tree')} 
-              className="w-full bg-slate-950 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider py-3 px-4 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>🌳 Créer un Arbre</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveModal('quest')} 
-              className="w-full bg-purple-700 hover:bg-purple-800 text-white font-black text-xs uppercase tracking-wider py-3 px-4 rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>⚔️ Créer une Mission</span>
-            </button>
-
-            {currentTree && isOwnerOfCurrentTree && (
+            {/* Grille d'actions rectangulaires et épurées */}
+            <div className="grid grid-cols-1 divide-y divide-slate-200">
+              
+              {/* Ligne 1 : Créer un arbre */}
               <button 
-                onClick={handleShareTree} 
-                disabled={currentTree.visibility === 'public'}
-                className="w-full bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 font-extrabold text-xs uppercase tracking-wider py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                onClick={() => setActiveModal('tree')} 
+                className="w-full bg-white hover:bg-slate-50 text-slate-900 font-extrabold text-xs uppercase tracking-wider py-4 px-5 transition-all flex items-center justify-between cursor-pointer group"
               >
-                <span>{currentTree.visibility === 'public' ? '🌍 Déjà partagé en public' : '🌍 Publier et partager l\'Arbre'}</span>
+                <span className="flex items-center gap-2">🌳 <span>Créer un Arbre</span></span>
+                <span className="text-slate-400 group-hover:translate-x-1 transition-transform">→</span>
               </button>
-            )}
 
-            {currentTree && (
-              <div className="pt-2 border-t border-slate-100 flex gap-2">
+              {/* Ligne 2 : Créer une mission */}
+              <button 
+                onClick={() => setActiveModal('quest')} 
+                className="w-full bg-white hover:bg-slate-50 text-slate-900 font-extrabold text-xs uppercase tracking-wider py-4 px-5 transition-all flex items-center justify-between cursor-pointer group"
+              >
+                <span className="flex items-center gap-2">⚔️ <span>Créer une Mission</span></span>
+                <span className="text-slate-400 group-hover:translate-x-1 transition-transform">→</span>
+              </button>
+
+              {/* Ligne 3 (NOUVEAU) : La Bibliothèque de Quêtes */}
+              <button 
+                onClick={() => {
+                  setLibraryTab('local');
+                  setLibrarySelectedTreeId('all');
+                  setActiveModal('quest_library');
+                }} 
+                className="w-full bg-purple-50 hover:bg-purple-100 text-purple-900 font-black text-xs uppercase tracking-wider py-4 px-5 transition-all flex items-center justify-between cursor-pointer group border-l-4 border-purple-600"
+              >
+                <span className="flex items-center gap-2">📖 <span>Bibliothèque de Quêtes</span></span>
+                <span className="text-purple-600 font-black group-hover:translate-x-1 transition-transform">⚡ Ouvrir</span>
+              </button>
+
+              {/* Ligne 4 : Partager / Publier l'Arbre */}
+              {currentTree && isOwnerOfCurrentTree && (
+                <button 
+                  onClick={handleShareTree} 
+                  disabled={currentTree.visibility === 'public'}
+                  className="w-full bg-white hover:bg-blue-50 disabled:bg-slate-100 disabled:text-slate-400 text-blue-700 font-extrabold text-xs uppercase tracking-wider py-4 px-5 transition-all flex items-center justify-between cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">🌍 <span>{currentTree.visibility === 'public' ? 'Déjà public' : 'Publier et partager'}</span></span>
+                  <span className="text-blue-500">📤</span>
+                </button>
+              )}
+
+              {/* Ligne 5 : Sauvegarder l'arbre actif */}
+              {currentTree && (
                 <button 
                   onClick={handleSaveChanges}
                   disabled={!isOwnerOfCurrentTree}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-extrabold text-xs uppercase tracking-wider py-3 px-4 rounded-xl shadow-sm transition-all cursor-pointer"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-extrabold text-xs uppercase tracking-wider py-4 px-5 transition-all flex items-center justify-between cursor-pointer"
                 >
-                  💾 Enregistrer l'Arbre
+                  <span className="flex items-center gap-2">💾 <span>Enregistrer l'Arbre</span></span>
+                  <span className="font-bold">✓</span>
                 </button>
-              </div>
-            )}
+              )}
+
+            </div>
           </div>
 
-          {/* POOL GÉNÉRAL DES MISSIONS (POOL DE MISSIONS) */}
+          {/* POOL GÉNÉRAL DES MISSIONS (CONSERVÉ) */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
-              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">📦 Pool Global des Missions ({safeQuestsList.length})</h3>
-              <p className="text-[10px] text-slate-400 font-bold">Missions conçues par la communauté, rattachables à vos paliers</p>
+              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">📦 Catalogue Général des Missions ({safeQuestsList.length})</h3>
+              <p className="text-[10px] text-slate-400 font-bold">Pool global utilisable et rattachable à vos paliers</p>
             </div>
 
             {/* FILTRES DE MISSIONS */}
@@ -607,7 +694,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             </div>
 
             {/* AFFICHAGE DES MISSIONS FILTRÉES */}
-            <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+            <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
               {filteredQuests.length === 0 ? (
                 <div className="text-center py-6 text-xs text-slate-400 font-bold">Aucune mission correspondante.</div>
               ) : (
@@ -640,6 +727,115 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       </div>
 
       {/* ==================== MODALES ==================== */}
+
+      {/* 4. MODALE NOUVELLE : LA BIBLIOTHÈQUE DE QUÊTES DE TOUS LES ARBRES */}
+      {activeModal === 'quest_library' && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 relative flex flex-col max-h-[85vh]">
+            <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg cursor-pointer">×</button>
+            
+            <div className="border-b pb-3 mb-4">
+              <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">📖 Bibliothèque Globale des Quêtes d'Arbres</h3>
+              <p className="text-[11px] text-slate-500 font-bold">Explorez et réutilisez toutes les quêtes rattachées à nos architectures de formation</p>
+            </div>
+
+            {/* SWITCH SOURCE : LOCAUX VS GLOBALS */}
+            <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold mb-4 w-full">
+              <button 
+                onClick={() => {
+                  setLibraryTab('local');
+                  setLibrarySelectedTreeId('all');
+                }}
+                className={`flex-1 py-2 rounded-lg transition-all ${libraryTab === 'local' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+              >
+                📁 Quêtes de nos Arbres Locaux
+              </button>
+              <button 
+                onClick={() => {
+                  setLibraryTab('global');
+                  setLibrarySelectedTreeId('all');
+                }}
+                className={`flex-1 py-2 rounded-lg transition-all ${libraryTab === 'global' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+              >
+                🌍 Quêtes de tous les Arbres Globaux (Publics)
+              </button>
+            </div>
+
+            {/* FILTRES INTERNES DE LA BIBLIOTHÈQUE */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              {/* Filtre par arbre (uniquement disponible en mode Local pour cibler plus facilement) */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Filtrer par Arbre :</label>
+                <select
+                  value={librarySelectedTreeId}
+                  onChange={(e) => setLibrarySelectedTreeId(e.target.value)}
+                  className="w-full border rounded-lg p-2 bg-slate-50 text-xs font-bold focus:bg-white"
+                >
+                  <option value="all">-- Tous les arbres ({libraryTab === 'local' ? 'Locaux' : 'Globaux'}) --</option>
+                  {Object.values(trees || {})
+                    .filter(t => libraryTab === 'local' ? t.owner_id === currentUserId : t.visibility === 'public')
+                    .map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))
+                  }
+                </select>
+              </div>
+
+              {/* Recherche textuelle */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Recherche par mot-clé :</label>
+                <input 
+                  type="text" 
+                  placeholder="Rechercher une quête..." 
+                  value={librarySearchQuery}
+                  onChange={(e) => setLibrarySearchQuery(e.target.value)}
+                  className="w-full border rounded-lg p-2 bg-slate-50 text-xs font-semibold focus:bg-white"
+                />
+              </div>
+            </div>
+
+            {/* CONTENU / LISTING DES QUÊTES */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {libraryItems.length === 0 ? (
+                <div className="text-center py-12 text-xs text-slate-400 font-bold border-2 border-dashed rounded-xl">
+                  Aucune quête rattachée ne correspond à vos filtres actuels.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {libraryItems.map((item, idx) => {
+                    const q = item.quest;
+                    const isQuestCollab = q.is_collaborative || q.is_collaborative === 'true' || q.is_collaborative === true;
+                    return (
+                      <div key={idx} className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-2 flex flex-col justify-between hover:border-slate-300 transition-all">
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-start gap-2">
+                            <h4 className="font-extrabold text-slate-900 text-xs">{q.name}</h4>
+                            <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border whitespace-nowrap ${getQuestBadgeStyle(q)}`}>
+                              {Number(q.difficulty) === 3 ? 'Boss' : Number(q.difficulty) === 2 ? 'Miniboss' : q.theme}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-normal line-clamp-3">{q.desc}</p>
+                        </div>
+
+                        <div className="pt-2.5 border-t border-slate-200/60 flex flex-wrap justify-between items-center gap-2">
+                          <span className="text-[9px] text-slate-400 font-bold">
+                            🌳 Arbre : <strong className="text-slate-700">{item.treeName}</strong> (P. {item.floorId})
+                          </span>
+                          {isQuestCollab && (
+                            <span className="bg-purple-100 text-purple-800 text-[9px] font-black px-1.5 py-0.5 rounded border border-purple-200">
+                              🤝 {q.required_partners || 2}p
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 1. MODALE D'EXPLORATION ET DE CHOIX DES ARBRES */}
       {activeModal === 'tree_browser' && (
