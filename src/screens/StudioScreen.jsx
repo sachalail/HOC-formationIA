@@ -147,6 +147,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const currentSession = sessions.find(s => String(s.id) === String(activeSessionId));
   const linkedTree = currentSession ? trees[currentSession.tree_id] : null;
 
+  // Liste des identifiants des paliers actuellement utilisés dans le planning
+  const existingFloorIds = currentSession && currentSession.planning
+    ? currentSession.planning.filter(b => b.type === 'palier').map(b => b.floorId)
+    : [];
+
   // Recherche dynamique DRH
   useEffect(() => {
     const searchDRH = async () => {
@@ -399,9 +404,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     updateCurrentSessionInState({ planning: timeline });
     setActiveDropIndex(null);
-    setTimeout(() => {
-      setDraggedPlanningItem(null);
-    }, 0);
+    setDraggedPlanningItem(null);
   };
 
   const removePlanningBlock = (blockId) => {
@@ -863,11 +866,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                         e.stopPropagation();
                                         setDraggedPlanningItem({ source: 'timeline', index });
                                       }}
-                                      onDragEnd={() => {
-                                        setTimeout(() => {
-                                          setDraggedPlanningItem(null);
-                                          setActiveDropIndex(null);
-                                        }, 0);
+                                      onDragEnd={(e) => {
+                                        e.preventDefault();
+                                        setDraggedPlanningItem(null);
+                                        setActiveDropIndex(null);
                                       }}
                                       className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
                                     >
@@ -993,11 +995,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <div 
                           draggable
                           onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
-                          onDragEnd={() => {
-                            setTimeout(() => {
-                              setDraggedPlanningItem(null);
-                              setActiveDropIndex(null);
-                            }, 0);
+                          onDragEnd={(e) => {
+                            e.preventDefault();
+                            setDraggedPlanningItem(null);
+                            setActiveDropIndex(null);
                           }}
                           className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs select-none"
                           style={{ borderLeftWidth: '5px', borderLeftColor: customBlockConfig.color }}
@@ -1011,28 +1012,29 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       {linkedTree ? (
                         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
-                          {(linkedTree.floors || []).map(floor => (
-                            <div
-                              key={floor.floorId}
-                              draggable
-                              onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                              onDragEnd={() => {
-                                setTimeout(() => {
+                          {(linkedTree.floors || [])
+                            .filter(floor => !existingFloorIds.includes(floor.floorId)) // Filtre pour cacher les paliers déjà ajoutés au planning
+                            .map(floor => (
+                              <div
+                                key={floor.floorId}
+                                draggable
+                                onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                                onDragEnd={(e) => {
+                                  e.preventDefault();
                                   setDraggedPlanningItem(null);
                                   setActiveDropIndex(null);
-                                }, 0);
-                              }}
-                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
-                            >
-                              <div className="min-w-0">
-                                <span className="font-extrabold text-xs text-purple-900 block truncate">
-                                  {floor.name && floor.name.trim() !== "" ? `🎯 Palier ${floor.floorId} : ${cleanBlockName(floor.name)}` : `🎯 Palier ${floor.floorId}`}
-                                </span>
-                                <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                                }}
+                                className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
+                              >
+                                <div className="min-w-0">
+                                  <span className="font-extrabold text-xs text-purple-900 block truncate">
+                                    {floor.name && floor.name.trim() !== "" ? `🎯 Palier ${floor.floorId} : ${cleanBlockName(floor.name)}` : `🎯 Palier ${floor.floorId}`}
+                                  </span>
+                                  <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                                </div>
+                                <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
                               </div>
-                              <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
-                            </div>
-                          ))}
+                            ))}
                         </div>
                       ) : (
                         <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500">
