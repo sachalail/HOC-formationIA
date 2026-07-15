@@ -55,7 +55,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [draggedPlanningItem, setDraggedPlanningItem] = useState(null);
   const [activeDropIndex, setActiveDropIndex] = useState(null);
 
-  // 1. CHARGEMENT INITIAL
+  // CHARGEMENT INITIAL
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -104,7 +104,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       }));
       setSessions(mappedSessions);
 
-      // Récupérer les emails des DRH pour toutes les sessions chargées
       const allDrhIds = [...new Set(mappedSessions.flatMap(s => s.drh_ids || []))];
       if (allDrhIds.length > 0) {
         await loadDrhEmailsCache(allDrhIds);
@@ -173,7 +172,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // Met à jour la session dans l'état local réactivement
   const updateCurrentSessionInState = (updatedFields) => {
     setSessions(prevSessions => {
       return prevSessions.map(s => {
@@ -221,9 +219,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     const currentDrhIds = currentSession.drh_ids || [];
     if (currentDrhIds.includes(drhUser.id)) return;
     
-    // Mettre à jour le dictionnaire local d'e-mails
     setDrhEmailsCache(prev => ({ ...prev, [drhUser.id]: drhUser.email }));
-    
     updateCurrentSessionInState({ drh_ids: [...currentDrhIds, drhUser.id] });
     setDrhSearchQuery(''); 
     setDrhSuggestions([]);
@@ -234,18 +230,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
   };
 
-  // --- LOGIQUE DRAG & DROP SESSIONS ---
-  const checkPlacementValidity = (floorId, targetIndex, timeline) => {
-    if (!floorId) return true;
+  // --- LOGIQUE ET VALIDATION DE PLACEMENT DU DRAG & DROP ---
+  const getPlacementValidation = (floorId, targetIndex, timeline) => {
+    if (!floorId) return { isValid: true };
+    
     let prevMaxFloor = -1;
     for (let i = 0; i < targetIndex; i++) {
       if (timeline[i]?.type === 'palier') prevMaxFloor = Math.max(prevMaxFloor, timeline[i].floorId);
     }
+    
     let nextMinFloor = 999;
     for (let i = targetIndex; i < timeline.length; i++) {
       if (timeline[i]?.type === 'palier') nextMinFloor = Math.min(nextMinFloor, timeline[i].floorId);
     }
-    return floorId > prevMaxFloor && floorId < nextMinFloor;
+
+    const isValid = floorId > prevMaxFloor && floorId < nextMinFloor;
+    return {
+      isValid,
+      prevMaxFloor: prevMaxFloor === -1 ? null : prevMaxFloor,
+      nextMinFloor: nextMinFloor === 999 ? null : nextMinFloor
+    };
   };
 
   const handleTimelineDrop = (targetIndex) => {
@@ -254,8 +258,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     if (draggedPlanningItem.source === 'palette-palier') {
       const floor = draggedPlanningItem.data;
-      if (!checkPlacementValidity(floor.floorId, targetIndex, timeline)) {
-        alert(`🚫 Le Palier ${floor.floorId} doit respecter l'ordre chronologique.`);
+      const { isValid, prevMaxFloor, nextMinFloor } = getPlacementValidation(floor.floorId, targetIndex, timeline);
+      
+      if (!isValid) {
+        alert(`🚫 Placement invalide.\nLe Palier ${floor.floorId} doit être planifié après le palier ${prevMaxFloor || 'précédent'} et avant le palier ${nextMinFloor || 'suivant'}.`);
         setActiveDropIndex(null); 
         setDraggedPlanningItem(null);
         return;
@@ -286,11 +292,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const sourceIndex = draggedPlanningItem.index;
       const [movedBlock] = timeline.splice(sourceIndex, 1);
       
-      if (movedBlock.type === 'palier' && !checkPlacementValidity(movedBlock.floorId, targetIndex, timeline)) {
-        alert(`🚫 Mouvement invalide.`);
-        setActiveDropIndex(null); 
-        setDraggedPlanningItem(null);
-        return;
+      if (movedBlock.type === 'palier') {
+        const { isValid } = getPlacementValidation(movedBlock.floorId, targetIndex, timeline);
+        if (!isValid) {
+          alert(`🚫 Déplacement invalide pour le Palier ${movedBlock.floorId} (L'ordre chronologique doit être préservé).`);
+          setActiveDropIndex(null); 
+          setDraggedPlanningItem(null);
+          return;
+        }
       }
       timeline.splice(targetIndex, 0, movedBlock);
     }
@@ -313,7 +322,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ planning: updated });
   };
 
-  // Calcule les horaires défilants pour l'aperçu du planning
   const getTimelineWithHours = () => {
     if (!currentSession) return [];
     let currentMinutes = 0;
@@ -387,7 +395,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       <p>🔗 Étapes : <span className="font-extrabold text-blue-700">{s.planning?.length || 0} blocs</span></p>
                     </div>
 
-                    {/* ACTIONS SUR CHAQUE SESSION */}
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
                       <button
                         onClick={() => {
@@ -428,7 +435,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           {currentSession ? (
             <div className="space-y-6">
               
-              {/* ==================== MODE 👁️ VOIR : JUSTE LE PLANNING (PROPRE & CHRONOLOGIQUE) ==================== */}
+              {/* ==================== MODE 👁️ VOIR : LECTURE SEULE ==================== */}
               {viewMode === "view" && (
                 <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
                   <div className="flex justify-between items-center border-b pb-4">
@@ -445,7 +452,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     </button>
                   </div>
 
-                  {/* TIMELINE DE LECTURE SEULE */}
                   <div className="space-y-4 relative pl-4 border-l-2 border-slate-100">
                     {getTimelineWithHours().length === 0 ? (
                       <div className="text-center py-8 text-xs text-slate-400 font-bold">
@@ -453,16 +459,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       </div>
                     ) : (
                       getTimelineWithHours().map((block) => (
-                        <div 
-                          key={block.id}
-                          className="flex items-start gap-4 relative group"
-                        >
-                          {/* Point Horaire */}
+                        <div key={block.id} className="flex items-start gap-4 relative group">
                           <div className="font-mono text-xs font-black text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border shrink-0">
                             {block.startTimeFormatted}
                           </div>
 
-                          {/* Bloc d'activité */}
                           <div 
                             className="bg-white border rounded-xl p-4 shadow-xs flex-1 transition-all hover:shadow-md cursor-pointer"
                             style={{ borderLeftWidth: '5px', borderLeftColor: block.color || '#cbd5e1' }}
@@ -509,12 +510,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     </div>
                     <div className="flex gap-2">
                       <button 
+                        type="button"
                         onClick={() => setViewMode("view")}
                         className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2 px-4 rounded-xl text-xs uppercase"
                       >
                         Annuler
                       </button>
                       <button 
+                        type="button"
                         onClick={handleSaveChanges}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs uppercase tracking-wider shadow-sm"
                       >
@@ -532,7 +535,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           type="date" 
                           value={currentSession.formation_date || ''} 
                           onChange={(e) => updateCurrentSessionInState({ formation_date: e.target.value })}
-                          className="w-full border rounded-lg p-2 bg-white font-bold text-xs"
+                          className="w-full border rounded-lg p-2 bg-white font-bold text-xs shadow-xs"
                         />
                       </div>
                       <div>
@@ -541,7 +544,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           type="time" 
                           value={currentSession.start_time || '09:00'} 
                           onChange={(e) => updateCurrentSessionInState({ start_time: e.target.value })}
-                          className="w-full border rounded-lg p-2 bg-white font-mono text-xs font-bold"
+                          className="w-full border rounded-lg p-2 bg-white font-mono text-xs font-bold shadow-xs"
                         />
                       </div>
                       <div>
@@ -549,7 +552,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <select 
                           value={currentSession.end_time_mode || 'auto'} 
                           onChange={(e) => updateCurrentSessionInState({ end_time_mode: e.target.value })}
-                          className="w-full border rounded-lg p-2 bg-white text-xs font-bold"
+                          className="w-full border rounded-lg p-2 bg-white text-xs font-bold shadow-xs"
                         >
                           <option value="auto">🔄 Auto</option>
                           <option value="lock">🔒 Fixe</option>
@@ -570,7 +573,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               updateCurrentSessionInState({ end_time: e.target.value });
                             }
                           }}
-                          className="w-full border rounded-lg p-2 font-mono text-xs font-bold bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                          className="w-full border rounded-lg p-2 font-mono text-xs font-bold bg-white disabled:bg-slate-100 disabled:text-slate-400 shadow-xs"
                         />
                       </div>
                     </div>
@@ -581,7 +584,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <select 
                           value={currentSession.tree_id || ''}
                           onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value || null })}
-                          className="w-full border rounded-lg p-2 bg-white text-xs font-bold"
+                          className="w-full border rounded-lg p-2 bg-white text-xs font-bold shadow-xs"
                         >
                           <option value="">-- Aucun arbre lié --</option>
                           {Object.values(trees || {}).map(t => (
@@ -597,7 +600,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           placeholder="Rechercher un e-mail..."
                           value={drhSearchQuery}
                           onChange={(e) => setDrhSearchQuery(e.target.value)}
-                          className="w-full border rounded-lg p-2 bg-white text-xs"
+                          className="w-full border rounded-lg p-2 bg-white text-xs shadow-xs"
                         />
                         {drhSuggestions.length > 0 && (
                           <div className="absolute z-50 left-0 right-0 top-full bg-white border rounded shadow-md mt-1 max-h-32 overflow-y-auto">
@@ -615,7 +618,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         )}
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {(currentSession.drh_ids || []).map(id => {
-                            const matchedEmail = drhEmailsCache[id] || id; // Affiche l'email s'il existe dans le cache, sinon l'ID temporairement
+                            const matchedEmail = drhEmailsCache[id] || id; 
                             return (
                               <div key={id} className="bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1">
                                 <span>{matchedEmail}</span>
@@ -649,89 +652,206 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           </div>
                         )}
 
-                        {(currentSession.planning || []).map((block, index) => (
-                          <React.Fragment key={block.id}>
-                            <div 
-                              onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
-                              onDragLeave={() => setActiveDropIndex(null)}
-                              onDrop={() => handleTimelineDrop(index)}
-                              className={`h-2 rounded transition-all ${activeDropIndex === index ? 'bg-blue-500 my-1' : 'bg-transparent'}`}
-                            />
-                            
-                            <div 
-                              draggable
-                              onDragStart={() => setDraggedPlanningItem({ source: 'timeline', index })}
-                              className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all"
-                              style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm">⠿</span>
-                                <div className="min-w-0">
-                                  <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
-                                    {block.name}
-                                    {block.type === 'palier' && (
-                                      <button 
-                                        type="button"
-                                        onClick={() => {
-                                          const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
-                                          if (matchedFloor) setSelectedInspectFloor(matchedFloor);
-                                        }}
-                                        className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
-                                      >
-                                        🔍 Voir contenu
-                                      </button>
-                                    )}
-                                  </h5>
-                                  <p className="text-[10px] text-slate-400 font-bold truncate">{block.desc}</p>
+                        {(currentSession.planning || []).map((block, index) => {
+                          // Evaluation de la validité de cette position de dépôt pour le bloc en cours de drag
+                          let isTargetIndexValid = true;
+                          let explanationText = "";
+
+                          if (draggedPlanningItem) {
+                            let dragFloorId = null;
+                            if (draggedPlanningItem.source === 'palette-palier') {
+                              dragFloorId = draggedPlanningItem.data?.floorId;
+                            } else if (draggedPlanningItem.source === 'timeline') {
+                              const sourceBlock = currentSession.planning[draggedPlanningItem.index];
+                              if (sourceBlock?.type === 'palier') {
+                                dragFloorId = sourceBlock.floorId;
+                              }
+                            }
+
+                            if (dragFloorId) {
+                              const validation = getPlacementValidation(dragFloorId, index, currentSession.planning);
+                              isTargetIndexValid = validation.isValid;
+                              if (!isTargetIndexValid) {
+                                explanationText = `Doit être placé après Palier ${validation.prevMaxFloor || '0'}`;
+                                if (validation.nextMinFloor) {
+                                  explanationText += ` et avant Palier ${validation.nextMinFloor}`;
+                                }
+                              }
+                            }
+                          }
+
+                          return (
+                            <React.Fragment key={block.id}>
+                              
+                              {/* INDICATEUR DE ZONE DE DEPOT RECONSTRUITE & COLORÉE */}
+                              <div 
+                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => handleTimelineDrop(index)}
+                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  activeDropIndex === index 
+                                    ? isTargetIndexValid 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                      : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
+                                    : draggedPlanningItem 
+                                      ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
+                                      : 'bg-transparent h-2 border-none'
+                                }`}
+                              >
+                                {activeDropIndex === index && (
+                                  <span>
+                                    {isTargetIndexValid 
+                                      ? '🟢 Déposer ici (Valide)' 
+                                      : `❌ Position interdite (${explanationText})`
+                                    }
+                                  </span>
+                                )}
+                              </div>
+                              
+                              <div 
+                                draggable
+                                onDragStart={() => setDraggedPlanningItem({ source: 'timeline', index })}
+                                onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
+                                className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all"
+                                style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <span className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm">⠿</span>
+                                  <div className="min-w-0">
+                                    <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
+                                      {block.name}
+                                      {block.type === 'palier' && (
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
+                                            if (matchedFloor) setSelectedInspectFloor(matchedFloor);
+                                          }}
+                                          className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
+                                        >
+                                          🔍 Voir contenu
+                                        </button>
+                                      )}
+                                    </h5>
+                                    <p className="text-[10px] text-slate-400 font-bold truncate">{block.desc}</p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 flex-shrink-0">
+                                  <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border">
+                                    <input 
+                                      type="number" 
+                                      min="1"
+                                      value={block.duration || 15}
+                                      onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)}
+                                      className="w-10 text-center bg-white border rounded p-0.5 font-black text-slate-900 text-xs"
+                                    />
+                                    <span className="text-[10px] font-black text-slate-400">min</span>
+                                  </div>
+                                  <button 
+                                    type="button"
+                                    onClick={() => removePlanningBlock(block.id)} 
+                                    className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg"
+                                  >
+                                    🗑️
+                                  </button>
                                 </div>
                               </div>
+                            </React.Fragment>
+                          );
+                        })}
 
-                              <div className="flex items-center gap-3 flex-shrink-0">
-                                <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border">
-                                  <input 
-                                    type="number" 
-                                    min="1"
-                                    value={block.duration || 15}
-                                    onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)}
-                                    className="w-10 text-center bg-white border rounded p-0.5 font-black text-slate-900 text-xs"
-                                  />
-                                  <span className="text-[10px] font-black text-slate-400">min</span>
-                                </div>
-                                <button 
-                                  type="button"
-                                  onClick={() => removePlanningBlock(block.id)} 
-                                  className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            </div>
-                          </React.Fragment>
-                        ))}
-
+                        {/* DERNIER INDICATEUR DE FIN DE TIMELINE */}
                         {(currentSession.planning || []).length > 0 && (
-                          <div 
-                            onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(currentSession.planning.length); }}
-                            onDragLeave={() => setActiveDropIndex(null)}
-                            onDrop={() => handleTimelineDrop(currentSession.planning.length)}
-                            className={`h-4 rounded transition-all ${activeDropIndex === currentSession.planning.length ? 'bg-blue-500 my-1' : 'bg-transparent'}`}
-                          />
+                          (() => {
+                            const lastIndex = currentSession.planning.length;
+                            let isTargetIndexValid = true;
+                            let explanationText = "";
+
+                            if (draggedPlanningItem) {
+                              let dragFloorId = null;
+                              if (draggedPlanningItem.source === 'palette-palier') {
+                                dragFloorId = draggedPlanningItem.data?.floorId;
+                              } else if (draggedPlanningItem.source === 'timeline') {
+                                const sourceBlock = currentSession.planning[draggedPlanningItem.index];
+                                if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
+                              }
+
+                              if (dragFloorId) {
+                                const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning);
+                                isTargetIndexValid = validation.isValid;
+                                if (!isTargetIndexValid) {
+                                  explanationText = `Doit être planifié après le palier ${validation.prevMaxFloor || '0'}`;
+                                }
+                              }
+                            }
+
+                            return (
+                              <div 
+                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(lastIndex); }}
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => handleTimelineDrop(lastIndex)}
+                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  activeDropIndex === lastIndex 
+                                    ? isTargetIndexValid 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                      : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
+                                    : draggedPlanningItem 
+                                      ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
+                                      : 'bg-transparent h-2 border-none'
+                                }`}
+                              >
+                                {activeDropIndex === lastIndex && (
+                                  <span>
+                                    {isTargetIndexValid 
+                                      ? '🟢 Déposer en fin de planning (Valide)' 
+                                      : `❌ Impossible de déposer à la fin (${explanationText})`
+                                    }
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()
                         )}
                       </div>
                     </div>
 
-                    {/* PALETTE D'ACTIVITES (1/3) */}
+                    {/* PALETTE D'ACTIVITES (1/3) : BLOC PERSO AU-DESSUS */}
                     <div className="space-y-4">
                       <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">🛠️ Palette</h4>
                       
+                      {/* BLOC PERSO (AFFICHE EN PREMIER) */}
+                      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs">
+                        <span className="block text-[10px] font-black uppercase text-blue-700">Bloc personnalisé</span>
+                        <input 
+                          type="text"
+                          placeholder="Ex: Pause Café, Restitution..."
+                          value={customBlockConfig.name}
+                          onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, name: e.target.value })}
+                          className="w-full border rounded p-1.5 bg-slate-50 font-extrabold text-xs"
+                        />
+                        <div 
+                          draggable
+                          onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
+                          onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
+                          className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs"
+                          style={{ borderLeftWidth: '5px', borderLeftColor: customBlockConfig.color }}
+                        >
+                          <span className="font-extrabold text-xs truncate">{customBlockConfig.name}</span>
+                          <span className="text-[10px] bg-slate-100 px-1 rounded font-bold">{customBlockConfig.duration}m</span>
+                        </div>
+                      </div>
+
+                      {/* LES PALIERS DE L'ARBRE (AFFICHE EN DEUXIÈME) */}
                       {linkedTree ? (
-                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
                           {(linkedTree.floors || []).map(floor => (
                             <div
                               key={floor.floorId}
                               draggable
                               onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                              onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
                               className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all"
                             >
                               <div className="min-w-0">
@@ -747,26 +867,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           Associez un arbre ci-dessus pour débloquer ses paliers.
                         </div>
                       )}
-
-                      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                        <span className="block text-[10px] font-black uppercase text-blue-700">Bloc personnalisé</span>
-                        <input 
-                          type="text"
-                          placeholder="Ex: Pause Café, Restitution..."
-                          value={customBlockConfig.name}
-                          onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, name: e.target.value })}
-                          className="w-full border rounded p-1.5 bg-slate-50 font-extrabold text-xs"
-                        />
-                        <div 
-                          draggable
-                          onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
-                          className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center"
-                          style={{ borderLeftWidth: '5px', borderLeftColor: customBlockConfig.color }}
-                        >
-                          <span className="font-extrabold text-xs truncate">{customBlockConfig.name}</span>
-                          <span className="text-[10px] bg-slate-100 px-1 rounded">{customBlockConfig.duration}m</span>
-                        </div>
-                      </div>
                     </div>
 
                   </div>
@@ -786,7 +886,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       </div>
 
-      {/* --- INSPECTEUR DE PALIER : DÉVOILE LE CONTENU DE LA FORMATION --- */}
+      {/* --- INSPECTEUR DE PALIER : DETAILS DU PALIER --- */}
       {selectedInspectFloor && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-end z-50 transition-all">
           <div className="bg-white h-full max-w-lg w-full p-6 shadow-2xl overflow-y-auto border-l flex flex-col justify-between">
@@ -804,7 +904,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 </button>
               </div>
 
-              {/* CONTENU (QUÊTES ET COMPÉTENCES) */}
               <div className="space-y-4 text-xs">
                 <div>
                   <h4 className="font-bold text-slate-500 uppercase text-[10px] mb-2">🎯 Quêtes & Exercices de ce palier :</h4>
