@@ -89,7 +89,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const { data, error } = await supabase
     .from('sessions')
     .select('*')
-    .order('created_at', { ascending: false })
+    .order('id', { ascending: false }) 
     .eq('created_by', userId);
 
   if (data && !error) {
