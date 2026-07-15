@@ -14,6 +14,27 @@ const getQuestBadgeStyle = (quest) => {
   }
 };
 
+// Fonction pour calculer l'heure de fin automatique selon la somme des durées des blocs du planning
+const calculateEndTime = (startTime, blocks = []) => {
+  if (!startTime) return '';
+  
+  const totalMinutes = blocks.reduce((acc, block) => {
+    const duration = parseInt(block.duration || block.duration_minutes || 0, 10);
+    return acc + (isNaN(duration) ? 0 : duration);
+  }, 0);
+
+  const [startHours, startMinutes] = startTime.split(':').map(Number);
+  if (isNaN(startHours) || iSNaN(startMinutes)) return startTime;
+
+  const totalStartMinutes = startHours * 60 + startMinutes;
+  const finalMinutes = totalStartMinutes + totalMinutes;
+
+  const endHours = Math.floor(finalMinutes / 60) % 24;
+  const endMinutes = finalMinutes % 60;
+
+  return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+};
+
 export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
@@ -194,11 +215,16 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       }
     } 
     if (activeTab === 'sessions' && currentSession) {
-      // Sauvegarde de l'arbre relié, des DRH ET du planning
+      // Sauvegarde de l'arbre relié, des DRH, du planning et des horaires temporels
       const { error } = await supabase.from('sessions').update({ 
         tree_id: currentSession.tree_id, 
         drh_ids: currentSession.drh_ids || [],
-        planning: currentSession.planning || [] // Sauvegarde directe du planning en colonne JSONB
+        planning: currentSession.planning || [], // Sauvegarde directe du planning en colonne JSONB
+        start_time: currentSession.start_time || '09:00',
+        end_time_mode: currentSession.end_time_mode || 'auto',
+        end_time: currentSession.end_time_mode === 'auto'
+          ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
+          : currentSession.end_time
       }).eq('id', currentSession.id);
       if (error) alert(`❌ Erreur : ${error.message}`);
       else alert(`🎉 Configuration de la session et planning enregistrés !`);
@@ -230,7 +256,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   };
 
   const updateCurrentSessionInState = (updatedFields) => {
-    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, ...updatedFields } : s));
+    setSessions(prev => prev.map(s => {
+      if (s.id !== activeSessionId) return s;
+      const merged = { ...s, ...updatedFields };
+      const mode = merged.end_time_mode || 'auto';
+      const finalEndTime = mode === 'auto' 
+        ? calculateEndTime(merged.start_time || '09:00', merged.planning || []) 
+        : merged.end_time;
+      return { ...merged, end_time: finalEndTime };
+    }));
   };
 
   // Paliers d'arbres & Drag and drop d'architecture (Onglet ARBRE)
@@ -322,7 +356,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (e && e.preventDefault) e.preventDefault();
     const code = newSessionCode.trim().toUpperCase();
     if (!code) return;
-    const { data, error } = await supabase.from('sessions').insert([{ session_code: code, created_by: currentUserId, manager_id: currentUserId, tree_id: activeTreeId || null, drh_ids: [], planning: [] }]).select().single();
+    const { data, error } = await supabase.from('sessions').insert([{ session_code: code, created_by: currentUserId, manager_id: currentUserId, tree_id: activeTreeId || null, drh_ids: [], planning: [], start_time: '09:00', end_time_mode: 'auto', end_time: '09:00' }]).select().single();
     if (error) return alert(error.message);
     setSessions(prev => [data, ...prev]);
     setActiveSessionId(data.id);
@@ -444,7 +478,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
-      
       {/* SÉLECTEUR D'ONGLETS ET EN-TÊTE PRINCIPAL */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border border-slate-200 shadow-xs gap-4">
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold">
@@ -470,7 +503,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             <span className="text-purple-700 font-black bg-purple-100/80 px-3 py-1.5 rounded-lg border border-purple-200">
               👥 Taille groupe max : <span className="text-sm font-black text-purple-900">{currentTree.max_team_constraint || 1}</span>
             </span>
-            <button
+            <button 
               onClick={() => setActiveModal('tree_browser')}
               className="bg-purple-50 border border-purple-200 rounded-lg p-2 text-purple-900 font-bold min-w-[180px] flex justify-between items-center hover:bg-purple-100"
             >
@@ -490,10 +523,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       {/* ZONE DE CONTENU PRINCIPALE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
         {/* COLONNE GAUCHE/CENTRE */}
         <div className="lg:col-span-2 space-y-6">
-          
           {/* ONGLET ARCHITECTURE DE L'ARBRE */}
           {activeTab === 'tree' && (
             currentTree ? (
@@ -502,611 +533,722 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   const allowedDiffs = (floor.allowedDifficulties || [1, 2, 3]).map(d => Number(d));
                   return (
                     <div 
-                      key={floor.floorId} draggable={isOwnerOfCurrentTree}
-                      onDragStart={() => handleDragStart(index)} onDragOver={handleDragOver} onDrop={() => handleDrop(index)}
+                      key={floor.floorId}
+                      draggable={isOwnerOfCurrentTree}
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={handleDragOver}
+                      onDrop={() => handleDrop(index)}
                       className={`bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4 transition-all ${draggedFloorIndex === index ? 'opacity-40 border-dashed border-purple-400 scale-[0.99]' : ''}`}
                     >
                       <div className="flex flex-wrap justify-between items-center border-b border-slate-100 pb-3 gap-3">
                         <div className="flex items-center gap-3">
                           {isOwnerOfCurrentTree && <span className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-base px-1 select-none">⠿</span>}
                           <span className="bg-purple-700 text-white font-extrabold px-2.5 py-1 text-xs rounded-lg">PALIER {floor.floorId}</span>
-                          <button disabled={!isOwnerOfCurrentTree} onClick={() => toggleFloorMode(floor.floorId)} className={`text-xs font-bold px-3 py-1 rounded-full border ${floor.mode === 'static' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{floor.mode === 'static' ? '📌 Statique' : '🎲 Aléatoire'}</button>
-                          <div className="flex items-center bg-slate-100 px-2 py-0.5 rounded-lg border gap-1.5">
-                            {[1, 2, 3].map(level => (
-                              <button key={level} disabled={!isOwnerOfCurrentTree} onClick={() => handleToggleDifficultyInFloor(floor.floorId, level)} className={`w-6 h-6 rounded flex items-center justify-center text-xs font-black ${allowedDiffs.includes(Number(level)) ? 'bg-amber-400 text-amber-950 border border-amber-500' : 'text-slate-400'}`}>{level}★</button>
-                            ))}
-                          </div>
-                          {floor.mode === 'random' && (
-                            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-xs font-bold text-amber-900">
-                              <span>🎯 Tirer :</span>
-                              <input type="number" min="1" disabled={!isOwnerOfCurrentTree} value={floor.count !== undefined ? floor.count : 2} onChange={(e) => handleCountChange(floor.floorId, e.target.value)} className="w-10 bg-white border border-amber-300 rounded text-center py-0.5 font-black text-slate-900" />
-                            </div>
-                          )}
+                          <button 
+                            disabled={!isOwnerOfCurrentTree}
+                            onClick={() => toggleFloorMode(floor.floorId)}
+                            className={`text-xs font-bold px-3 py-1 rounded-full border ${floor.mode === 'static' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                          >
+                            {floor.mode === 'static' ? '📌 Statique' : '🎲 Aléatoire'}
+                          </button>
                         </div>
-                        {isOwnerOfCurrentTree && <button onClick={() => handleRemoveFloor(floor.floorId)} className="text-slate-400 hover:text-red-500 text-xs font-bold">Supprimer</button>}
+                        {isOwnerOfCurrentTree && (
+                          <button 
+                            onClick={() => handleRemoveFloor(floor.floorId)}
+                            className="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase tracking-wider bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg border border-red-200"
+                          >
+                            🗑️ Supprimer ce palier
+                          </button>
+                        )}
                       </div>
-                      <div className="space-y-2">
-                        <div className="text-xs font-bold text-slate-500 uppercase">{floor.mode === 'static' ? 'Missions obligatoires :' : `Pool aléatoire (${(floor.quests || []).length}) :`}</div>
-                        <div className="flex flex-wrap gap-2">
-                          {safeQuestsList.filter(q => q && allowedDiffs.includes(Number(q.difficulty))).map(quest => {
-                            const isSelected = (floor.quests || []).includes(quest.id);
-                            const isQuestCollab = quest.is_collaborative || quest.is_collaborative === 'true' || quest.is_collaborative === true;
-                            return (
-                              <button key={quest.id} disabled={!isOwnerOfCurrentTree} onClick={() => handleToggleQuestInFloor(floor.floorId, quest.id)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 ${isSelected ? 'bg-purple-700 text-white border-purple-800 shadow-sm font-bold' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                <span>{quest.name}</span>
-                                {isQuestCollab && <span className={`px-1 rounded text-[10px] uppercase font-black ${isSelected ? 'bg-purple-950 text-purple-300' : 'bg-purple-200 text-purple-900'}`}>🤝 {quest.required_partners || 2}p</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
+
+                      {/* Options du Palier */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200/60">
+                        {/* Option Statique : Sélection manuelle des quêtes */}
+                        {floor.mode === 'static' ? (
+                          <div className="space-y-2 col-span-2">
+                            <span className="block font-black text-slate-900 uppercase tracking-wider text-[10px]">🎯 Missions associées au palier :</span>
+                            <div className="flex flex-wrap gap-2">
+                              {safeQuestsList.map(q => {
+                                const isLinked = (floor.quests || []).includes(q.id);
+                                return (
+                                  <button
+                                    key={q.id}
+                                    disabled={!isOwnerOfCurrentTree}
+                                    onClick={() => handleToggleQuestInFloor(floor.floorId, q.id)}
+                                    className={`px-3 py-1.5 rounded-xl border transition-all text-[11px] font-bold flex items-center gap-1.5 ${
+                                      isLinked 
+                                        ? 'bg-purple-700 text-white border-purple-800 shadow-xs' 
+                                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                    }`}
+                                  >
+                                    <span>{q.name}</span>
+                                    {isLinked && <span>✓</span>}
+                                  </button>
+                                );
+                              })}
+                              {safeQuestsList.length === 0 && (
+                                <span className="text-slate-400 italic">Aucune mission disponible dans votre pool global.</span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          // Option Aléatoire
+                          <>
+                            <div className="space-y-1">
+                              <label className="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Nombre de quêtes aléatoires proposées :</label>
+                              <input 
+                                type="number" 
+                                min="1"
+                                disabled={!isOwnerOfCurrentTree}
+                                value={floor.count || 2}
+                                onChange={(e) => handleCountChange(floor.floorId, e.target.value)}
+                                className="w-full border rounded-lg p-2 font-black text-slate-900 bg-white"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Difficultés autorisées :</label>
+                              <div className="flex items-center gap-4 py-1.5">
+                                {[1, 2, 3].map(diff => (
+                                  <label key={diff} className="flex items-center gap-1.5 font-bold text-slate-700 cursor-pointer">
+                                    <input 
+                                      type="checkbox"
+                                      disabled={!isOwnerOfCurrentTree}
+                                      checked={allowedDiffs.includes(diff)}
+                                      onChange={() => handleToggleDifficultyInFloor(floor.floorId, diff)}
+                                      className="rounded border-slate-300 text-purple-700 focus:ring-purple-500"
+                                    />
+                                    <span>{diff === 3 ? '🔥 Boss' : diff === 2 ? '⚡ Miniboss' : '📄 Std'}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
                 })}
+
                 {isOwnerOfCurrentTree && (
-                  <div className="bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
+                  <div className="flex justify-between items-center bg-slate-50/50 p-4 rounded-xl border border-dashed border-slate-300">
+                    <div className="flex items-center gap-2">
                       <label className="text-xs font-bold text-slate-600">Nouveau palier :</label>
-                      <select value={newFloorMode} onChange={(e) => setNewFloorMode(e.target.value)} className="bg-white border rounded-lg text-xs p-2 font-semibold">
+                      <select 
+                        value={newFloorMode}
+                        onChange={(e) => setNewFloorMode(e.target.value)}
+                        className="border rounded-lg p-1.5 text-xs bg-white font-bold"
+                      >
                         <option value="static">📌 Statique</option>
                         <option value="random">🎲 Aléatoire</option>
                       </select>
                     </div>
-                    <button onClick={handleAddFloor} className="bg-purple-700 text-white text-xs font-bold px-5 py-2.5 rounded-lg">➕ Insérer un Palier</button>
+                    <button 
+                      onClick={handleAddFloor}
+                      className="bg-purple-700 hover:bg-purple-800 text-white font-black text-xs uppercase tracking-wider px-4 py-2 rounded-lg transition-all"
+                    >
+                      ➕ Ajouter un Palier
+                    </button>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="bg-white border p-12 rounded-xl text-center text-slate-400 text-xs font-semibold">Aucun arbre actif.</div>
+              <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-4">
+                <span className="text-3xl block">🌳</span>
+                <p className="text-sm font-bold text-slate-500">Aucun arbre sélectionné. Créez un arbre ou explorez les modèles partagés.</p>
+                <button onClick={() => setActiveModal('tree')} className="bg-purple-700 text-white text-xs font-black uppercase tracking-wider px-4 py-2 rounded-lg">Initialiser un Arbre</button>
+              </div>
             )
           )}
 
-          {/* SESSIONS : VUE DES SESSIONS ACTIVES (GALERIE 3 COLONNES PROGRESSIVE) */}
+          {/* ONGLET LIAISON & PLANNING SESSIONS */}
           {activeTab === 'sessions' && (
-            <div className="space-y-6">
-              
-              {/* ÉTAPE A : AUCUNE SESSION SÉLECTIONNÉE -> GALERIE RECTANGULAIRE 3 COLONNES */}
-              {!activeSessionId ? (
-                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                  <div className="flex justify-between items-center border-b pb-3">
-                    <div>
-                      <h2 className="text-md font-black text-slate-900 uppercase tracking-wide">📆 Calendrier & Galerie de vos Sessions</h2>
-                      <p className="text-xs text-slate-500">Sélectionnez ou créez un espace promotionnel pour calibrer son planning.</p>
-                    </div>
-                    <button onClick={() => setActiveModal('session')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all">
-                      ➕ Nouvelle Session
-                    </button>
-                  </div>
+            !currentSession ? (
+              // Sélection de la session
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">Vos sessions actives</h3>
+                  <button onClick={() => setActiveModal('session')} className="bg-blue-700 hover:bg-blue-800 text-white font-black text-xs uppercase tracking-wider px-4 py-2 rounded-lg transition-all">Initialiser une session</button>
+                </div>
 
-                  {sessions.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {sessions.map(s => {
-                        const formattedDate = s.created_at ? new Date(s.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date inconnue';
-                        const linkedTree = trees[s.tree_id];
-                        const groupMin = linkedTree ? (linkedTree.max_team_constraint || 1) : 1;
-                        
-                        return (
-                          <div 
-                            key={s.id}
-                            onClick={() => setActiveSessionId(s.id)}
-                            className="p-5 bg-slate-50 hover:bg-blue-50/40 border border-slate-200 hover:border-blue-400 rounded-xl cursor-pointer transition-all flex flex-col justify-between text-xs space-y-4 shadow-3xs"
-                          >
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <span className="font-mono font-black text-blue-900 text-xs bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                                  {s.session_code || 'SANS CODE'}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-semibold">📅 {formattedDate}</span>
-                              </div>
-                              
-                              <div className="space-y-1">
-                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Arbre connecté :</span>
-                                <span className={`font-semibold truncate block ${linkedTree ? 'text-emerald-700 font-bold' : 'text-slate-400 italic'}`}>
-                                  {linkedTree ? `🌳 ${linkedTree.name}` : '❌ Aucun parcours assigné'}
-                                </span>
-                              </div>
-                            </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {sessions.map(s => {
+                    const linkedTree = trees[s.tree_id];
+                    return (
+                      <div 
+                        key={s.id}
+                        onClick={() => setActiveSessionId(String(s.id))}
+                        className="bg-white border border-slate-200 rounded-xl p-5 hover:border-blue-500 hover:shadow-md cursor-pointer transition-all space-y-4"
+                      >
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                          <span className="font-mono font-black text-sm text-blue-900 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 tracking-wider uppercase">{s.session_code}</span>
+                          <span className="text-[10px] text-slate-400 font-bold">Lancer configuration ➔</span>
+                        </div>
+                        <div className="text-xs text-slate-600 space-y-1">
+                          <p>🌲 Arbre relié : <span className="font-extrabold text-slate-800">{linkedTree ? linkedTree.name : 'Aucun arbre lié'}</span></p>
+                          <p>🔗 Éléments du planning : <span className="font-extrabold text-blue-700">{s.planning?.length || 0} étapes</span></p>
+                          <p>⏰ Horaires : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {(s.end_time || 'Calculé')}</span></p>
+                          <p>👥 DRH : <span className="font-extrabold text-slate-800">{(s.drh_ids || []).length} invités</span></p>
+                        </div>
+                      </div>
+                    );
+                  })}
 
-                            <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] font-bold text-slate-500">
-                              <span>👥 {groupMin} pers. min / groupe</span>
-                              <span className="text-blue-600 font-semibold group-hover:underline">Ouvrir →</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed text-slate-400 text-xs font-medium">
-                      Aucune session enregistrée. Créez-en une à l'aide du bouton ci-dessus ou de la barre latérale.
+                  {sessions.length === 0 && (
+                    <div className="col-span-2 bg-slate-50 rounded-xl border border-dashed border-slate-300 p-8 text-center space-y-3">
+                      <span className="text-2xl block">💡</span>
+                      <p className="text-xs font-bold text-slate-500">Aucune session n'est encore configurée pour cet espace.</p>
+                      <button onClick={() => setActiveModal('session')} className="bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-lg">Générer ma première session</button>
                     </div>
                   )}
                 </div>
-              ) : (
-                
-                /* ÉTAPE B : SESSION SELECTIONNÉE -> AFFICHAGE INTERFACE DE CONFIG & TIMELINE DU PLANNING */
-                currentSession && (
-                  <div className="space-y-6">
-                    
-                    {/* EN-TÊTE CONFIGURATION */}
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex justify-between items-center border-b pb-3">
-                        <button 
-                          onClick={() => setActiveSessionId('')} 
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-1.5 rounded-lg transition-all"
-                        >
-                          ⬅️ Retour à la Galerie des Sessions
-                        </button>
-                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                          Session Active : <span className="text-blue-600 font-mono text-sm font-black">{currentSession.session_code}</span>
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
-                        <div>
-                          <label className="block text-slate-700 mb-1">Relier à l'Arbre pédagogique :</label>
-                          <select 
-                            value={currentSession?.tree_id || ""} 
-                            onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value })} 
-                            className="w-full p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 focus:outline-none cursor-pointer font-bold"
-                          >
-                            <option value="">-- Aucun arbre lié --</option>
-                            {Object.values(trees || {}).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
-                        </div>
-
-                        <div className="bg-purple-50 text-purple-800 p-2.5 rounded-xl border border-purple-100 flex flex-col justify-center">
-                          <span className="text-[10px] uppercase font-black text-purple-500 block">Code Unique Apprenant</span>
-                          <div className="text-sm font-mono font-black tracking-widest bg-white border rounded-lg p-1.5 text-center text-purple-900 mt-1 select-all shadow-2xs">
-                            {currentSession.session_code || "CODE VIDE ⚠️"}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* OBSERVATEURS DRH */}
-                      <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-2 relative text-xs">
-                        <span className="text-[10px] uppercase font-black text-slate-500 block">Observateurs DRH rattachés à cette promotion</span>
-                        <input 
-                          type="text" 
-                          placeholder="Rechercher un compte RH par email..." 
-                          value={drhSearchQuery} 
-                          onChange={(e) => setDrhSearchQuery(e.target.value)} 
-                          className="w-full bg-white border text-xs rounded-lg p-2 focus:outline-none focus:border-purple-500 font-medium" 
-                        />
-                        
-                        {drhSuggestions.length > 0 && (
-                          <div className="absolute left-4 right-4 mt-1 bg-white border rounded-xl shadow-xl max-h-32 overflow-y-auto z-50 divide-y">
-                            {drhSuggestions.map(u => (
-                              <button 
-                                key={u.id} type="button" onClick={() => handleAddDRH(u)} 
-                                className="w-full text-left px-3 py-2 hover:bg-purple-50 font-medium flex justify-between items-center text-xs"
-                              >
-                                <span>{u.email}</span>
-                                <span className="text-[10px] bg-slate-100 px-1 rounded text-slate-400">{u.role || 'DRH'}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {Array.isArray(currentSession.drh_ids) && currentSession.drh_ids.length > 0 ? (
-                            currentSession.drh_ids.map(id => {
-                              let cachedEmails = {};
-                              try { cachedEmails = JSON.parse(localStorage.getItem('drh_emails') || '{}'); } catch(e) {}
-                              const displayName = cachedEmails[id] || `Manager (${id.substring(0, 5)})`;
-                              return (
-                                <span key={id} className="text-[11px] bg-slate-950 text-white font-medium px-2.5 py-1 rounded-lg flex items-center gap-2">
-                                  <span>{displayName}</span>
-                                  <button type="button" onClick={() => handleRemoveDRH(id)} className="text-red-400 hover:text-red-500 font-bold">✕</button>
-                                </span>
-                              );
-                            })
-                          ) : (
-                            <span className="text-[11px] text-slate-400 italic">Aucun manager assigné.</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* TIMELINE DE PLANNING (FRISE INTERACTIVE) */}
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                      <div>
-                        <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">📅 Planning Pédagogique de la Session</h3>
-                        <p className="text-xs text-slate-500">Déposez et organisez vos jalons chronologiques de formation ci-dessous.</p>
-                      </div>
-
-                      {/* ZONE DROP INITIALE (timeline vide) */}
-                      {(currentSession.planning || []).length === 0 && (
-                        <div 
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            setActiveDropIndex(0);
-                          }}
-                          onDragLeave={() => setActiveDropIndex(null)}
-                          onDrop={() => handleTimelineDrop(0)}
-                          className={`border-2 border-dashed p-10 rounded-xl text-center text-xs transition-all ${
-                            activeDropIndex === 0 
-                              ? 'border-emerald-500 bg-emerald-50 text-emerald-800' 
-                              : 'border-slate-300 text-slate-400'
-                          }`}
-                        >
-                          📂 Glissez vos Paliers ou Blocs Personnalisés ici pour initier la frise temporelle
-                        </div>
-                      )}
-
-                      {/* ZONE TIMELINE ACTIVE */}
-                      {(currentSession.planning || []).length > 0 && (
-                        <div className="relative pl-8 border-l-2 border-slate-200 space-y-4 py-2">
-                          
-                          {/* Dépose au tout début */}
-                          <div 
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setActiveDropIndex(0);
-                            }}
-                            onDragLeave={() => setActiveDropIndex(null)}
-                            onDrop={() => handleTimelineDrop(0)}
-                            className={`h-4 -mt-2 transition-all rounded-lg flex items-center justify-center text-[10px] font-black ${
-                              activeDropIndex === 0 
-                                ? 'bg-emerald-500 text-white animate-pulse' 
-                                : 'opacity-0 hover:opacity-100 bg-slate-100 text-slate-500'
-                            }`}
-                          >
-                            ➕ Déposer ici (Début de planning)
-                          </div>
-
-                          {(currentSession.planning || []).map((block, idx) => {
-                            return (
-                              <React.Fragment key={block.id}>
-                                <div 
-                                  draggable
-                                  onDragStart={() => setDraggedPlanningItem({ source: 'timeline', index: idx })}
-                                  className="relative bg-white border border-slate-200 p-4 rounded-xl shadow-2xs space-y-2 group transition-all"
-                                  style={{ borderLeft: `5px solid ${block.color || '#cbd5e1'}` }}
-                                >
-                                  {/* Badge de type */}
-                                  <div className="flex justify-between items-center text-xs">
-                                    <span className="font-extrabold uppercase tracking-wide px-2 py-0.5 rounded text-[10px]" style={{ backgroundColor: `${block.color}20`, color: block.color }}>
-                                      {block.type === 'palier' ? `🌳 Palier ${block.floorId}` : '📝 Hors Arbre'}
-                                    </span>
-                                    <div className="flex items-center gap-3">
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[10px] text-slate-400 font-bold">⏱️ Durée :</span>
-                                        <input 
-                                          type="number" 
-                                          min="1" 
-                                          value={block.duration || 15} 
-                                          onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)}
-                                          className="w-14 bg-slate-50 border border-slate-200 text-center rounded text-[11px] font-bold p-0.5"
-                                        />
-                                        <span className="text-[10px] text-slate-400">mins</span>
-                                      </div>
-                                      <button 
-                                        onClick={() => removePlanningBlock(block.id)}
-                                        className="text-slate-400 hover:text-red-500 text-xs font-black transition-all"
-                                      >
-                                        ✕
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  <h4 className="font-bold text-xs text-slate-900">{block.name}</h4>
-                                  <p className="text-[11px] text-slate-500 italic">"{block.desc}"</p>
-                                  
-                                  {/* Point de la Timeline */}
-                                  <div 
-                                    className="absolute -left-[39px] top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center transition-all"
-                                    style={{ borderColor: block.color }}
-                                  >
-                                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: block.color }}></div>
-                                  </div>
-                                </div>
-
-                                {/* Zone de drop entre deux éléments */}
-                                <div 
-                                  onDragOver={(e) => {
-                                    e.preventDefault();
-                                    setActiveDropIndex(idx + 1);
-                                  }}
-                                  onDragLeave={() => setActiveDropIndex(null)}
-                                  onDrop={() => handleTimelineDrop(idx + 1)}
-                                  className={`h-4 transition-all rounded-lg flex items-center justify-center text-[10px] font-black ${
-                                    activeDropIndex === idx + 1 
-                                      ? 'bg-emerald-500 text-white animate-pulse' 
-                                      : 'opacity-0 hover:opacity-100 bg-slate-100 text-slate-500'
-                                  }`}
-                                >
-                                  ➕ Insérer une étape ici
-                                </div>
-                              </React.Fragment>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                )
-              )}
-
-            </div>
-          )}
-
-        </div>
-
-        {/* POOL DROITE (DYNAMIQUE SELON L'ONGLET SÉLECTIONNÉ) */}
-        <div className="space-y-6">
-          
-          {/* CAS A : CATALOGUE DES QUÊTES CLASSIQUE SUR L'ONGLET "ARBRE" */}
-          {activeTab === 'tree' && (
-            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm h-fit space-y-4">
-              <h3 className="font-black text-slate-900 border-b pb-2 text-sm tracking-wide uppercase">📦 Catalogue de Missions ({filteredQuests.length})</h3>
-              
-              <div className="space-y-2 bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs">
-                <input 
-                  type="text" placeholder="🔍 Trouver une mission..." value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg p-2 font-medium text-slate-700 shadow-xs"
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-slate-500 font-bold uppercase mb-0.5">Axe RSE</label>
-                    <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="w-full bg-white border rounded-md p-1.5 font-medium">
-                      <option value="all">Tout voir</option>
-                      <option value="social">🌱 Social</option>
-                      <option value="env">🌍 Environnement</option>
-                      <option value="tech">⚙️ Technique</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-500 font-bold uppercase mb-0.5">Difficulté</label>
-                    <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)} className="w-full bg-white border rounded-md p-1.5 font-medium">
-                      <option value="all">Toutes</option>
-                      <option value="1">1★ Standard</option>
-                      <option value="2">2★ Miniboss</option>
-                      <option value="3">3★ Boss</option>
-                    </select>
-                  </div>
+              </div>
+            ) : (
+              // Configuration de la session active
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <button 
+                    onClick={() => setActiveSessionId('')}
+                    className="text-xs font-extrabold text-slate-500 hover:text-slate-900 flex items-center gap-1.5"
+                  >
+                    ← Retourner à la liste des sessions
+                  </button>
+                  <span className="font-mono font-black text-xs text-blue-900 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 uppercase tracking-wider">
+                    Session Active : {currentSession.session_code}
+                  </span>
                 </div>
-              </div>
 
-              <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1 animate-fadeIn">
-                {filteredQuests.map(q => {
-                  const isQuestCollab = q.is_collaborative || q.is_collaborative === 'true' || q.is_collaborative === true;
-                  return (
-                    <div key={q.id} className={`p-3 border rounded-lg text-xs space-y-1 transition-all ${getQuestBadgeStyle(q)}`}>
-                      <div className="flex justify-between items-center gap-2">
-                        <span className="font-bold truncate">{q.name}</span>
-                        <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded border bg-white/50 shrink-0">
-                          {Number(q.difficulty) === 3 ? '3★ Boss' : Number(q.difficulty) === 2 ? '2★ Miniboss' : '1★ Standard'}
-                        </span>
-                      </div>
-                      {isQuestCollab && (
-                        <div className="text-[11px] text-purple-900 font-black bg-purple-200/60 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-purple-300">
-                          🤝 Collaborative ({q.required_partners || 2}p)
-                        </div>
-                      )}
-                      <div className="opacity-80 italic text-[11px] pt-1">"{q.desc}"</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* CAS B : BOÎTE À OUTILS PLANNING SUR L'ONGLET "SESSIONS" (SI UNE SESSION EST SÉLECTIONNÉE) */}
-          {activeTab === 'sessions' && activeSessionId && currentSession && (
-            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm h-fit space-y-6">
-              <div>
-                <h3 className="font-black text-slate-900 border-b pb-2 text-xs tracking-wide uppercase">🛠️ Palette d'Éléments de Planning</h3>
-                <p className="text-[11px] text-slate-400 mt-1">Faites glisser ces jalons vers votre frise à gauche.</p>
-              </div>
-
-              {/* SECTION PALIERS DE L'ARBRE ASSOCIE */}
-              <div className="space-y-3">
-                <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">🌳 Paliers de l'arbre connecté</span>
-                
-                {currentSession.tree_id && trees[currentSession.tree_id] ? (
-                  <div className="space-y-2">
-                    {(trees[currentSession.tree_id].floors || []).map(floor => {
-                      // Vérifier si ce palier a déjà été consommé dans le planning
-                      const isAlreadyPlaced = (currentSession.planning || []).some(b => b.type === 'palier' && b.floorId === floor.floorId);
-                      
-                      return (
-                        <div 
-                          key={floor.floorId}
-                          draggable={!isAlreadyPlaced}
-                          onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                          className={`p-3 border rounded-xl text-xs flex justify-between items-center transition-all ${
-                            isAlreadyPlaced 
-                              ? 'bg-slate-100 border-slate-200 opacity-40 cursor-not-allowed' 
-                              : 'bg-purple-50 hover:bg-purple-100/70 border-purple-200 text-purple-950 cursor-grab active:cursor-grabbing'
-                          }`}
-                        >
-                          <div className="space-y-0.5">
-                            <span className="font-black block">🎯 Palier {floor.floorId}</span>
-                            <span className="text-[10px] text-purple-700/80">Mode: {floor.mode === 'static' ? '📌 Statique' : '🎲 Aléatoire'}</span>
-                          </div>
-                          {isAlreadyPlaced ? (
-                            <span className="text-[9px] font-black uppercase text-slate-400">Placé</span>
-                          ) : (
-                            <span className="text-[16px]">⠿</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-400 italic">Liez un arbre pédagogique pour extraire ses paliers.</p>
-                )}
-              </div>
-
-              {/* SECTION BLOCS ILLIMITES & CONFIGURABLES */}
-              <div className="space-y-3 border-t pt-4">
-                <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">📝 Générateur de Blocs Personnalisés (Illimité)</span>
-                
-                {/* Formulaire de configuration locale du Bloc Réutilisable */}
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs space-y-2.5">
-                  <div>
-                    <label className="block text-[10px] text-slate-500 font-extrabold uppercase mb-0.5">Intitulé du bloc</label>
-                    <input 
-                      type="text" 
-                      value={customBlockConfig.name} 
-                      onChange={(e) => setCustomBlockConfig(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full bg-white border border-slate-300 rounded-md p-1.5 font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-500 font-extrabold uppercase mb-0.5">Description / Objectif</label>
-                    <textarea 
-                      value={customBlockConfig.desc} 
-                      onChange={(e) => setCustomBlockConfig(prev => ({ ...prev, desc: e.target.value }))}
-                      className="w-full bg-white border border-slate-300 rounded-md p-1.5 text-[11px] italic"
-                      rows="2"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
+                {/* CONFIGURATION TEMPORELLE */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4 my-4">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    ⏰ Horaires de la session
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Heure de début */}
                     <div>
-                      <label className="block text-[10px] text-slate-500 font-extrabold uppercase mb-0.5">Couleur</label>
+                      <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Heure de début</label>
+                      <input 
+                        type="time" 
+                        value={currentSession.start_time || '09:00'} 
+                        onChange={(e) => updateCurrentSessionInState({ start_time: e.target.value })}
+                        className="w-full border rounded-lg p-2 bg-white font-mono text-sm"
+                      />
+                    </div>
+
+                    {/* Mode Heure de fin */}
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Calcul de fin</label>
                       <select 
-                        value={customBlockConfig.color} 
-                        onChange={(e) => setCustomBlockConfig(prev => ({ ...prev, color: e.target.value }))}
-                        className="w-full bg-white border rounded-md p-1 font-bold"
+                        value={currentSession.end_time_mode || 'auto'} 
+                        onChange={(e) => updateCurrentSessionInState({ end_time_mode: e.target.value })}
+                        className="w-full border rounded-lg p-2 bg-white text-xs font-bold"
                       >
-                        <option value="#3b82f6">🔵 Bleu</option>
-                        <option value="#10b981">🟢 Vert</option>
-                        <option value="#f59e0b">🟡 Ambre</option>
-                        <option value="#ef4444">🔴 Rouge</option>
-                        <option value="#0d9488">🌐 Sarcelle</option>
+                        <option value="auto">🔄 Auto (calculé)</option>
+                        <option value="lock">🔒 Verrouillé (fixe)</option>
                       </select>
                     </div>
+
+                    {/* Heure de fin */}
                     <div>
-                      <label className="block text-[10px] text-slate-500 font-extrabold uppercase mb-0.5">Défaut (mins)</label>
+                      <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Heure de fin</label>
                       <input 
-                        type="number" 
-                        min="1"
-                        value={customBlockConfig.duration} 
-                        onChange={(e) => setCustomBlockConfig(prev => ({ ...prev, duration: parseInt(e.target.value, 10) || 15 }))}
-                        className="w-full bg-white border rounded-md p-1 font-bold text-center"
+                        type="time" 
+                        disabled={currentSession.end_time_mode === 'auto' || !(currentSession.end_time_mode)} 
+                        value={
+                          currentSession.end_time_mode === 'auto' || !(currentSession.end_time_mode)
+                            ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
+                            : (currentSession.end_time || '')
+                        } 
+                        onChange={(e) => {
+                          if (currentSession.end_time_mode === 'lock') {
+                            updateCurrentSessionInState({ end_time: e.target.value });
+                          }
+                        }}
+                        className={`w-full border rounded-lg p-2 font-mono text-sm ${
+                          currentSession.end_time_mode === 'auto' || !(currentSession.end_time_mode)
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed' 
+                            : 'bg-white text-slate-900'
+                        }`}
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Bloc à faire glisser (Draggable) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs bg-slate-50 p-5 rounded-xl border border-slate-200">
+                  <div className="space-y-2">
+                    <label className="block font-black text-slate-900 uppercase tracking-wider text-[10px]">🌲 Arbre de compétences associé :</label>
+                    <select 
+                      value={currentSession.tree_id || ''}
+                      onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value || null })}
+                      className="w-full border rounded-lg p-2 bg-white font-bold"
+                    >
+                      <option value="">-- Aucun arbre lié --</option>
+                      {Object.values(trees || {}).map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-400 font-bold block">Associer un arbre permet d'utiliser ses paliers pour le planning ci-dessous.</span>
+                  </div>
+
+                  {/* AJOUT DRH DYNAMIQUE */}
+                  <div className="space-y-3 border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6">
+                    <label className="block font-black text-slate-900 uppercase tracking-wider text-[10px]">Invite DRH (Observateurs) :</label>
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        placeholder="Saisir l'e-mail du DRH..."
+                        value={drhSearchQuery}
+                        onChange={(e) => setDrhSearchQuery(e.target.value)}
+                        className="w-full border rounded-lg p-2 bg-white text-xs font-bold"
+                      />
+                      {drhSuggestions.length > 0 && (
+                        <div className="absolute z-50 left-0 right-0 top-full bg-white border rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">
+                          {drhSuggestions.map(s => (
+                            <button
+                              key={s.id}
+                              onClick={() => handleAddDRH(s)}
+                              className="w-full text-left p-2 hover:bg-slate-100 text-xs font-bold text-slate-700 block border-b border-slate-50"
+                            >
+                              {s.email}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {(currentSession.drh_ids || []).map(id => {
+                        const emailCache = JSON.parse(localStorage.getItem('drh_emails') || '{}');
+                        const email = emailCache[id] || id;
+                        return (
+                          <div key={id} className="bg-slate-200 text-slate-700 font-bold py-1 px-2.5 rounded-lg flex items-center gap-1.5 text-[11px] border border-slate-300">
+                            <span className="truncate max-w-[140px]">{email}</span>
+                            <button onClick={() => handleRemoveDRH(id)} className="text-red-500 hover:text-red-700 font-black">×</button>
+                          </div>
+                        );
+                      })}
+                      {(currentSession.drh_ids || []).length === 0 && (
+                        <span className="text-slate-400 italic text-[10px]">Aucun observateur DRH n'est rattaché.</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* TIMELINE DE CONSTRUCTION DU PLANNING */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Agenda de la Session</h4>
+                  <p className="text-[10px] text-slate-400 font-bold">Glissez-déposez les paliers de l'arbre (à gauche) ou des blocs personnalisés (à droite) pour assembler la chronologie.</p>
+                  
+                  <div className="space-y-1">
+                    {/* Zone de dépôt supérieure si vide */}
+                    {(currentSession.planning || []).length === 0 && (
+                      <div 
+                        onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(0); }}
+                        onDragLeave={() => setActiveDropIndex(null)}
+                        onDrop={() => handleTimelineDrop(0)}
+                        className={`p-10 border-2 border-dashed rounded-xl text-center text-xs font-bold transition-all ${
+                          activeDropIndex === 0 ? 'bg-blue-50 border-blue-400 text-blue-700 scale-[0.99]' : 'bg-slate-50 border-slate-300 text-slate-400'
+                        }`}
+                      >
+                        Déposez le premier bloc ici pour initialiser l'agenda
+                      </div>
+                    )}
+
+                    {(currentSession.planning || []).map((block, index) => {
+                      return (
+                        <React.Fragment key={block.id}>
+                          {/* Point de dépôt avant le bloc */}
+                          <div 
+                            onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
+                            onDragLeave={() => setActiveDropIndex(null)}
+                            onDrop={() => handleTimelineDrop(index)}
+                            className={`h-2 rounded transition-all ${
+                              activeDropIndex === index ? 'bg-blue-500 my-1' : 'bg-transparent'
+                            }`}
+                          />
+                          
+                          {/* Rendu du bloc */}
+                          <div 
+                            draggable
+                            onDragStart={() => setDraggedPlanningItem({ source: 'timeline', index })}
+                            className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center justify-between gap-4 transition-all"
+                            style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm">⠿</span>
+                              <div className="min-w-0">
+                                <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
+                                  {block.name}
+                                  {block.type === 'palier' && (
+                                    <span className="text-[10px] bg-purple-100 text-purple-700 font-black px-1.5 py-0.5 rounded-full">
+                                      Palier {block.floorId}
+                                    </span>
+                                  )}
+                                </h5>
+                                <p className="text-[10px] text-slate-400 font-bold truncate">{block.desc}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-4 flex-shrink-0">
+                              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border">
+                                <label className="text-[9px] font-black text-slate-500 uppercase">Durée :</label>
+                                <input 
+                                  type="number" 
+                                  min="1"
+                                  value={block.duration || 15}
+                                  onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)}
+                                  className="w-12 text-center bg-white border rounded p-0.5 font-black text-slate-900 text-xs"
+                                />
+                                <span className="text-[10px] font-black text-slate-500">min</span>
+                              </div>
+                              <button 
+                                onClick={() => removePlanningBlock(block.id)}
+                                className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 hover:bg-red-100 p-1 rounded-lg"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {/* Point de dépôt après le dernier bloc */}
+                    {(currentSession.planning || []).length > 0 && (
+                      <div 
+                        onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(currentSession.planning.length); }}
+                        onDragLeave={() => setActiveDropIndex(null)}
+                        onDrop={() => handleTimelineDrop(currentSession.planning.length)}
+                        className={`h-4 rounded transition-all ${
+                          activeDropIndex === currentSession.planning.length ? 'bg-blue-500 my-1' : 'bg-transparent'
+                        }`}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+        </div>
+
+        {/* COLONNE DROITE : LE POOL GLOBAL DE MISSIONS & PALETTE DE PLANNING */}
+        <div className="space-y-6">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">💾 Actions d'Enregistrement</h3>
+            <div className="space-y-2">
+              <button 
+                onClick={handleSaveChanges}
+                className="w-full bg-slate-950 hover:bg-slate-800 text-white font-extrabold py-3 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+              >
+                💾 Enregistrer {activeTab === 'tree' ? "l'Arbre" : 'la Session'}
+              </button>
+              {activeTab === 'tree' && currentTree && isOwnerOfCurrentTree && currentTree.visibility !== 'public' && (
+                <button 
+                  onClick={handleShareTree}
+                  className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 font-extrabold py-2 px-4 rounded-xl text-xs uppercase tracking-wider transition-all border border-purple-200 cursor-pointer"
+                >
+                  🌍 Publier cet arbre
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* SÉPARATION SUIVANT L'ONGLET ACTIF (POOL DE MISSIONS vs PALETTE DE PLANNING) */}
+          {activeTab === 'tree' ? (
+            // CONTENU ONGLET ARBRE : POOL DE MISSIONS
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">🎨 Pool de Missions</h3>
+                <button 
+                  onClick={() => setActiveModal('quest')}
+                  className="text-purple-700 font-extrabold text-[11px] uppercase bg-purple-50 hover:bg-purple-100 px-2.5 py-1.5 rounded-lg border border-purple-200 transition-all"
+                >
+                  ➕ Créer
+                </button>
+              </div>
+
+              {/* Barre de Recherche dans le Pool */}
+              <div className="space-y-3">
+                <input 
+                  type="text" 
+                  placeholder="Rechercher une mission..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 bg-slate-50 text-xs font-bold"
+                />
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <select 
+                    value={filterTheme}
+                    onChange={(e) => setFilterTheme(e.target.value)}
+                    className="border rounded-lg p-2 text-[10px] bg-white font-extrabold"
+                  >
+                    <option value="all">🎨 Tous thèmes</option>
+                    <option value="social">🟢 Social</option>
+                    <option value="env">🔵 Env</option>
+                    <option value="tech">🟣 Tech</option>
+                  </select>
+                  <select 
+                    value={filterDifficulty}
+                    onChange={(e) => setFilterDifficulty(e.target.value)}
+                    className="border rounded-lg p-2 text-[10px] bg-white font-extrabold"
+                  >
+                    <option value="all">⭐ Toutes diff.</option>
+                    <option value="1">📄 Std (1★)</option>
+                    <option value="2">⚡ Miniboss (2★)</option>
+                    <option value="3">🔥 Boss (3★)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Liste des Missions */}
+              <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1">
+                {filteredQuests.map(q => {
+                  const badgeClass = getQuestBadgeStyle(q);
+                  return (
+                    <div 
+                      key={q.id}
+                      className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 hover:bg-slate-100 transition-all"
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="font-extrabold text-xs text-slate-800 line-clamp-2 leading-tight">{q.name}</span>
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${badgeClass} flex-shrink-0`}>
+                          {Number(q.difficulty) === 3 ? '🔥 3★' : Number(q.difficulty) === 2 ? '⚡ 2★' : '📄 1★'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-bold line-clamp-2 leading-normal">{q.desc}</p>
+                      
+                      <div className="flex justify-between items-center border-t border-slate-100 pt-2 text-[10px] font-black">
+                        {q.is_collaborative || q.is_collaborative === 'true' ? (
+                          <span className="text-emerald-700">👥 Duo ({q.required_partners || 2}p)</span>
+                        ) : (
+                          <span className="text-slate-500">👤 Solo</span>
+                        )}
+                        <span className="text-slate-400 uppercase tracking-widest text-[9px]">{q.theme}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {filteredQuests.length === 0 && (
+                  <span className="text-slate-400 italic text-center block py-6 text-xs font-bold">Aucune mission correspondante.</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            // CONTENU ONGLET SESSIONS : PALETTE DE PLANNING
+            <div className="space-y-6">
+              {/* Palette d'Éléments d'Arbre (Si arbre lié) */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">🎯 Paliers de l'arbre relié</h3>
+                <p className="text-[10px] text-slate-400 font-bold">Glissez ces paliers de progression vers l'agenda de votre session.</p>
+                
+                {currentSession && currentSession.tree_id && trees[currentSession.tree_id] ? (
+                  <div className="space-y-2">
+                    {(trees[currentSession.tree_id].floors || []).map(floor => (
+                      <div
+                        key={floor.floorId}
+                        draggable
+                        onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                        className="bg-purple-50 border border-purple-200 hover:bg-purple-100/80 p-3 rounded-xl cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-2xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-purple-400 font-black">⠿</span>
+                          <span className="font-extrabold text-xs text-purple-900">Palier {floor.floorId}</span>
+                        </div>
+                        <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45 min</span>
+                      </div>
+                    ))}
+                    {(trees[currentSession.tree_id].floors || []).length === 0 && (
+                      <p className="text-[11px] text-slate-400 italic">L'arbre lié ne possède aucun palier de compétences.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 rounded-xl p-3 text-center border border-dashed border-slate-300">
+                    <p className="text-[11px] text-slate-400 italic">Veuillez lier un arbre à cette session pour faire apparaître ses paliers.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Création et palette de blocs sur-mesure */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">⚡ Blocs sur-mesure</h3>
+                <p className="text-[10px] text-slate-400 font-bold">Configurez un élément d'animation (Ex: Débrief, Pause) et glissez-le.</p>
+                
+                {/* Formulaire de pré-configuration de bloc */}
+                <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+                  <div className="space-y-1">
+                    <label className="block text-slate-500 font-bold text-[9px] uppercase tracking-wider">Nom du bloc :</label>
+                    <input 
+                      type="text"
+                      value={customBlockConfig.name}
+                      onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, name: e.target.value })}
+                      className="w-full border rounded-lg p-2 bg-white font-extrabold text-slate-900"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-slate-500 font-bold text-[9px] uppercase tracking-wider">Durée par défaut :</label>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="number"
+                        min="1"
+                        value={customBlockConfig.duration}
+                        onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, duration: Math.max(1, parseInt(e.target.value, 10) || 15) })}
+                        className="w-20 border rounded-lg p-2 bg-white font-black text-slate-900"
+                      />
+                      <span className="font-bold text-slate-500">minutes</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-slate-500 font-bold text-[9px] uppercase tracking-wider">Couleur thématique :</label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="color"
+                        value={customBlockConfig.color}
+                        onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, color: e.target.value })}
+                        className="w-8 h-8 rounded-md border-0 cursor-pointer"
+                      />
+                      <span className="font-mono text-[10px] font-black text-slate-600">{customBlockConfig.color}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bloc généré glissable */}
                 <div 
                   draggable
                   onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
-                  className="p-3 border rounded-xl text-xs flex justify-between items-center cursor-grab active:cursor-grabbing transition-all text-white font-bold"
-                  style={{ backgroundColor: customBlockConfig.color }}
+                  className="bg-white hover:bg-slate-50 p-3 rounded-xl cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs"
+                  style={{ borderLeftWidth: '6px', borderLeftColor: customBlockConfig.color }}
                 >
-                  <div className="space-y-0.5">
-                    <span>✨ {customBlockConfig.name || "Nouveau bloc personnalisé"}</span>
-                    <span className="text-[10px] block opacity-80 font-normal">({customBlockConfig.duration} mins)</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-slate-400 font-black">⠿</span>
+                    <span className="font-extrabold text-xs text-slate-800 truncate">{customBlockConfig.name || 'Bloc personnalisé'}</span>
                   </div>
-                  <span className="text-[16px]">⠿</span>
+                  <span className="text-[10px] bg-slate-100 text-slate-600 border font-extrabold px-2 py-0.5 rounded-md flex-shrink-0">{customBlockConfig.duration} min</span>
                 </div>
-                <p className="text-[10px] text-center text-slate-400 italic">Ce bloc est réutilisable à l'infini dans le planning de session.</p>
               </div>
-
             </div>
           )}
-
         </div>
-
       </div>
 
-      {/* BARRE OUTILS FLOTTANTE GAUCHE (Totalement préservée et alignée) */}
-      <div className="fixed top-28 left-4 bg-slate-900/95 backdrop-blur-md border border-slate-700 w-16 py-6 rounded-2xl flex flex-col items-center gap-5 shadow-2xl z-40">
-        <button onClick={() => setActiveModal('tree')} className="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-900/50 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold" title="Créer un nouvel Arbre">🌳</button>
-        <button onClick={() => setActiveModal('quest')} className="bg-slate-800 hover:bg-slate-700 text-purple-400 border border-purple-900/50 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold" title="Créer une mission">✨</button>
-        <button onClick={() => setActiveModal('session')} className="bg-slate-800 hover:bg-slate-700 text-blue-400 border border-blue-900/50 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold" title="Créer une session">📆</button>
-        
-        {currentTree && isOwnerOfCurrentTree && currentTree.visibility !== 'public' && (
-          <button onClick={handleShareTree} className="bg-amber-600 hover:bg-amber-500 text-white w-10 h-10 rounded-xl flex items-center justify-center text-md font-bold transition-all" title="Partager l'arbre">🌍</button>
-        )}
-
-        <div className="w-8 h-px bg-slate-700 my-1"></div>
-        <button onClick={handleSaveChanges} className="bg-emerald-600 hover:bg-emerald-500 text-white w-12 h-12 rounded-xl flex flex-col items-center justify-center text-sm font-black shadow-lg uppercase tracking-tight transition-all" title="Enregistrer sur Supabase">💾</button>
-      </div>
-
-      {/* MODALES */}
+      {/* --- MODALES & OVERLAYS --- */}
       {activeModal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-100 relative space-y-4 max-h-[90vh] overflow-y-auto">
-            <button type="button" onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-bold text-sm">✕</button>
-
-            {activeModal === 'tree' && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border border-slate-100">
+            <button 
+              onClick={() => setActiveModal(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
+            >
+              ×
+            </button>
+            
+            {activeModal === 'tree_browser' && (
               <>
-                <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">🌳 Nouvel Arbre Pédagogique</h3>
-                <form onSubmit={handleCreateTree} className="space-y-4 text-xs">
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1">Nom de l'arbre :</label>
-                    <input type="text" required placeholder="Ex: Cursus RSE - Niveau Avancé" value={newTreeName} onChange={(e) => setNewTreeName(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-semibold" />
-                  </div>
-                  <button type="submit" className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 rounded-xl transition-all font-sans uppercase">Créer l'arbre</button>
-                </form>
+                <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">🔍 Sélectionner un Arbre</h3>
+                
+                {/* Sélecteurs onglet de navigation d'arbre */}
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-[10px] font-bold my-4">
+                  <button 
+                    onClick={() => setTreeBrowserTab('local')}
+                    className={`flex-1 px-3 py-1.5 rounded-lg transition-all ${treeBrowserTab === 'local' ? 'bg-white text-purple-950 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    📂 Vos Arbres Locaux
+                  </button>
+                  <button 
+                    onClick={() => setTreeBrowserTab('shared')}
+                    className={`flex-1 px-3 py-1.5 rounded-lg transition-all ${treeBrowserTab === 'shared' ? 'bg-white text-purple-950 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    🌍 Bibliothèque Partagée
+                  </button>
+                </div>
+
+                <input 
+                  type="text" 
+                  placeholder="Filtrer les arbres..."
+                  value={treeSearchQuery}
+                  onChange={(e) => setTreeSearchQuery(e.target.value)}
+                  className="w-full border rounded-xl p-2.5 bg-slate-50 text-xs font-bold mb-4"
+                />
+
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {filteredBrowsedTrees.map(t => (
+                    <div 
+                      key={t.id}
+                      className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-extrabold text-slate-800 truncate block">{t.name}</span>
+                        <span className="text-[10px] text-slate-400 font-bold">{(t.floors || []).length} paliers configurés</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {treeBrowserTab === 'shared' && t.owner_id !== currentUserId ? (
+                          <button 
+                            onClick={() => handleDuplicateTreeAsLocal(t)}
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold px-2.5 py-1.5 rounded-lg text-[10px] uppercase tracking-wider"
+                          >
+                            📥 Copier
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => { setActiveTreeId(t.id); setActiveModal(null); }}
+                            className="bg-purple-700 hover:bg-purple-800 text-white font-extrabold px-2.5 py-1.5 rounded-lg text-[10px] uppercase tracking-wider"
+                          >
+                            ⚡ Choisir
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {filteredBrowsedTrees.length === 0 && (
+                    <span className="text-slate-400 italic text-center block py-8 font-bold text-xs">Aucun modèle disponible.</span>
+                  )}
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 mt-4 flex justify-end">
+                  <button onClick={() => setActiveModal('tree')} className="bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-lg">➕ Créer un nouvel arbre</button>
+                </div>
               </>
             )}
 
-            {activeModal === 'tree_browser' && (
+            {activeModal === 'tree' && (
               <>
-                <div className="border-b border-slate-100 pb-2">
-                  <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">🔍 Catalogue global des Arbres</h3>
-                </div>
-                <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold gap-1">
-                  <button type="button" onClick={() => setTreeBrowserTab('local')} className={`flex-1 py-1.5 rounded-lg text-center ${treeBrowserTab === 'local' ? 'bg-white text-purple-950 shadow-sm' : 'text-slate-500'}`}>🏠 Mes Arbres</button>
-                  <button type="button" onClick={() => setTreeBrowserTab('shared')} className={`flex-1 py-1.5 rounded-lg text-center ${treeBrowserTab === 'shared' ? 'bg-white text-purple-950 shadow-sm' : 'text-slate-500'}`}>🌍 Modèles partagés</button>
-                </div>
-                <input type="text" placeholder="Rechercher un arbre..." value={treeSearchQuery} onChange={(e) => setTreeSearchQuery(e.target.value)} className="w-full border text-xs rounded-lg p-2 bg-slate-50 font-medium" />
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {filteredBrowsedTrees.map((t) => {
-                    const isSelected = t.id === activeTreeId;
-                    return (
-                      <div key={t.id} className={`p-3 border rounded-xl flex flex-col justify-between gap-2 ${isSelected ? 'bg-purple-50 border-purple-300' : 'bg-slate-50'}`}>
-                        <div>
-                          <h4 className="font-bold text-xs text-slate-800">{t.name}</h4>
-                        </div>
-                        <div className="flex justify-end gap-1.5 border-t pt-1">
-                          {!isSelected && <button type="button" onClick={() => { setActiveTreeId(t.id); setActiveModal(null); }} className="bg-slate-900 text-white font-bold text-[10px] px-2.5 py-1 rounded-md">🎯 Activer</button>}
-                          {t.owner_id !== currentUserId && <button type="button" onClick={() => handleDuplicateTreeAsLocal(t)} className="bg-purple-100 text-purple-700 font-bold text-[10px] px-2.5 py-1 rounded-md">📥 Copier</button>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">🌳 Initialiser un Nouvel Arbre</h3>
+                <form onSubmit={handleCreateTree} className="space-y-4 text-xs mt-4">
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1">Dénomination de l'Arbre :</label>
+                    <input type="text" required placeholder="Ex: Arbre de compétences RSE - RH" value={newTreeName} onChange={(e) => setNewTreeName(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold" />
+                  </div>
+                  <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all">Créer l'Arbre de Compétences</button>
+                </form>
               </>
             )}
 
             {activeModal === 'quest' && (
               <>
-                <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">✨ Nouvelle Mission</h3>
-                <form onSubmit={handleCreateQuest} className="space-y-3 text-xs">
+                <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">🎨 Générer une Mission de Base</h3>
+                <form onSubmit={handleCreateQuest} className="space-y-3 text-xs mt-4">
                   <div>
                     <label className="block text-slate-600 font-bold mb-1">Nom de la mission :</label>
-                    <input type="text" required value={newQuestName} onChange={(e) => setNewQuestName(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-semibold" />
+                    <input type="text" required placeholder="Ex: Analyser le bilan carbone" value={newQuestName} onChange={(e) => setNewQuestName(e.target.value)} className="w-full border rounded-lg p-2 bg-slate-50 font-bold" />
                   </div>
                   <div>
-                    <label className="block text-slate-600 font-bold mb-1">Consigne :</label>
-                    <textarea required rows="2" value={newQuestDesc} onChange={(e) => setNewQuestDesc(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50" />
-                  </div>
-                  <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="is_collab" checked={isCollaborative} onChange={(e) => setIsCollaborative(e.target.checked)} />
-                      <label htmlFor="is_collab" className="font-bold text-purple-950 uppercase tracking-wider cursor-pointer">🤝 Mission Collaborative</label>
-                    </div>
+                    <label className="block text-slate-600 font-bold mb-1">Description / Objectifs :</label>
+                    <textarea rows="2" required placeholder="Décrivez les livrables attendus..." value={newQuestDesc} onChange={(e) => setNewQuestDesc(e.target.value)} className="w-full border rounded-lg p-2 bg-slate-50 font-bold"></textarea>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-600 font-bold mb-1">Axe RSE :</label>
-                      <select value={newQuestTheme} onChange={(e) => setNewQuestTheme(e.target.value)} className="w-full border rounded-lg p-2.5 bg-white font-bold">
-                        <option value="social">🌱 Social</option>
-                        <option value="env">🌍 Environnement</option>
-                        <option value="tech">⚙️ Technique</option>
+                      <label className="block text-slate-600 font-bold mb-1">Axe thématique :</label>
+                      <select value={newQuestTheme} onChange={(e) => setNewQuestTheme(e.target.value)} className="w-full border rounded-lg p-2 bg-white font-bold">
+                        <option value="social">🟢 Social (Diversité/inclusion)</option>
+                        <option value="env">🔵 Environnement (Climat/déchets)</option>
+                        <option value="tech">🟣 Technologie (Éthique/RGPD)</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-slate-600 font-bold mb-1">Rang :</label>
-                      <select value={newQuestType} onChange={(e) => setNewQuestType(e.target.value)} className="w-full border rounded-lg p-2.5 bg-white font-bold">
+                      <label className="block text-slate-600 font-bold mb-1">Type de quête :</label>
+                      <select value={newQuestType} onChange={(e) => setNewQuestType(e.target.value)} className="w-full border rounded-lg p-2 bg-white font-bold">
                         <option value="normal">📄 Standard (1★)</option>
                         <option value="miniboss">⚡ Miniboss (2★)</option>
                         <option value="boss">🔥 Boss (3★)</option>
@@ -1121,7 +1263,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             {activeModal === 'session' && (
               <>
                 <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">💡 Initialiser un Espace Session</h3>
-                <form onSubmit={handleCreateSession} className="space-y-4 text-xs">
+                <form onSubmit={handleCreateSession} className="space-y-4 text-xs mt-4">
                   <div>
                     <label className="block text-slate-600 font-bold mb-1">Code d'accès (ex: AIRBUS-26) :</label>
                     <input type="text" required placeholder="AIRBUS-LILLE-26" value={newSessionCode} onChange={(e) => setNewSessionCode(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-mono font-bold uppercase tracking-wider text-center text-sm" />
@@ -1130,11 +1272,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 </form>
               </>
             )}
-
           </div>
         </div>
       )}
-
     </div>
   );
 }
