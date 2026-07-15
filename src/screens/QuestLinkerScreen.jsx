@@ -1,489 +1,542 @@
-// src/screens/QuestLinkerScreen.jsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-const getQuestBadgeStyle = (quest) => {
-  if (!quest) return "bg-slate-50 text-slate-700 border-slate-200";
-  if (Number(quest.difficulty) === 3) return "bg-orange-50 text-orange-700 border-orange-200";
-  if (Number(quest.difficulty) === 2) return "bg-red-50 text-red-700 border-red-200";
-  switch (quest.theme) {
-    case 'social': return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    case 'env': return "bg-teal-50 text-teal-700 border-teal-200";
-    case 'tech': return "bg-indigo-50 text-indigo-700 border-indigo-200";
-    default: return "bg-slate-50 text-slate-700 border-slate-200";
-  }
-};
+export default function StudioScreen({ trees = {}, setTrees }) {
+  const [loading, setLoading] = useState(false);
+  const [selectedTreeId, setSelectedTreeId] = useState('');
+  const [newTreeName, setNewTreeName] = useState('');
 
-export default function QuestLinkerScreen({ trees = {}, setTrees, quests = [], setQuests }) {
-  const [currentUserId, setCurrentUserId] = useState(null);
-  const [activeTreeId, setActiveTreeId] = useState("");
-  const [questCatalogTab, setQuestCatalogTab] = useState('local'); // 'local' ou 'shared'
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterTheme, setFilterTheme] = useState('all'); 
-  const [filterDifficulty, setFilterDifficulty] = useState('all');
+  // États d'édition locale pour l'arbre sélectionné
+  const [editingTree, setEditingTree] = useState(null);
   
-  // États de création rapide de quête
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newQuestName, setNewQuestName] = useState('');
-  const [newQuestDesc, setNewQuestDesc] = useState('');
-  const [newQuestTheme, setNewQuestTheme] = useState('social');
-  const [newQuestType, setNewQuestType] = useState('normal'); 
-  const [isCollaborative, setIsCollaborative] = useState(false);
-  const [requiredPartners, setRequiredPartners] = useState(2);
+  // États pour les formulaires d'ajout
+  const [newFloorName, setNewFloorName] = useState('');
+  
+  // États pour l'ajout de quêtes (rattaché à un palier spécifique)
+  const [activeFloorForQuest, setActiveFloorForQuest] = useState(null); // floorId
+  const [questForm, setQuestForm] = useState({
+    title: '',
+    description: '',
+    points: 50
+  });
+
+  // États pour l'ajout de compétences (rattaché à un palier spécifique)
+  const [activeFloorForSkill, setActiveFloorForSkill] = useState(null); // floorId
+  const [newSkillName, setNewSkillName] = useState('');
+
+  // Charger les arbres depuis Supabase
+  const fetchTrees = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('trees').select('*');
+    if (data && !error) {
+      const treesMap = {};
+      data.forEach(t => { 
+        treesMap[t.id] = {
+          ...t,
+          floors: t.floors || [] // S'assurer que floors est toujours un tableau
+        }; 
+      });
+      if (typeof setTrees === 'function') setTrees(treesMap);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setCurrentUserId(session.user.id);
-      }
-    });
+    fetchTrees();
   }, []);
 
-  // Définir l'arbre par défaut si non sélectionné
+  // Mettre à jour l'arbre en cours d'édition lorsque la sélection change
   useEffect(() => {
-    const treeList = Object.values(trees);
-    if (treeList.length > 0 && !activeTreeId) {
-      const firstOwned = treeList.find(t => t.ownerId === currentUserId) || treeList[0];
-      setActiveTreeId(firstOwned.id);
+    if (selectedTreeId && trees[selectedTreeId]) {
+      setEditingTree(JSON.parse(JSON.stringify(trees[selectedTreeId])));
+    } else {
+      setEditingTree(null);
     }
-  }, [trees, currentUserId, activeTreeId]);
+  }, [selectedTreeId, trees]);
 
-  const currentTree = trees[activeTreeId];
-  const isOwnerOfCurrentTree = currentTree && currentTree.ownerId === currentUserId;
-
-  // 1. Sauvegarde et mise à jour de la contrainte d'équipe max sur l'arbre
-  const recalculateAndSaveMaxTeamConstraint = async (treeId, floorsArray) => {
-    if (!treeId || !floorsArray) return;
-    const attachedQuestIds = floorsArray.flatMap(f => f.quests || []);
-    const linkedQuests = (quests || []).filter(q => attachedQuestIds.includes(q.id));
-    
-    const maxConstraint = linkedQuests.reduce((max, q) => {
-      if (q.is_collaborative) return Math.max(max, Number(q.required_partners) || 2);
-      return max;
-    }, 1);
-
-    const { error } = await supabase
-      .from('trees')
-      .update({ max_team_constraint: maxConstraint, floors: floorsArray })
-      .eq('id', treeId);
-
-    if (!error && typeof setTrees === 'function') {
-      setTrees(prev => ({
-        ...prev,
-        [treeId]: { ...prev[treeId], floors: floorsArray, max_team_constraint: maxConstraint }
-      }));
-    }
-  };
-
-  // 2. Gestion de l'association / désassociation des quêtes par palier
-  const handleToggleQuestInFloor = async (floorId, questId) => {
-    if (!currentTree || !isOwnerOfCurrentTree) return;
-    const updatedFloors = currentTree.floors.map(f => {
-      if (f.floorId !== floorId) return f;
-      const currentFloorQuests = f.quests || [];
-      return {
-        ...f,
-        quests: currentFloorQuests.includes(questId) 
-          ? currentFloorQuests.filter(id => id !== questId) 
-          : [...currentFloorQuests, questId]
-      };
-    });
-    await recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
-  };
-
-  // 3. Création rapide d'une nouvelle quête locale
-  const handleCreateQuest = async (e) => {
+  // CRÉER UN NOUVEL ARBRE
+  const handleCreateTree = async (e) => {
     if (e) e.preventDefault();
-    if (!newQuestName || !newQuestDesc) return;
-    const calculatedDifficulty = newQuestType === 'boss' ? 3 : newQuestType === 'miniboss' ? 2 : 1;
+    if (!newTreeName.trim()) return;
 
+    setLoading(true);
     const { data, error } = await supabase
-      .from('quests')
-      .insert([{
-        name: newQuestName,
-        desc: newQuestDesc,
-        theme: newQuestTheme,
-        difficulty: String(calculatedDifficulty),
-        owner_id: currentUserId,
-        visibility: 'private',
-        is_collaborative: isCollaborative,
-        required_partners: isCollaborative ? (requiredPartners || 2) : 2
-      }])
+      .from('trees')
+      .insert([{ name: newTreeName.trim(), floors: [] }])
       .select()
       .single();
 
     if (error) {
-      alert(`Erreur : ${error.message}`);
-      return;
+      alert(`❌ Erreur lors de la création : ${error.message}`);
+    } else {
+      await fetchTrees();
+      setSelectedTreeId(data.id);
+      setNewTreeName('');
     }
+    setLoading(false);
+  };
 
-    const formatted = {
-      id: data.id,
-      name: data.name,
-      desc: data.desc,
-      theme: data.theme,
-      difficulty: data.difficulty,
-      ownerId: data.owner_id,
-      is_collaborative: data.is_collaborative,
-      required_partners: data.required_partners,
-      sharing: { type: data.visibility || 'private', allowedUsers: [data.owner_id] }
+  // ENREGISTRER LES MODIFICATIONS DE L'ARBRE (Paliers, Quêtes, Compétences)
+  const handleSaveTreeChanges = async () => {
+    if (!editingTree) return;
+
+    setLoading(true);
+    const { error } = await supabase
+      .from('trees')
+      .update({
+        name: editingTree.name,
+        floors: editingTree.floors
+      })
+      .eq('id', editingTree.id);
+
+    if (error) {
+      alert(`❌ Erreur lors de la sauvegarde : ${error.message}`);
+    } else {
+      alert(`🎉 Arbre "${editingTree.name}" sauvegardé avec succès !`);
+      await fetchTrees();
+    }
+    setLoading(false);
+  };
+
+  // SUPPRIMER L'ARBRE COMPLET
+  const handleDeleteTree = async () => {
+    if (!editingTree) return;
+    if (!window.confirm(`⚠️ Êtes-vous sûr de vouloir supprimer définitivement l'arbre "${editingTree.name}" ?`)) return;
+
+    setLoading(true);
+    const { error } = await supabase.from('trees').delete().eq('id', editingTree.id);
+    if (error) {
+      alert(`❌ Erreur : ${error.message}`);
+    } else {
+      setSelectedTreeId('');
+      setEditingTree(null);
+      await fetchTrees();
+    }
+    setLoading(false);
+  };
+
+  // --- GESTION DES PALIERS ---
+  const handleAddFloor = (e) => {
+    if (e) e.preventDefault();
+    if (!editingTree) return;
+
+    const nextFloorId = editingTree.floors.length > 0 
+      ? Math.max(...editingTree.floors.map(f => f.floorId)) + 1 
+      : 1;
+
+    const newFloor = {
+      floorId: nextFloorId,
+      name: newFloorName.trim() || `Palier ${nextFloorId}`,
+      quests: [],
+      skills: []
     };
 
-    if (typeof setQuests === 'function') setQuests(prev => [...prev, formatted]);
-    setNewQuestName('');
-    setNewQuestDesc('');
-    setIsCollaborative(false);
-    setIsCreateModalOpen(false);
+    setEditingTree({
+      ...editingTree,
+      floors: [...editingTree.floors, newFloor]
+    });
+    setNewFloorName('');
   };
 
-  // 4. Logique de l'import et de la copie intelligente
-  const handleImportQuestToTree = async (questToImport, forceCopy = false) => {
-    if (!currentTree || !isOwnerOfCurrentTree) {
-      alert("Impossible d'importer : Arbre introuvable ou en lecture seule.");
-      return;
-    }
+  const handleRemoveFloor = (floorId) => {
+    if (!editingTree) return;
+    if (!window.confirm(`Supprimer le palier ${floorId} ainsi que toutes ses quêtes ?`)) return;
 
-    let targetQuestId = questToImport.id;
+    setEditingTree({
+      ...editingTree,
+      floors: editingTree.floors.filter(f => f.floorId !== floorId)
+    });
+  };
 
-    // Si c'est une quête externe (partagée) ou qu'on force la copie
-    if (forceCopy || questToImport.ownerId !== currentUserId) {
-      const { data, error } = await supabase
-        .from('quests')
-        .insert([{
-          name: `${questToImport.name} (Copie)`,
-          desc: questToImport.desc,
-          theme: questToImport.theme,
-          difficulty: questToImport.difficulty,
-          owner_id: currentUserId,
-          visibility: 'private',
-          is_collaborative: questToImport.is_collaborative,
-          required_partners: questToImport.required_partners
-        }])
-        .select()
-        .single();
+  // --- GESTION DES QUÊTES PAR PALIER ---
+  const handleAddQuest = (floorId) => {
+    if (!questForm.title.trim()) return;
 
-      if (error) {
-        alert(`Erreur de copie : ${error.message}`);
-        return;
-      }
-
-      const formatted = {
-        id: data.id,
-        name: data.name,
-        desc: data.desc,
-        theme: data.theme,
-        difficulty: data.difficulty,
-        ownerId: data.owner_id,
-        is_collaborative: data.is_collaborative,
-        required_partners: data.required_partners,
-        sharing: { type: data.visibility || 'private', allowedUsers: [data.owner_id] }
+    const updatedFloors = editingTree.floors.map(floor => {
+      if (floor.floorId !== floorId) return floor;
+      
+      const newQuest = {
+        id: `quest-${Date.now()}`,
+        title: questForm.title.trim(),
+        description: questForm.description.trim(),
+        points: parseInt(questForm.points, 10) || 0
       };
 
-      if (typeof setQuests === 'function') setQuests(prev => [...prev, formatted]);
-      targetQuestId = data.id;
-    }
+      return {
+        ...floor,
+        quests: [...(floor.quests || []), newQuest]
+      };
+    });
 
-    // Association par défaut au tout premier palier disponible
-    if (currentTree.floors && currentTree.floors.length > 0) {
-      const updatedFloors = currentTree.floors.map((f, i) => {
-        if (i === 0) {
-          return { ...f, quests: [...new Set([...(f.quests || []), targetQuestId])] };
-        }
-        return f;
-      });
-      await recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
-      alert("🎉 Mission importée avec succès sur le Palier 1 !");
-    } else {
-      alert("⚠️ Votre arbre n'a pas encore de paliers. Configurez d'abord au moins un palier dans le Studio.");
-    }
+    setEditingTree({ ...editingTree, floors: updatedFloors });
+    setQuestForm({ title: '', description: '', points: 50 });
+    setActiveFloorForQuest(null);
   };
 
-  // ==========================================
-  // SEGMENTATION DU CATALOGUE ET FILTRES
-  // ==========================================
-  const treeAttachedQuestIds = currentTree?.floors?.flatMap(f => f.quests || []) || [];
-  const activeTreeQuests = (quests || []).filter(q => treeAttachedQuestIds.includes(q.id));
+  const handleRemoveQuest = (floorId, questId) => {
+    const updatedFloors = editingTree.floors.map(floor => {
+      if (floor.floorId !== floorId) return floor;
+      return {
+        ...floor,
+        quests: (floor.quests || []).filter(q => q.id !== questId)
+      };
+    });
+    setEditingTree({ ...editingTree, floors: updatedFloors });
+  };
 
-  const catalogueQuestsFiltered = (quests || []).filter(q => {
-    const matchesSearch = (q.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (q.desc || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTheme = filterTheme === 'all' || q.theme === filterTheme;
-    const matchesDifficulty = filterDifficulty === 'all' || Number(q.difficulty) === Number(filterDifficulty);
-    return matchesSearch && matchesTheme && matchesDifficulty;
-  });
+  // --- GESTION DES COMPÉTENCES PAR PALIER ---
+  const handleAddSkill = (floorId) => {
+    if (!newSkillName.trim()) return;
 
-  // Onglet 1 : Quêtes locales éditables de l'utilisateur (exclut celles déjà associées)
-  const localCatalogQuests = catalogueQuestsFiltered.filter(q => 
-    q.ownerId === currentUserId && !treeAttachedQuestIds.includes(q.id)
-  );
+    const updatedFloors = editingTree.floors.map(floor => {
+      if (floor.floorId !== floorId) return floor;
+      const currentSkills = floor.skills || [];
+      if (currentSkills.includes(newSkillName.trim())) return floor;
 
-  // Onglet 2 : Quêtes partagées globales et externes
-  const sharedCatalogQuests = catalogueQuestsFiltered.filter(q => 
-    q.sharing?.type === 'public' || q.ownerId !== currentUserId
-  );
+      return {
+        ...floor,
+        skills: [...currentSkills, newSkillName.trim()]
+      };
+    });
+
+    setEditingTree({ ...editingTree, floors: updatedFloors });
+    setNewSkillName('');
+    setActiveFloorForSkill(null);
+  };
+
+  const handleRemoveSkill = (floorId, skillToRemove) => {
+    const updatedFloors = editingTree.floors.map(floor => {
+      if (floor.floorId !== floorId) return floor;
+      return {
+        ...floor,
+        skills: (floor.skills || []).filter(s => s !== skillToRemove)
+      };
+    });
+    setEditingTree({ ...editingTree, floors: updatedFloors });
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6">
+    <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
       
-      {/* HEADER DE L'ÉCRAN */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-2xl border border-slate-200 shadow-xs gap-4">
+      {/* EN-TÊTE PRINCIPAL */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">🔗 Liaison des Missions de l'Arbre</h2>
-          <p className="text-[11px] text-slate-400 font-bold">Associez vos missions à vos paliers ou piochez des quêtes dans la bibliothèque partagée.</p>
+          <h1 className="text-xl font-black text-slate-900 tracking-tight">🌲 Architecte de Formation (Studio)</h1>
+          <p className="text-xs text-slate-500 font-bold">Créez vos arbres de compétences, définissez les paliers et configurez les exercices.</p>
         </div>
-        
-        {/* Sélecteur d'arbre actif */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-extrabold text-slate-500">Arbre cible :</label>
-          <select 
-            value={activeTreeId} 
-            onChange={(e) => setActiveTreeId(e.target.value)}
-            className="border rounded-xl p-2 bg-slate-50 text-xs font-bold border-slate-200 outline-none focus:ring-2 focus:ring-purple-500"
-          >
-            {Object.values(trees).map(t => (
-              <option key={t.id} value={t.id}>{t.name} {t.ownerId !== currentUserId ? '(Lecture seule)' : ''}</option>
-            ))}
-          </select>
-        </div>
+        {loading && (
+          <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 animate-pulse">
+            🔄 Synchronisation...
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* COLONNE GAUCHE & CENTRE : ARCHITECTURE DE L'ARBRE (PALIERS & QUÊTES ASSIGNÉES) */}
-        <div className="lg:col-span-2 space-y-6">
-          {currentTree ? (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center bg-purple-50 border border-purple-200 p-4 rounded-xl">
-                <span className="text-xs font-bold text-purple-900">👥 Taille d'équipe max requise par cet arbre :</span>
-                <span className="bg-purple-700 text-white font-black text-sm px-3 py-1 rounded-lg">
-                  {currentTree.max_team_constraint || 1} {currentTree.max_team_constraint > 1 ? 'joueurs' : 'joueur'}
-                </span>
+        {/* COLONNE GAUCHE : SÉLECTION & CRÉATION DES ARBRES */}
+        <div className="lg:col-span-1 space-y-6">
+          
+          {/* SÉLECTEUR D'ARBRE */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+            <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">🌲 Sélectionner un Arbre</h3>
+            <select
+              value={selectedTreeId}
+              onChange={(e) => setSelectedTreeId(e.target.value)}
+              className="w-full border rounded-lg p-2.5 bg-white font-bold text-xs shadow-xs focus:ring-2 focus:ring-blue-500 outline-hidden"
+            >
+              <option value="">-- Choisir un arbre --</option>
+              {Object.values(trees).map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t.floors?.length || 0} paliers)</option>
+              ))}
+            </select>
+          </div>
+
+          {/* CRÉATEUR DE NOUVEL ARBRE */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+            <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">➕ Créer un nouvel arbre</h3>
+            <form onSubmit={handleCreateTree} className="space-y-3">
+              <input
+                type="text"
+                placeholder="Ex: Parcours Cybersécurité, Management..."
+                value={newTreeName}
+                onChange={(e) => setNewTreeName(e.target.value)}
+                className="w-full border rounded-lg p-2.5 bg-slate-50 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-blue-500 outline-hidden"
+              />
+              <button
+                type="submit"
+                disabled={loading || !newTreeName.trim()}
+                className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-300 text-white font-black text-xs uppercase tracking-wider py-2.5 rounded-lg transition-all shadow-sm"
+              >
+                Créer l'Arbre
+              </button>
+            </form>
+          </div>
+
+        </div>
+
+        {/* COLONNE DROITE : CONFIGURATEUR DE L'ARBRE SÉLECTIONNÉ */}
+        <div className="lg:col-span-2">
+          {editingTree ? (
+            <div className="space-y-6">
+              
+              {/* BARRE D'ACTIONS DE L'ARBRE */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="space-y-1 w-full sm:w-auto">
+                  <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">Édition active</span>
+                  <input
+                    type="text"
+                    value={editingTree.name}
+                    onChange={(e) => setEditingTree({ ...editingTree, name: e.target.value })}
+                    className="block text-lg font-black text-slate-900 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-600 focus:outline-hidden w-full"
+                  />
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto justify-end">
+                  <button 
+                    type="button"
+                    onClick={handleDeleteTree}
+                    className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-extrabold py-2 px-4 rounded-xl text-xs uppercase transition-all"
+                  >
+                    🗑️ Supprimer
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleSaveTreeChanges}
+                    disabled={loading}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-extrabold py-2 px-5 rounded-xl text-xs uppercase tracking-wider shadow-sm transition-all"
+                  >
+                    💾 Sauvegarder
+                  </button>
+                </div>
               </div>
 
-              {(currentTree.floors || []).map((floor) => (
-                <div key={floor.floorId} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="bg-slate-900 text-white text-[11px] font-black px-2.5 py-1 rounded-lg">PALIER {floor.floorId}</span>
-                      <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full border ${floor.mode === 'static' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                        {floor.mode === 'static' ? '📌 Mode Statique' : '🎲 Mode Aléatoire'}
-                      </span>
-                    </div>
-                  </div>
+              {/* CONCEPTEUR DES PALIERS (FLOORS) */}
+              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
+                <div className="flex justify-between items-center border-b pb-4">
+                  <h3 className="font-black text-slate-900 text-sm">🎯 Structure des Paliers</h3>
+                  <form onSubmit={handleAddFloor} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Nom du palier (Ex: Les bases du réseau)"
+                      value={newFloorName}
+                      onChange={(e) => setNewFloorName(e.target.value)}
+                      className="border rounded-lg px-3 py-1.5 bg-slate-50 text-xs font-bold focus:bg-white outline-hidden"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-purple-700 hover:bg-purple-800 text-white font-black text-xs uppercase px-4 py-1.5 rounded-lg transition-all"
+                    >
+                      ➕ Ajouter Palier
+                    </button>
+                  </form>
+                </div>
 
-                  {floor.mode === 'static' ? (
-                    <div className="space-y-2">
-                      <span className="block font-black text-slate-800 uppercase tracking-wider text-[10px]">Missions assignées à ce palier :</span>
-                      <div className="flex flex-wrap gap-2">
-                        {activeTreeQuests.map(q => {
-                          const isLinked = (floor.quests || []).includes(q.id);
-                          return (
-                            <button
-                              key={q.id}
-                              disabled={!isOwnerOfCurrentTree}
-                              onClick={() => handleToggleQuestInFloor(floor.floorId, q.id)}
-                              className={`px-3 py-1.5 rounded-xl border transition-all text-[11px] font-bold flex items-center gap-1.5 ${
-                                isLinked 
-                                  ? 'bg-purple-700 text-white border-purple-800 shadow-xs' 
-                                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              <span>{q.name}</span>
-                              {isLinked && <span>✓</span>}
-                            </button>
-                          );
-                        })}
-                        {activeTreeQuests.length === 0 && (
-                          <p className="text-xs text-slate-400 italic">Aucune mission disponible dans cet arbre. Importez-en depuis la bibliothèque de droite.</p>
-                        )}
-                      </div>
+                <div className="space-y-6">
+                  {editingTree.floors.length === 0 ? (
+                    <div className="text-center py-12 text-xs text-slate-400 font-bold border-2 border-dashed rounded-xl">
+                      Aucun palier défini pour cet arbre. Ajoutez un palier ci-dessus pour commencer à concevoir votre architecture.
                     </div>
                   ) : (
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60 text-xs text-slate-500">
-                      🎲 Les missions de ce palier sont distribuées de façon dynamique aux apprenants selon la configuration configurée dans l'onglet d'édition.
-                    </div>
+                    editingTree.floors.map((floor) => (
+                      <div key={floor.floorId} className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                        
+                        {/* EN-TÊTE DU PALIER */}
+                        <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-xs bg-purple-100 text-purple-700 border border-purple-200 px-2 py-1 rounded-md">
+                              Palier {floor.floorId}
+                            </span>
+                            <span className="font-black text-slate-800 text-sm">{floor.name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFloor(floor.floorId)}
+                            className="text-red-500 hover:text-red-700 font-bold text-xs"
+                          >
+                            🗑️ Supprimer Palier
+                          </button>
+                        </div>
+
+                        {/* SECTION COMPÉTENCES */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">💡 Compétences Cibles :</span>
+                            {activeFloorForSkill !== floor.floorId ? (
+                              <button
+                                type="button"
+                                onClick={() => setActiveFloorForSkill(floor.floorId)}
+                                className="text-purple-600 hover:text-purple-800 text-[10px] font-black uppercase"
+                              >
+                                ➕ Ajouter compétence
+                              </button>
+                            ) : (
+                              <div className="flex gap-2 items-center">
+                                <input
+                                  type="text"
+                                  placeholder="Ex: Analyse de logs"
+                                  value={newSkillName}
+                                  onChange={(e) => setNewSkillName(e.target.value)}
+                                  className="border rounded px-2 py-0.5 bg-white text-[11px] font-bold"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddSkill(floor.floorId)}
+                                  className="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded"
+                                >
+                                  OK
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setActiveFloorForSkill(null); setNewSkillName(''); }}
+                                  className="text-slate-400 text-[10px] font-bold px-1"
+                                >
+                                  Annuler
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {(floor.skills || []).length === 0 ? (
+                              <span className="text-[10px] text-slate-400 font-bold italic">Aucune compétence ciblée sur ce palier.</span>
+                            ) : (
+                              floor.skills.map((skill, sIdx) => (
+                                <span key={sIdx} className="bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-md border border-blue-200 text-[10px] flex items-center gap-1">
+                                  <span>{skill}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveSkill(floor.floorId, skill)}
+                                    className="text-red-500 hover:text-red-700 font-black"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        {/* SECTION QUÊTES / EXERCICES */}
+                        <div className="space-y-3 pt-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">⚔️ Exercices & Quêtes :</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveFloorForQuest(floor.floorId);
+                                setQuestForm({ title: '', description: '', points: 50 });
+                              }}
+                              className="bg-purple-100 hover:bg-purple-200 text-purple-700 text-[10px] font-black uppercase px-2.5 py-1 rounded-md border border-purple-200"
+                            >
+                              ➕ Ajouter Exercice
+                            </button>
+                          </div>
+
+                          {/* MODAL / FORMULAIRE D'AJOUT DE QUÊTE INLINE */}
+                          {activeFloorForQuest === floor.floorId && (
+                            <div className="bg-white border rounded-xl p-4 space-y-3 shadow-sm text-xs">
+                              <h4 className="font-extrabold text-slate-800">Ajouter un exercice au Palier {floor.floorId}</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div className="sm:col-span-2">
+                                  <label className="block text-[9px] font-bold text-slate-400 mb-0.5">Titre :</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Ex: Configuration du pare-feu"
+                                    value={questForm.title}
+                                    onChange={(e) => setQuestForm({ ...questForm, title: e.target.value })}
+                                    className="w-full border rounded p-1.5 font-bold"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold text-slate-400 mb-0.5">Points XP :</label>
+                                  <input
+                                    type="number"
+                                    value={questForm.points}
+                                    onChange={(e) => setQuestForm({ ...questForm, points: e.target.value })}
+                                    className="w-full border rounded p-1.5 font-black text-center"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-400 mb-0.5">Description / Consignes :</label>
+                                <textarea
+                                  placeholder="Détaillez les objectifs de cette quête..."
+                                  value={questForm.description}
+                                  onChange={(e) => setQuestForm({ ...questForm, description: e.target.value })}
+                                  className="w-full border rounded p-1.5 font-semibold h-16"
+                                />
+                              </div>
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveFloorForQuest(null)}
+                                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1 rounded-lg"
+                                >
+                                  Annuler
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddQuest(floor.floorId)}
+                                  className="bg-purple-700 hover:bg-purple-800 text-white font-bold px-4 py-1 rounded-lg"
+                                >
+                                  Valider
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* LISTE DES QUÊTES DU PALIER */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {(floor.quests || []).length === 0 ? (
+                              <div className="col-span-full text-center py-4 bg-white border border-dashed rounded-lg text-[10px] text-slate-400 font-bold">
+                                Aucun exercice configuré sur ce palier.
+                              </div>
+                            ) : (
+                              floor.quests.map((q, qIdx) => (
+                                <div key={q.id || qIdx} className="bg-white p-3 rounded-lg border border-slate-200 space-y-2 relative group flex flex-col justify-between shadow-2xs">
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-start gap-2">
+                                      <p className="font-extrabold text-slate-900 text-xs truncate pr-4">⚔️ {q.title || "Sans titre"}</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveQuest(floor.floorId, q.id)}
+                                        className="text-red-500 hover:text-red-700 font-bold text-[10px]"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </div>
+                                    <p className="text-slate-500 text-[10px] leading-relaxed line-clamp-3">{q.description || "Pas de description."}</p>
+                                  </div>
+                                  <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
+                                    <span className="text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                                      💎 {q.points || 0} XP
+                                    </span>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                      </div>
+                    ))
                   )}
                 </div>
-              ))}
+              </div>
+
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-400 font-bold">
-              Veuillez sélectionner ou créer un arbre pour pouvoir y associer des quêtes.
+            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-4">
+              <span className="text-4xl block">🌲</span>
+              <h3 className="text-sm font-black text-slate-800 uppercase">Aucun arbre sélectionné</h3>
+              <p className="text-xs text-slate-400 font-bold max-w-md mx-auto">
+                Choisissez un arbre existant dans le panneau de gauche ou créez-en un nouveau pour configurer vos parcours et quêtes.
+              </p>
             </div>
           )}
         </div>
 
-        {/* COLONNE DROITE : LE DOUBLE CATALOGUE INTELLIGENT */}
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-            
-            {/* Header du catalogue */}
-            <div className="flex justify-between items-center">
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">📚 Catalogue de Quêtes</h3>
-              <button 
-                onClick={() => setIsCreateModalOpen(true)}
-                className="text-purple-700 font-black text-[10px] bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2.5 py-1.5 rounded-lg uppercase tracking-wider transition-all"
-              >
-                ➕ Créer
-              </button>
-            </div>
-
-            {/* Sélecteur d'onglets local / partagé */}
-            <div className="flex bg-slate-100 p-1 rounded-xl text-[10px] font-extrabold gap-1">
-              <button 
-                onClick={() => setQuestCatalogTab('local')}
-                className={`flex-1 py-2 px-1 rounded-lg transition-all ${questCatalogTab === 'local' ? 'bg-white text-purple-950 shadow-xs' : 'text-slate-500 hover:text-slate-950'}`}
-              >
-                🏠 Quêtes Locales ({localCatalogQuests.length})
-              </button>
-              <button 
-                onClick={() => setQuestCatalogTab('shared')}
-                className={`flex-1 py-2 px-1 rounded-lg transition-all ${questCatalogTab === 'shared' ? 'bg-white text-purple-950 shadow-xs' : 'text-slate-500 hover:text-slate-950'}`}
-              >
-                🌍 Partagées / Globales ({sharedCatalogQuests.length})
-              </button>
-            </div>
-
-            {/* Moteur de filtres */}
-            <div className="space-y-2">
-              <input 
-                type="text" 
-                placeholder="Rechercher une mission..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full border rounded-xl p-2 bg-slate-50 text-xs font-bold border-slate-200 outline-none"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="border rounded-lg p-1.5 text-[10px] bg-white font-extrabold border-slate-200">
-                  <option value="all">🎨 Tous thèmes</option>
-                  <option value="social">🟢 Social</option>
-                  <option value="env">🔵 Env</option>
-                  <option value="tech">🟣 Tech</option>
-                </select>
-                <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)} className="border rounded-lg p-1.5 text-[10px] bg-white font-extrabold border-slate-200">
-                  <option value="all">⭐ Difficultés</option>
-                  <option value="1">📄 Std (1★)</option>
-                  <option value="2">⚡ Miniboss (2★)</option>
-                  <option value="3">🔥 Boss (3★)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Liste des quêtes filtrées */}
-            <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-              {(questCatalogTab === 'local' ? localCatalogQuests : sharedCatalogQuests).map(q => {
-                const badgeClass = getQuestBadgeStyle(q);
-                return (
-                  <div key={q.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 hover:bg-slate-100 transition-all">
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="font-extrabold text-xs text-slate-800 leading-tight">{q.name}</span>
-                      <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${badgeClass} flex-shrink-0`}>
-                        {Number(q.difficulty) === 3 ? '🔥 3★' : Number(q.difficulty) === 2 ? '⚡ 2★' : '📄 1★'}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 font-bold line-clamp-2 leading-normal">{q.desc}</p>
-                    
-                    <div className="flex justify-between items-center border-t border-slate-100 pt-2 text-[10px] font-black">
-                      <span className="text-slate-400 uppercase tracking-widest text-[9px]">{q.theme}</span>
-                      
-                      {/* Actions d'importation */}
-                      <div className="flex gap-1.5">
-                        {questCatalogTab === 'shared' ? (
-                          <button
-                            onClick={() => handleImportQuestToTree(q, true)}
-                            className="bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-extrabold uppercase px-2.5 py-1 rounded-md"
-                          >
-                            📥 Importer (Copie)
-                          </button>
-                        ) : (
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => handleImportQuestToTree(q, false)}
-                              className="bg-purple-700 hover:bg-purple-800 text-white text-[9px] font-extrabold uppercase px-2 py-1 rounded-md"
-                            >
-                              ➕ Importer
-                            </button>
-                            <button
-                              onClick={() => handleImportQuestToTree(q, true)}
-                              className="bg-slate-300 hover:bg-slate-400 text-slate-700 text-[9px] font-extrabold uppercase px-1.5 py-1 rounded-md"
-                              title="Importer en dupliquant"
-                            >
-                              📋 Copie
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {(questCatalogTab === 'local' ? localCatalogQuests : sharedCatalogQuests).length === 0 && (
-                <span className="text-slate-400 italic text-center block py-6 text-xs font-bold">Aucune quête trouvée.</span>
-              )}
-            </div>
-
-          </div>
-        </div>
       </div>
 
-      {/* MODALE DE CRÉATION RAPIDE DE QUÊTE */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border border-slate-100">
-            <button onClick={() => setIsCreateModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg">×</button>
-            <h3 className="text-md font-black text-slate-950 uppercase tracking-wide mb-4">🎨 Créer une Mission Locale</h3>
-            <form onSubmit={handleCreateQuest} className="space-y-3 text-xs">
-              <input type="text" required placeholder="Nom de la mission" value={newQuestName} onChange={(e) => setNewQuestName(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold" />
-              <textarea rows="3" required placeholder="Description..." value={newQuestDesc} onChange={(e) => setNewQuestDesc(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold"></textarea>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-black mb-1">Thématique</label>
-                  <select value={newQuestTheme} onChange={(e) => setNewQuestTheme(e.target.value)} className="w-full border rounded-lg p-2 bg-white font-bold">
-                    <option value="social">Social</option>
-                    <option value="env">Environnement</option>
-                    <option value="tech">Technologie</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-black mb-1">Type de Mission</label>
-                  <select value={newQuestType} onChange={(e) => setNewQuestType(e.target.value)} className="w-full border rounded-lg p-2 bg-white font-bold">
-                    <option value="normal">Standard (1★)</option>
-                    <option value="miniboss">Miniboss (2★)</option>
-                    <option value="boss">Boss (3★)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60 space-y-2">
-                <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={isCollaborative} 
-                    onChange={(e) => setIsCollaborative(e.target.checked)} 
-                    className="rounded border-slate-300 text-purple-700 focus:ring-purple-500"
-                  />
-                  <span>🤝 Mission collaborative en équipe</span>
-                </label>
-                {isCollaborative && (
-                  <div>
-                    <label className="block text-[9px] uppercase font-bold text-slate-500 mb-1">Membres requis par équipe :</label>
-                    <input 
-                      type="number" 
-                      min="2" 
-                      value={requiredPartners} 
-                      onChange={(e) => setRequiredPartners(parseInt(e.target.value) || 2)} 
-                      className="w-full border rounded p-1.5 font-bold"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <button type="submit" className="w-full bg-purple-700 text-white font-black py-2.5 rounded-xl uppercase tracking-wider text-xs">Créer la mission</button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
