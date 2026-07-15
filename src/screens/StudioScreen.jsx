@@ -132,12 +132,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       }
       try {
         let query = supabase.from('profiles').select('id, email, role').ilike('email', `%${drhSearchQuery}%`);
-        
-        // Filtre les IDs valides pour éviter les erreurs de type UUID dans le filtre PostgreSQL
-        const currentDrhIds = Array.isArray(currentSession?.drh_ids) 
-          ? currentSession.drh_ids.filter(id => id && String(id).trim() !== "") 
-          : [];
-          
+        const currentDrhIds = Array.isArray(currentSession?.drh_ids) ? currentSession.drh_ids.filter(id => id && String(id).trim() !== "") : [];
         if (currentDrhIds.length > 0) {
           query = query.not('id', 'in', `(${currentDrhIds.join(',')})`);
         }
@@ -160,7 +155,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       : currentSession.end_time;
 
     const { error } = await supabase.from('sessions').update({ 
-      tree_id: currentSession.tree_id || null, 
+      tree_id: currentSession.tree_id, 
       drh_ids: currentSession.drh_ids || [],
       planning: currentSession.planning || [],
       start_time: currentSession.start_time || '09:00',
@@ -197,7 +192,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (e && e.preventDefault) e.preventDefault();
     const code = newSessionCode.trim().toUpperCase();
     if (!code) return;
-    
     const { data, error } = await supabase.from('sessions').insert([{ 
       session_code: code, 
       created_by: currentUserId, 
@@ -208,12 +202,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       start_time: '09:00', 
       end_time_mode: 'auto', 
       end_time: '09:00',
-      formation_date: newSessionDate || null
+      formation_date: newSessionDate
     }]).select().single();
     
     if (error) return alert(error.message);
     
-    setSessions(prev => [data, ...prev].sort((a, b) => new Date(b.formation_date || '1970-01-01') - new Date(a.formation_date || '1970-01-01')));
+    setSessions(prev => [data, ...prev].sort((a, b) => new Date(b.formation_date) - new Date(a.formation_date)));
     setActiveSessionId(data.id);
     setViewMode("edit");
     setNewSessionCode(''); 
@@ -507,6 +501,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               {/* ==================== MODE ✏️ MODIFIER : ÉDITION ET DRAG & DROP ==================== */}
               {viewMode === "edit" && (
                 <div className="space-y-6">
+                  
                   {/* EN-TÊTE CONFIGURATION */}
                   <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
@@ -515,15 +510,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     </div>
                     <div className="flex gap-2">
                       <button 
-                        type="button" 
-                        onClick={() => setViewMode("view")} 
+                        type="button"
+                        onClick={() => setViewMode("view")}
                         className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2 px-4 rounded-xl text-xs uppercase"
                       >
                         Annuler
                       </button>
                       <button 
-                        type="button" 
-                        onClick={handleSaveChanges} 
+                        type="button"
+                        onClick={handleSaveChanges}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs uppercase tracking-wider shadow-sm"
                       >
                         💾 Sauvegarder
@@ -539,27 +534,56 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <input 
                           type="date" 
                           value={currentSession.formation_date || ''} 
-                          onChange={(e) => updateCurrentSessionInState({ formation_date: e.target.value })} 
-                          className="w-full border rounded-lg p-2 bg-white text-xs font-bold shadow-xs" 
+                          onChange={(e) => updateCurrentSessionInState({ formation_date: e.target.value })}
+                          className="w-full border rounded-lg p-2 bg-white font-bold text-xs shadow-xs"
                         />
                       </div>
                       <div>
                         <label className="block text-[10px] uppercase font-black text-slate-500 mb-1">⏰ Début</label>
                         <input 
-                          type="text" 
-                          placeholder="09:00" 
-                          value={currentSession.start_time || ''} 
-                          onChange={(e) => updateCurrentSessionInState({ start_time: e.target.value })} 
-                          className="w-full border rounded-lg p-2 bg-white text-xs font-bold text-center font-mono shadow-xs" 
+                          type="time" 
+                          value={currentSession.start_time || '09:00'} 
+                          onChange={(e) => updateCurrentSessionInState({ start_time: e.target.value })}
+                          className="w-full border rounded-lg p-2 bg-white font-mono text-xs font-bold shadow-xs"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] uppercase font-black text-slate-500 mb-1">🌲 Arbre Lié</label>
+                        <label className="block text-[10px] uppercase font-black text-slate-500 mb-1">Calcul Fin</label>
                         <select 
-                          value={currentSession.tree_id || ''} 
-                          onChange={(e) => updateCurrentSessionInState({ 
-                            tree_id: e.target.value || null 
-                          })} 
+                          value={currentSession.end_time_mode || 'auto'} 
+                          onChange={(e) => updateCurrentSessionInState({ end_time_mode: e.target.value })}
+                          className="w-full border rounded-lg p-2 bg-white text-xs font-bold shadow-xs"
+                        >
+                          <option value="auto">🔄 Auto</option>
+                          <option value="lock">🔒 Fixe</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-black text-slate-500 mb-1">⏰ Fin</label>
+                        <input 
+                          type="time" 
+                          disabled={currentSession.end_time_mode === 'auto' || !(currentSession.end_time_mode)} 
+                          value={
+                            currentSession.end_time_mode === 'auto' || !(currentSession.end_time_mode)
+                              ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
+                              : (currentSession.end_time || '')
+                          } 
+                          onChange={(e) => {
+                            if (currentSession.end_time_mode === 'lock') {
+                              updateCurrentSessionInState({ end_time: e.target.value });
+                            }
+                          }}
+                          className="w-full border rounded-lg p-2 font-mono text-xs font-bold bg-white disabled:bg-slate-100 disabled:text-slate-400 shadow-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t">
+                      <div className="space-y-1">
+                        <label className="block font-black text-slate-700 text-[10px] uppercase">🌲 Associer un Arbre :</label>
+                        <select 
+                          value={currentSession.tree_id || ''}
+                          onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value || null })}
                           className="w-full border rounded-lg p-2 bg-white text-xs font-bold shadow-xs"
                         >
                           <option value="">-- Aucun arbre lié --</option>
@@ -568,21 +592,22 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           ))}
                         </select>
                       </div>
+
                       <div className="space-y-1 relative">
                         <label className="block font-black text-slate-700 text-[10px] uppercase">DRH Associés :</label>
                         <input 
-                          type="text" 
-                          placeholder="Rechercher un e-mail..." 
-                          value={drhSearchQuery} 
-                          onChange={(e) => setDrhSearchQuery(e.target.value)} 
-                          className="w-full border rounded-lg p-2 bg-white text-xs shadow-xs" 
+                          type="text"
+                          placeholder="Rechercher un e-mail..."
+                          value={drhSearchQuery}
+                          onChange={(e) => setDrhSearchQuery(e.target.value)}
+                          className="w-full border rounded-lg p-2 bg-white text-xs shadow-xs"
                         />
                         {drhSuggestions.length > 0 && (
                           <div className="absolute z-50 left-0 right-0 top-full bg-white border rounded shadow-md mt-1 max-h-32 overflow-y-auto">
                             {drhSuggestions.map(s => (
                               <button 
                                 key={s.id} 
-                                type="button" 
+                                type="button"
                                 onClick={() => handleAddDRH(s)} 
                                 className="block w-full text-left p-2 text-xs font-bold hover:bg-slate-100 border-b"
                               >
@@ -593,7 +618,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         )}
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {(currentSession.drh_ids || []).map(id => {
-                            const matchedEmail = drhEmailsCache[id] || id;
+                            const matchedEmail = drhEmailsCache[id] || id; 
                             return (
                               <div key={id} className="bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1">
                                 <span>{matchedEmail}</span>
@@ -608,6 +633,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                   {/* DRAG AND DROP DES ETAPES */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
                     {/* TIMELINE ACTIVE (2/3) */}
                     <div className="md:col-span-2 space-y-3">
                       <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Plan de la journée (Glissez-déposez pour réorganiser)</h4>
@@ -615,60 +641,81 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       <div className="space-y-1">
                         {(currentSession.planning || []).length === 0 && (
                           <div 
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setActiveDropIndex(0);
-                            }}
+                            onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(0); }}
                             onDragLeave={() => setActiveDropIndex(null)}
                             onDrop={() => handleTimelineDrop(0)}
-                            className={`p-12 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-3 transition-all ${
-                              activeDropIndex === 0 ? 'bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-slate-200 text-slate-400'
+                            className={`p-10 border-2 border-dashed rounded-xl text-center text-xs font-bold transition-all ${
+                              activeDropIndex === 0 ? 'bg-blue-50 border-blue-400 text-blue-700' : 'bg-slate-50 border-slate-300 text-slate-400'
                             }`}
                           >
-                            <span className="text-3xl">🎯</span>
-                            <span className="font-extrabold text-xs text-center">Déposez votre premier palier ou bloc ici</span>
+                            Déposez des blocs ici pour créer la journée de formation.
                           </div>
                         )}
 
-                        {getTimelineWithHours().map((block, index) => {
-                          const lastIndex = getTimelineWithHours().length;
-                          const isTargetIndexValid = getPlacementValidation(draggedPlanningItem?.data?.floorId, index, currentSession.planning || []).isValid;
-                          const explanationText = draggedPlanningItem?.data?.floorId 
-                            ? "l'ordre croissant des paliers doit être respecté" 
-                            : "";
+                        {(currentSession.planning || []).map((block, index) => {
+                          // Récupérer l'ID du palier en cours de drag (si c'en est un)
+                          let dragFloorId = null;
+                          if (draggedPlanningItem) {
+                            if (draggedPlanningItem.source === 'palette-palier') {
+                              dragFloorId = draggedPlanningItem.data?.floorId;
+                            } else if (draggedPlanningItem.source === 'timeline') {
+                              const sourceBlock = currentSession.planning[draggedPlanningItem.index];
+                              if (sourceBlock?.type === 'palier') {
+                                dragFloorId = sourceBlock.floorId;
+                              }
+                            }
+                          }
+
+                          const isDraggingPalier = !!dragFloorId;
+                          const validation = draggedPlanningItem ? getPlacementValidation(dragFloorId, index, currentSession.planning) : { isValid: true };
+                          const isTargetIndexValid = validation.isValid;
+
+                          // Logique de classe CSS dynamique pour les indicateurs de drop (zones de dépôt)
+                          let dropZoneClasses = "transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ";
+                          let dropZoneContent = null;
+
+                          if (draggedPlanningItem) {
+                            if (isDraggingPalier) {
+                              if (isTargetIndexValid) {
+                                // Affichage vert & visible (full) même sans être survolé
+                                const isOver = activeDropIndex === index;
+                                dropZoneClasses += `bg-emerald-50 border-emerald-500 text-emerald-700 h-14 my-2 ${isOver ? 'ring-2 ring-emerald-400 scale-[1.01]' : ''}`;
+                                dropZoneContent = <span>🟢 Déposer ici (Position autorisée)</span>;
+                              } else {
+                                // Masqué complètement (hauteur à 0, pas de bordure)
+                                dropZoneClasses += "bg-transparent h-0 my-0 border-none overflow-hidden";
+                              }
+                            } else {
+                              // Glissement d'un bloc custom classique
+                              const isOver = activeDropIndex === index;
+                              if (isOver) {
+                                dropZoneClasses += "bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2";
+                                dropZoneContent = <span>🟢 Déposer ici (Valide)</span>;
+                              } else {
+                                dropZoneClasses += "border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400";
+                              }
+                            }
+                          } else {
+                            dropZoneClasses += "bg-transparent h-2 border-none";
+                          }
 
                           return (
                             <React.Fragment key={block.id}>
-                              {/* ZONE DE DROP DYNAMIQUE INTERMÉDIAIRE */}
-                              {draggedPlanningItem && (
-                                <div 
-                                  onDragOver={(e) => {
-                                    e.preventDefault();
-                                    setActiveDropIndex(index);
-                                  }}
-                                  onDragLeave={() => setActiveDropIndex(null)}
-                                  onDrop={() => handleTimelineDrop(index)}
-                                  className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
-                                    activeDropIndex === index 
-                                      ? isTargetIndexValid ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2' : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
-                                      : draggedPlanningItem ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' : 'bg-transparent h-2 border-none'
-                                  }`}
-                                >
-                                  {activeDropIndex === index && (
-                                    <span>
-                                      {isTargetIndexValid ? '🟢 Déposer ici (Valide)' : `❌ Position interdite (${explanationText})` }
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-
+                              
+                              {/* ZONE DE DEPOT AUTORISÉE / RE-COLORÉE */}
                               <div 
-                                draggable 
-                                onDragStart={() => setDraggedPlanningItem({ source: 'timeline', index })} 
-                                onDragEnd={() => {
-                                  setDraggedPlanningItem(null);
-                                  setActiveDropIndex(null);
-                                }}
+                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => handleTimelineDrop(index)}
+                                className={dropZoneClasses}
+                              >
+                                {dropZoneContent}
+                              </div>
+                              
+                              <div 
+                                draggable
+                                onDragStart={() => setDraggedPlanningItem({ source: 'timeline', index })}
+                                onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
                                 className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all"
                                 style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
                               >
@@ -679,11 +726,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                       {block.name}
                                       {block.type === 'palier' && (
                                         <button 
-                                          type="button" 
+                                          type="button"
                                           onClick={() => {
                                             const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
                                             if (matchedFloor) setSelectedInspectFloor(matchedFloor);
-                                          }} 
+                                          }}
                                           className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
                                         >
                                           🔍 Voir contenu
@@ -698,53 +745,84 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border">
                                     <input 
                                       type="number" 
-                                      min="1" 
-                                      value={block.duration || 15} 
-                                      onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)} 
-                                      className="w-10 text-center bg-transparent text-xs font-black" 
+                                      min="1"
+                                      value={block.duration || 15}
+                                      onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)}
+                                      className="w-10 text-center bg-white border rounded p-0.5 font-black text-slate-900 text-xs"
                                     />
-                                    <span className="text-[10px] text-slate-400 font-bold">m</span>
+                                    <span className="text-[10px] font-black text-slate-400">min</span>
                                   </div>
                                   <button 
-                                    type="button" 
+                                    type="button"
                                     onClick={() => removePlanningBlock(block.id)} 
-                                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-all text-sm"
+                                    className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg"
                                   >
                                     🗑️
                                   </button>
                                 </div>
                               </div>
-
-                              {/* AFFICHAGE DU DERNIER SLOT DE DROP SI DERNIÈRE ÉTAPE */}
-                              {index === lastIndex - 1 && draggedPlanningItem && (
-                                (() => {
-                                  const isLastTargetIndexValid = getPlacementValidation(draggedPlanningItem?.data?.floorId, lastIndex, currentSession.planning || []).isValid;
-                                  return (
-                                    <div 
-                                      onDragOver={(e) => {
-                                        e.preventDefault();
-                                        setActiveDropIndex(lastIndex);
-                                      }}
-                                      onDragLeave={() => setActiveDropIndex(null)}
-                                      onDrop={() => handleTimelineDrop(lastIndex)}
-                                      className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
-                                        activeDropIndex === lastIndex 
-                                          ? isLastTargetIndexValid ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2' : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
-                                          : draggedPlanningItem ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' : 'bg-transparent h-2 border-none'
-                                      }`}
-                                    >
-                                      {activeDropIndex === lastIndex && (
-                                        <span>
-                                          {isLastTargetIndexValid ? '🟢 Déposer en fin de planning (Valide)' : `❌ Impossible de déposer à la fin (${explanationText})` }
-                                        </span>
-                                      )}
-                                    </div>
-                                  );
-                                })()
-                              )}
                             </React.Fragment>
                           );
                         })}
+
+                        {/* DERNIER INDICATEUR DE FIN DE TIMELINE */}
+                        {(currentSession.planning || []).length > 0 && (
+                          (() => {
+                            const lastIndex = currentSession.planning.length;
+                            
+                            let dragFloorId = null;
+                            if (draggedPlanningItem) {
+                              if (draggedPlanningItem.source === 'palette-palier') {
+                                dragFloorId = draggedPlanningItem.data?.floorId;
+                              } else if (draggedPlanningItem.source === 'timeline') {
+                                const sourceBlock = currentSession.planning[draggedPlanningItem.index];
+                                if (sourceBlock?.type === 'palier') {
+                                  dragFloorId = sourceBlock.floorId;
+                                }
+                              }
+                            }
+
+                            const isDraggingPalier = !!dragFloorId;
+                            const validation = draggedPlanningItem ? getPlacementValidation(dragFloorId, lastIndex, currentSession.planning) : { isValid: true };
+                            const isTargetIndexValid = validation.isValid;
+
+                            let dropZoneClasses = "transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ";
+                            let dropZoneContent = null;
+
+                            if (draggedPlanningItem) {
+                              if (isDraggingPalier) {
+                                if (isTargetIndexValid) {
+                                  const isOver = activeDropIndex === lastIndex;
+                                  dropZoneClasses += `bg-emerald-50 border-emerald-500 text-emerald-700 h-14 my-2 ${isOver ? 'ring-2 ring-emerald-400 scale-[1.01]' : ''}`;
+                                  dropZoneContent = <span>🟢 Déposer ici (Position autorisée)</span>;
+                                } else {
+                                  dropZoneClasses += "bg-transparent h-0 my-0 border-none overflow-hidden";
+                                }
+                              } else {
+                                const isOver = activeDropIndex === lastIndex;
+                                if (isOver) {
+                                  dropZoneClasses += "bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2";
+                                  dropZoneContent = <span>🟢 Déposer en fin de planning (Valide)</span>;
+                                } else {
+                                  dropZoneClasses += "border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400";
+                                }
+                              }
+                            } else {
+                              dropZoneClasses += "bg-transparent h-2 border-none";
+                            }
+
+                            return (
+                              <div 
+                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(lastIndex); }}
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => handleTimelineDrop(lastIndex)}
+                                className={dropZoneClasses}
+                              >
+                                {dropZoneContent}
+                              </div>
+                            );
+                          })()
+                        )}
                       </div>
                     </div>
 
@@ -756,19 +834,16 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs">
                         <span className="block text-[10px] font-black uppercase text-blue-700">Bloc personnalisé</span>
                         <input 
-                          type="text" 
-                          placeholder="Ex: Pause Café, Restitution..." 
-                          value={customBlockConfig.name} 
-                          onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, name: e.target.value })} 
-                          className="w-full border rounded p-1.5 bg-slate-50 font-extrabold text-xs" 
+                          type="text"
+                          placeholder="Ex: Pause Café, Restitution..."
+                          value={customBlockConfig.name}
+                          onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, name: e.target.value })}
+                          className="w-full border rounded p-1.5 bg-slate-50 font-extrabold text-xs"
                         />
                         <div 
-                          draggable 
-                          onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })} 
-                          onDragEnd={() => {
-                            setDraggedPlanningItem(null);
-                            setActiveDropIndex(null);
-                          }}
+                          draggable
+                          onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
+                          onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
                           className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs"
                           style={{ borderLeftWidth: '5px', borderLeftColor: customBlockConfig.color }}
                         >
@@ -781,110 +856,49 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       {linkedTree ? (
                         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
-                          <p className="text-[10px] text-slate-400 font-semibold mb-2">Glissez les paliers ci-dessous vers le plan d'organisation.</p>
-                          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                            {(linkedTree.floors || []).map(floor => {
-                              const isAlreadyPlanned = (currentSession.planning || []).some(b => b.type === 'palier' && b.floorId === floor.floorId);
-                              
-                              return (
-                                <div 
-                                  key={floor.floorId}
-                                  draggable={!isAlreadyPlanned}
-                                  onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                                  onDragEnd={() => {
-                                    setDraggedPlanningItem(null);
-                                    setActiveDropIndex(null);
-                                  }}
-                                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
-                                    isAlreadyPlanned 
-                                      ? 'bg-slate-50 border-slate-100 opacity-40 cursor-not-allowed' 
-                                      : 'bg-white hover:bg-purple-50/35 border-slate-200 cursor-grab active:cursor-grabbing transition-all'
-                                  }`}
-                                  style={{ borderLeftWidth: '5px', borderLeftColor: '#7c3aed' }}
-                                >
-                                  <div className="min-w-0">
-                                    <h6 className="font-extrabold text-slate-800 text-[11px] truncate">Palier {floor.floorId} : {floor.name || 'Sans nom'}</h6>
-                                    <p className="text-[9px] text-slate-400 font-bold">{floor.quests?.length || 0} quêtes</p>
-                                  </div>
-                                  {isAlreadyPlanned && (
-                                    <span className="text-[9px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded border shrink-0">Planifié</span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
+                          {(linkedTree.floors || []).map(floor => (
+                            <div
+                              key={floor.floorId}
+                              draggable
+                              onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                              onDragEnd={() => { setDraggedPlanningItem(null); setActiveDropIndex(null); }}
+                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all"
+                            >
+                              <div className="min-w-0">
+                                <span className="font-extrabold text-xs text-purple-900 block truncate">🎯 Palier {floor.floorId}</span>
+                                <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                              </div>
+                              <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
+                            </div>
+                          ))}
                         </div>
                       ) : (
-                        <div className="bg-slate-50 border border-slate-200 border-dashed rounded-xl p-4 text-center text-[10px] text-slate-400 font-bold">
-                          ⚠️ Associez un arbre à la session pour afficher ses paliers et pouvoir les planifier.
+                        <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500">
+                          Associez un arbre ci-dessus pour débloquer ses paliers.
                         </div>
                       )}
                     </div>
+
                   </div>
+
                 </div>
               )}
 
             </div>
           ) : (
-            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center shadow-sm flex flex-col items-center justify-center gap-3">
-              <span className="text-4xl">📅</span>
-              <h3 className="text-sm font-black text-slate-800">Aucune session sélectionnée</h3>
-              <p className="text-xs text-slate-400 font-bold max-w-sm leading-relaxed">
-                Choisissez une session dans la liste latérale de gauche ou cliquez sur "Nouvelle session" pour initialiser un nouvel espace de formation.
-              </p>
+            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-4">
+              <span className="text-4xl block">👈</span>
+              <h3 className="text-sm font-black text-slate-800 uppercase">Aucune session sélectionnée</h3>
+              <p className="text-xs text-slate-400 font-bold max-w-md mx-auto">Choisissez une session dans le panneau de gauche et cliquez sur 👁️ Voir pour consulter l'agenda ou ✏️ Modifier pour la paramétrer.</p>
             </div>
           )}
         </div>
 
       </div>
 
-      {/* MODAL : INITIALISATION DE SESSION */}
-      {activeModal === 'session' && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
-            <button 
-              onClick={() => setActiveModal(null)} 
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
-            >
-              ×
-            </button>
-            
-            <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">💡 Créer une Session</h3>
-            <form onSubmit={handleCreateSession} className="space-y-4 text-xs mt-4">
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">Code d'accès unique :</label>
-                <input 
-                  type="text" 
-                  required 
-                  placeholder="QALIOPI" 
-                  value={newSessionCode} 
-                  onChange={(e) => setNewSessionCode(e.target.value)} 
-                  className="w-full border rounded-lg p-2.5 bg-slate-50 font-mono font-bold uppercase tracking-wider text-center text-sm" 
-                />
-              </div>
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">Date de la formation :</label>
-                <input 
-                  type="date" 
-                  value={newSessionDate} 
-                  onChange={(e) => setNewSessionDate(e.target.value)} 
-                  className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-xs" 
-                />
-              </div>
-              <button 
-                type="submit" 
-                className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
-              >
-                Générer la session
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL : INSPECTEUR DE PALIER */}
+      {/* --- INSPECTEUR DE PALIER : DETAILS DU PALIER --- */}
       {selectedInspectFloor && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex justify-end">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-end z-50 transition-all">
           <div className="bg-white h-full max-w-lg w-full p-6 shadow-2xl overflow-y-auto border-l flex flex-col justify-between">
             <div>
               <div className="flex justify-between items-center border-b pb-4 mb-4">
@@ -907,38 +921,66 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     <p className="text-slate-400 italic">Aucune quête définie sur ce palier.</p>
                   ) : (
                     <div className="space-y-2">
-                      {selectedInspectFloor.quests.map((qId) => {
-                        const questObj = quests.find(q => String(q.id) === String(qId));
-                        return (
-                          <div key={qId} className="p-3 bg-slate-50 rounded-xl border border-slate-150">
-                            {questObj ? (
-                              <div>
-                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                                  questObj.theme === 'tech' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
-                                }`}>
-                                  {questObj.theme || 'Général'}
-                                </span>
-                                <h5 className="font-extrabold text-slate-800 text-xs mt-1">{questObj.name}</h5>
-                                <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{questObj.desc}</p>
-                              </div>
-                            ) : (
-                              <p className="text-[10px] text-slate-400 font-semibold italic">ID Quête: {qId} (Non chargée)</p>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {selectedInspectFloor.quests.map((q, qIndex) => (
+                        <div key={q.id || qIndex} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                          <p className="font-extrabold text-slate-900">⚔️ {q.title || q.name || "Activité sans titre"}</p>
+                          <p className="text-slate-500 text-[10px] leading-relaxed">{q.description || q.desc || "Pas de description."}</p>
+                          {q.points && (
+                            <span className="inline-block text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded mt-1">
+                              💎 {q.points} XP
+                            </span>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
+
+                {selectedInspectFloor.skills && selectedInspectFloor.skills.length > 0 && (
+                  <div>
+                    <h4 className="font-bold text-slate-500 uppercase text-[10px] mb-2">🧠 Compétences évaluées :</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedInspectFloor.skills.map((skill, sIdx) => (
+                        <span key={sIdx} className="bg-blue-50 text-blue-700 font-bold px-2 py-1 rounded-md border border-blue-200 text-[10px]">
+                          💡 {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <button 
-              onClick={() => setSelectedInspectFloor(null)}
-              className="mt-6 w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-2.5 rounded-xl text-xs uppercase"
-            >
-              Fermer l'inspecteur
-            </button>
+            <div className="border-t pt-4 mt-6">
+              <button 
+                onClick={() => setSelectedInspectFloor(null)}
+                className="w-full bg-slate-950 text-white font-extrabold py-2.5 rounded-xl text-xs uppercase tracking-wider"
+              >
+                Fermer l'inspecteur
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODALE D'INITIALISATION --- */}
+      {activeModal === 'session' && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
+            <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg">×</button>
+            
+            <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">💡 Créer une Session</h3>
+            <form onSubmit={handleCreateSession} className="space-y-4 text-xs mt-4">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Code d'accès unique :</label>
+                <input type="text" required placeholder="QALIOPI" value={newSessionCode} onChange={(e) => setNewSessionCode(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-mono font-bold uppercase tracking-wider text-center text-sm" />
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Date de la formation :</label>
+                <input type="date" value={newSessionDate} onChange={(e) => setNewSessionDate(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-xs" />
+              </div>
+              <button type="submit" className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all">Générer la session</button>
+            </form>
           </div>
         </div>
       )}
