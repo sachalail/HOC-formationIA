@@ -32,6 +32,15 @@ const formatDurationHM = (mins) => {
   return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
 };
 
+// Nettoie dynamiquement les résidus de "Sans nom" ou "undefined" dans les titres
+const cleanBlockName = (name) => {
+  if (!name) return "";
+  return name
+    .replace(/\s*:\s*Sans nom\s*/i, "")
+    .replace(/\s*:\s*undefined\s*/i, "")
+    .trim();
+};
+
 export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
@@ -41,13 +50,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [viewMode, setViewMode] = useState("view"); // "view" ou "edit"
   const [activeModal, setActiveModal] = useState(null); 
   
-  // Filtre d'affichage pour les sessions passées
-  const [showPastSessions, setShowPastSessions] = useState(true);
-  
+  // Filtrage des sessions passées
+  const [showPastSessions, setShowPastSessions] = useState(false);
+
   // Zoom sur un palier pour en inspecter le contenu
   const [selectedInspectFloor, setSelectedInspectFloor] = useState(null);
 
-  // Édition individuelle d'un bloc (Modale de l'engrenage)
+  // Édition fine d'un bloc (modale engrenage)
   const [editingBlock, setEditingBlock] = useState(null);
 
   // États des formulaires
@@ -138,17 +147,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const currentSession = sessions.find(s => String(s.id) === String(activeSessionId));
   const linkedTree = currentSession ? trees[currentSession.tree_id] : null;
 
-  // Résolution dynamique du nom du palier
-  const getBlockDisplayName = (block, sessionTree) => {
-    if (block.type === 'palier' && sessionTree) {
-      const matchedFloor = sessionTree.floors?.find(f => f.floorId === block.floorId);
-      if (matchedFloor && matchedFloor.name) {
-        return `🎯 Palier ${block.floorId}`;
-      }
-    }
-    return block.name;
-  };
-
   // Recherche dynamique DRH
   useEffect(() => {
     const searchDRH = async () => {
@@ -162,7 +160,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         if (currentDrhIds.length > 0) {
           query = query.not('id', 'in', `(${currentDrhIds.join(',')})`);
         }
-        const { data, error } = await query.limit(5);
+        const { data, error } = query.limit(5);
         if (data && !error) setDrhSuggestions(data);
       } catch (err) {
         console.error(err);
@@ -180,10 +178,16 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
       : currentSession.end_time;
 
+    // On nettoie les noms de la timeline avant de sauvegarder pour de bon
+    const cleanedPlanning = (currentSession.planning || []).map(block => ({
+      ...block,
+      name: cleanBlockName(block.name)
+    }));
+
     const { error } = await supabase.from('sessions').update({ 
       tree_id: currentSession.tree_id, 
       drh_ids: currentSession.drh_ids || [],
-      planning: currentSession.planning || [],
+      planning: cleanedPlanning,
       start_time: currentSession.start_time || '09:00',
       end_time_mode: currentSession.end_time_mode || 'auto',
       formation_date: currentSession.formation_date || null,
@@ -195,6 +199,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     } else {
       alert(`🎉 Session "${currentSession.session_code}" enregistrée avec succès !`);
       setViewMode("view");
+      // Rafraîchir les sessions locales
+      if (currentUserId) await fetchSessions(currentUserId);
     }
   };
 
@@ -240,34 +246,28 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setActiveModal(null);
   };
 
-  // Duplication de session
-  const handleDuplicateSession = async (sessionToDuplicate) => {
-    if (!sessionToDuplicate) return;
-    const cleanBaseCode = sessionToDuplicate.session_code.replace(/-COPY\d*$/, '');
-    const code = `${cleanBaseCode}-COPY${Date.now().toString().slice(-4)}`;
-    
+  const handleDuplicateSession = async (sessionToCopy) => {
+    if (!sessionToCopy) return;
+    const cleanCode = `${sessionToCopy.session_code}-COPY-${Math.floor(100 + Math.random() * 900)}`;
     const { data, error } = await supabase.from('sessions').insert([{
-      session_code: code,
+      session_code: cleanCode,
       created_by: currentUserId,
       manager_id: currentUserId,
-      tree_id: sessionToDuplicate.tree_id,
-      drh_ids: sessionToDuplicate.drh_ids || [],
-      planning: sessionToDuplicate.planning || [],
-      start_time: sessionToDuplicate.start_time || '09:00',
-      end_time_mode: sessionToDuplicate.end_time_mode || 'auto',
-      end_time: sessionToDuplicate.end_time || '09:00',
-      formation_date: sessionToDuplicate.formation_date
+      tree_id: sessionToCopy.tree_id,
+      drh_ids: sessionToCopy.drh_ids || [],
+      planning: sessionToCopy.planning || [],
+      start_time: sessionToCopy.start_time || '09:00',
+      end_time_mode: sessionToCopy.end_time_mode || 'auto',
+      end_time: sessionToCopy.end_time || '09:00',
+      formation_date: sessionToCopy.formation_date || new Date().toISOString().split('T')[0]
     }]).select().single();
 
-    if (error) {
-      alert(`❌ Erreur lors de la duplication : ${error.message}`);
-      return;
-    }
-
+    if (error) return alert(`Erreur lors de la duplication : ${error.message}`);
+    
     setSessions(prev => [data, ...prev].sort((a, b) => new Date(b.formation_date) - new Date(a.formation_date)));
     setActiveSessionId(data.id);
     setViewMode("edit");
-    alert(`👥 Session dupliquée avec succès sous le code "${code}" !`);
+    alert(`La session a été dupliquée sous le code "${cleanCode}"`);
   };
 
   const handleAddDRH = (drhUser) => {
@@ -286,33 +286,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
   };
 
-  // VALIDATION DE PLACEMENT GLOBALE ET FLEXIBLE
   const getPlacementValidation = (floorId, targetIndex, timeline, draggedItem) => {
     if (!floorId) return { isValid: true };
     
-    // 1. On clone la timeline de test
     let checkTimeline = [...timeline];
     
-    // 2. Si l'élément provient de la timeline (repositionnement), on l'enlève pour éviter qu'il ne se compare avec lui-même
     if (draggedItem && draggedItem.source === 'timeline') {
       checkTimeline.splice(draggedItem.index, 1);
     }
     
-    // 3. Ajustement de l'index d'insertion si on décale vers le bas
     let adjustedTargetIndex = targetIndex;
     if (draggedItem && draggedItem.source === 'timeline' && targetIndex > draggedItem.index) {
       adjustedTargetIndex = targetIndex - 1;
     }
     
-    // 4. On insère notre palier virtuellement dans la timeline épurée
     checkTimeline.splice(adjustedTargetIndex, 0, { type: 'palier', floorId });
 
-    // 5. On extrait uniquement la liste ordonnée des numéros de paliers présents
     const virtualPaliers = checkTimeline
       .filter(item => item?.type === 'palier')
       .map(item => item.floorId);
 
-    // 6. La position est valide ssi la suite des paliers est triée de façon strictement croissante
     let isValid = true;
     for (let i = 0; i < virtualPaliers.length - 1; i++) {
       if (virtualPaliers[i] >= virtualPaliers[i + 1]) {
@@ -324,7 +317,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return { isValid };
   };
 
-  // PERMET DE DETECTER SI UN PALIER EST COMPLÈTEMENT BLOQUÉ DANS LE PLANNING ACTUEL
   const isFloorLocked = (blockId, floorId, timeline) => {
     if (!floorId) return false;
     const index = timeline.findIndex(b => b.id === blockId);
@@ -333,17 +325,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     let validPositionsCount = 0;
     const dummyDraggedItem = { source: 'timeline', index };
 
-    // On teste toutes les positions d'insertions théoriques de 0 à N
     for (let i = 0; i <= timeline.length; i++) {
       const { isValid } = getPlacementValidation(floorId, i, timeline, dummyDraggedItem);
-      // Supprime de l'équation les emplacements équivalents à sa position actuelle pour le calcul du cadenas
       const isActualSpot = (i === index || i === index + 1);
       if (isValid && !isActualSpot) {
         validPositionsCount++;
       }
     }
 
-    // S'il n'y a aucun autre emplacement valide disponible à part sa position d'origine, il est verrouillé
     return validPositionsCount === 0;
   };
 
@@ -361,11 +350,18 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         setDraggedPlanningItem(null);
         return;
       }
+
+      // Construit proprement le nom sans mention de "Sans nom"
+      const cleanedFloorName = floor.name && floor.name.trim() !== "" ? cleanBlockName(floor.name) : "";
+      const blockName = cleanedFloorName !== ""
+        ? `🎯 Palier ${floor.floorId} : ${cleanedFloorName}`
+        : `🎯 Palier ${floor.floorId}`;
+
       const newBlock = {
         id: `palier-${floor.floorId}-${Date.now()}`,
         type: 'palier',
         floorId: floor.floorId,
-        name: `🎯 Palier ${floor.floorId};
+        name: blockName,
         desc: `${(floor.quests || []).length} activités associées à ce niveau.`,
         color: '#7c3aed',
         duration: 45
@@ -403,7 +399,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     updateCurrentSessionInState({ planning: timeline });
     setActiveDropIndex(null);
-    setDraggedPlanningItem(null);
+    setTimeout(() => {
+      setDraggedPlanningItem(null);
+    }, 0);
   };
 
   const removePlanningBlock = (blockId) => {
@@ -419,10 +417,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ planning: updated });
   };
 
-  // Enregistre les modifications détaillées d'un bloc (Modale Engrenage)
-  const handleSaveBlockEdit = (updatedBlock) => {
-    if (!currentSession) return;
-    const updatedPlanning = (currentSession.planning || []).map(b => b.id === updatedBlock.id ? updatedBlock : b);
+  const openBlockEditor = (block) => {
+    setEditingBlock({ ...block, name: cleanBlockName(block.name) });
+  };
+
+  const handleSaveBlockEdit = () => {
+    if (!currentSession || !editingBlock) return;
+    const updatedPlanning = (currentSession.planning || []).map(b => 
+      b.id === editingBlock.id ? { ...editingBlock, name: cleanBlockName(editingBlock.name) } : b
+    );
     updateCurrentSessionInState({ planning: updatedPlanning });
     setEditingBlock(null);
   };
@@ -440,21 +443,20 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const min = currentMinutes % 60;
       const timeString = `${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
       currentMinutes += parseInt(block.duration || 0, 10);
-      return { ...block, startTimeFormatted: timeString };
+      return { 
+        ...block, 
+        name: cleanBlockName(block.name), // Nettoyage de sécurité à l'affichage
+        startTimeFormatted: timeString 
+      };
     });
   };
 
-  // Récupère la liste des ID de paliers déjà présents dans le planning
-  const existingFloorIds = currentSession && currentSession.planning 
-    ? currentSession.planning.filter(b => b.type === 'palier').map(b => b.floorId)
-    : [];
-
-  // Filtrage des sessions selon les passées/futures
+  // Filtrage des sessions selon la date
   const todayStr = new Date().toISOString().split('T')[0];
-  const displayedSessions = sessions.filter(s => {
-    if (showPastSessions) return true;
-    if (!s.formation_date) return true; // On garde les sessions sans date
-    return s.formation_date >= todayStr;
+  const filteredSessions = sessions.filter(s => {
+    if (showPastSessions) return true; 
+    if (!s.formation_date) return true; 
+    return s.formation_date >= todayStr; 
   });
 
   return (
@@ -479,32 +481,27 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         {/* COLONNE GAUCHE : LISTE DES SESSIONS */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-            
-            {/* SWITCH SESSIONS PASSÉES */}
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-              <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">📅 Sessions ({displayedSessions.length})</h3>
-              <label className="inline-flex items-center cursor-pointer gap-2 select-none">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Afficher passées</span>
-                <input 
-                  type="checkbox" 
-                  checked={showPastSessions}
-                  onChange={(e) => setShowPastSessions(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
-                />
-              </label>
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">📅 Liste des sessions</h3>
+              <button 
+                onClick={() => setShowPastSessions(!showPastSessions)}
+                className={`text-[10px] font-black px-2 py-1 rounded transition-all border ${
+                  showPastSessions 
+                    ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                    : 'bg-slate-50 text-slate-500 border-slate-200'
+                }`}
+              >
+                {showPastSessions ? "👁️ Tout afficher" : "📅 Sessions à venir"}
+              </button>
             </div>
             
             <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
-              {displayedSessions.map(s => {
+              {filteredSessions.map(s => {
                 const isSelected = String(s.id) === String(activeSessionId);
                 const sTree = trees[s.tree_id];
                 const formattedDate = s.formation_date 
                   ? new Date(s.formation_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
                   : "Sans date";
-
-                const calculatedEnd = s.end_time_mode === 'auto'
-                  ? calculateEndTime(s.start_time || '09:00', s.planning || [])
-                  : (s.end_time || '09:00');
 
                 return (
                   <div 
@@ -526,7 +523,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                     <div className="text-[11px] text-slate-600 space-y-1">
                       <p>🌲 Arbre : <span className="font-extrabold text-slate-800">{sTree ? sTree.name : 'Non associé'}</span></p>
-                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {calculatedEnd}</span></p>
+                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {s.end_time_mode === 'auto' ? 'Calculé' : (s.end_time || 'Calculé')}</span></p>
                       <p>🔗 Étapes : <span className="font-extrabold text-blue-700">{s.planning?.length || 0} blocs</span></p>
                     </div>
 
@@ -536,7 +533,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           setActiveSessionId(String(s.id));
                           setViewMode("view");
                         }}
-                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-0.5 ${
                           isSelected && viewMode === "view"
                             ? 'bg-blue-600 text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -549,30 +546,25 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           setActiveSessionId(String(s.id));
                           setViewMode("edit");
                         }}
-                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-0.5 ${
                           isSelected && viewMode === "edit"
                             ? 'bg-amber-500 text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                       >
-                        ✏️ Modifier
+                        ✏️ Modif.
                       </button>
                       <button
                         onClick={() => handleDuplicateSession(s)}
-                        className="py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 flex items-center justify-center gap-1 shrink-0"
-                        title="Dupliquer la session"
+                        className="py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center justify-center gap-0.5"
+                        title="Dupliquer cette session"
                       >
-                        👥 Copier
+                        👥 Dupl.
                       </button>
                     </div>
                   </div>
                 );
               })}
-              {displayedSessions.length === 0 && (
-                <div className="text-center py-6 text-xs font-semibold text-slate-400">
-                  Aucune session à afficher.
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -624,7 +616,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             <div className="flex justify-between items-start gap-2">
                               <div>
                                 <h4 className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                                  {getBlockDisplayName(block, linkedTree)}
+                                  {cleanBlockName(block.name)}
                                   {block.type === 'palier' && (
                                     <span className="text-[9px] bg-purple-100 text-purple-700 font-black px-1.5 py-0.2 rounded border border-purple-200">
                                       🔍 Inspecter le contenu
@@ -633,7 +625,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 </h4>
                                 <p className="text-[10px] text-slate-500 font-semibold mt-1">{block.desc}</p>
                               </div>
-                              <span className="text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded shrink-0 font-mono">
+                              <span className="text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded shrink-0">
                                 ⏱️ {formatDurationHM(block.duration)}
                               </span>
                             </div>
@@ -785,234 +777,206 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     <div className="md:col-span-2 space-y-3">
                       <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Plan de la journée (Glissez-déposez pour réorganiser)</h4>
                       
-                      <div className="space-y-1 relative">
-                        {/* RENDU SÉCURISÉ DES ZONES DE DROP ET DES BLOCS */}
-                        {(() => {
-                          const planning = currentSession.planning || [];
-                          
-                          if (planning.length === 0) {
-                            return (
-                              <div 
-                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(0); }}
-                                onDragLeave={() => setActiveDropIndex(null)}
-                                onDrop={() => handleTimelineDrop(0)}
-                                className={`p-10 border-2 border-dashed rounded-xl text-center text-xs font-bold transition-all ${
-                                  activeDropIndex === 0 ? 'bg-blue-50 border-blue-400 text-blue-700' : 'bg-slate-50 border-slate-300 text-slate-400'
-                                }`}
-                              >
-                                Déposez des blocs ici pour créer la journée de formation.
-                              </div>
-                            );
+                      <div className="space-y-1">
+                        {(currentSession.planning || []).length === 0 && (
+                          <div 
+                            onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(0); }}
+                            onDragLeave={() => setActiveDropIndex(null)}
+                            onDrop={() => handleTimelineDrop(0)}
+                            className={`p-10 border-2 border-dashed rounded-xl text-center text-xs font-bold transition-all ${
+                              activeDropIndex === 0 ? 'bg-blue-50 border-blue-400 text-blue-700' : 'bg-slate-50 border-slate-300 text-slate-400'
+                            }`}
+                          >
+                            Déposez des blocs ici pour créer la journée de formation.
+                          </div>
+                        )}
+
+                        {(currentSession.planning || []).map((block, index) => {
+                          let isTargetIndexValid = true;
+                          const isBeingDragged = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && draggedPlanningItem.index === index;
+
+                          const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
+                                                 (index === draggedPlanningItem.index || index === draggedPlanningItem.index + 1);
+
+                          if (draggedPlanningItem && !isImmediateSpot) {
+                            let dragFloorId = null;
+                            if (draggedPlanningItem.source === 'palette-palier') {
+                              dragFloorId = draggedPlanningItem.data?.floorId;
+                            } else if (draggedPlanningItem.source === 'timeline') {
+                              const sourceBlock = currentSession.planning[draggedPlanningItem.index];
+                              if (sourceBlock?.type === 'palier') {
+                                dragFloorId = sourceBlock.floorId;
+                              }
+                            }
+
+                            if (dragFloorId) {
+                              const validation = getPlacementValidation(dragFloorId, index, currentSession.planning, draggedPlanningItem);
+                              isTargetIndexValid = validation.isValid;
+                            }
+                          } else if (isImmediateSpot) {
+                            isTargetIndexValid = false;
                           }
 
+                          const isLocked = block.type === 'palier' && isFloorLocked(block.id, block.floorId, currentSession.planning);
+
                           return (
-                            <>
-                              {planning.map((block, index) => {
-                                // Calculs de validation pour cette zone d'insertion (AVANT le bloc actuel)
-                                let isTargetIndexValid = false;
-                                if (draggedPlanningItem) {
-                                  const isImmediateSpot = draggedPlanningItem.source === 'timeline' && 
-                                                         (index === draggedPlanningItem.index || index === draggedPlanningItem.index + 1);
-                                  
-                                  if (!isImmediateSpot) {
-                                    let dragFloorId = null;
-                                    if (draggedPlanningItem.source === 'palette-palier') {
-                                      dragFloorId = draggedPlanningItem.data?.floorId;
-                                    } else if (draggedPlanningItem.source === 'timeline') {
-                                      const sourceBlock = planning[draggedPlanningItem.index];
-                                      if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
-                                    }
-
-                                    if (dragFloorId) {
-                                      const validation = getPlacementValidation(dragFloorId, index, planning, draggedPlanningItem);
-                                      isTargetIndexValid = validation.isValid;
-                                    } else {
-                                      isTargetIndexValid = true; // Pas de restriction pour les blocs customs
-                                    }
-                                  }
-                                }
-
-                                const isBeingDragged = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && draggedPlanningItem.index === index;
-                                const isLocked = block.type === 'palier' && isFloorLocked(block.id, block.floorId, planning);
-
-                                return (
-                                  <React.Fragment key={block.id}>
-                                    
-                                    {/* ZONE DE DÉPÔT PERMANENTE (AVANT CHAQUE BLOC) */}
-                                    <div 
-                                      onDragOver={(e) => { 
-                                        if (draggedPlanningItem && isTargetIndexValid) {
-                                          e.preventDefault(); 
-                                          setActiveDropIndex(index); 
-                                        }
-                                      }}
-                                      onDragLeave={() => setActiveDropIndex(null)}
-                                      onDrop={() => {
-                                        if (isTargetIndexValid) handleTimelineDrop(index);
-                                      }}
-                                      className={`transition-all duration-200 rounded-lg flex items-center justify-center font-bold text-[10px] ${
-                                        draggedPlanningItem && isTargetIndexValid
-                                          ? activeDropIndex === index
-                                            ? 'bg-emerald-50 border-2 border-dashed border-emerald-500 text-emerald-700 h-12 my-2'
-                                            : 'border border-dashed border-slate-300/60 bg-slate-50/40 h-5 my-1 text-slate-400 hover:bg-slate-100 hover:border-slate-400'
-                                          : 'h-1 pointer-events-none'
-                                      }`}
+                            <React.Fragment key={block.id}>
+                              
+                              {/* ZONE DE DÉPÔT COHÉRENTE ET NON-REDONDANTE */}
+                              {draggedPlanningItem && isTargetIndexValid && (
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
+                                  onDragLeave={() => setActiveDropIndex(null)}
+                                  onDrop={() => handleTimelineDrop(index)}
+                                  className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                    activeDropIndex === index 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                      : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
+                                  }`}
+                                >
+                                  {activeDropIndex === index && (
+                                    <span>🟢 Déposer ici (Valide)</span>
+                                  )}
+                                </div>
+                              )}
+                              
+                              <div 
+                                className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
+                                  isLocked ? 'opacity-95' : ''
+                                } ${
+                                  isBeingDragged ? 'opacity-40 border-dashed bg-slate-50 border-slate-300' : ''
+                                }`}
+                                style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {isLocked ? (
+                                    <span 
+                                      className="text-amber-500 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1"
+                                      title="Ce palier ne peut pas être déplacé à un autre endroit car il est bloqué par les autres paliers."
                                     >
-                                      {draggedPlanningItem && isTargetIndexValid && activeDropIndex === index && (
-                                        <span>🟢 Déposer ici (Valide)</span>
+                                      🔒
+                                    </span>
+                                  ) : (
+                                    <span 
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.stopPropagation();
+                                        setDraggedPlanningItem({ source: 'timeline', index });
+                                      }}
+                                      onDragEnd={() => {
+                                        setTimeout(() => {
+                                          setDraggedPlanningItem(null);
+                                          setActiveDropIndex(null);
+                                        }, 0);
+                                      }}
+                                      className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
+                                    >
+                                      ⠿
+                                    </span>
+                                  )}
+                                  
+                                  <div className="min-w-0">
+                                    <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
+                                      {cleanBlockName(block.name)}
+                                      {block.type === 'palier' && (
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
+                                            if (matchedFloor) setSelectedInspectFloor(matchedFloor);
+                                          }}
+                                          className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
+                                        >
+                                          🔍 Voir contenu
+                                        </button>
                                       )}
-                                    </div>
-
-                                    {/* CONTENEUR DU BLOC DE LA TIMELINE */}
-                                    <div 
-                                      className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
-                                        isLocked ? 'opacity-95' : ''
-                                      } ${
-                                        isBeingDragged ? 'opacity-30 border-dashed bg-slate-50 border-slate-300' : ''
-                                      }`}
-                                      style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
-                                    >
-                                      <div className="flex items-center gap-3 min-w-0">
-                                        {/* Cadenas si verrouillé ou poignée classique si déplaçable */}
-                                        {isLocked ? (
-                                          <span 
-                                            className="text-amber-500 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1"
-                                            title="Ce palier ne peut pas être déplacé à un autre endroit car il est bloqué par les autres paliers."
-                                          >
-                                            🔒
-                                          </span>
-                                        ) : (
-                                          <span 
-                                            draggable
-                                            onDragStart={(e) => {
-                                              e.stopPropagation();
-                                              setDraggedPlanningItem({ source: 'timeline', index });
-                                            }}
-                                            onDragEnd={() => {
-                                              setDraggedPlanningItem(null);
-                                              setActiveDropIndex(null);
-                                            }}
-                                            className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
-                                          >
-                                            ⠿
-                                          </span>
-                                        )}
-                                        
-                                        <div className="min-w-0">
-                                          <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
-                                            {getBlockDisplayName(block, linkedTree)}
-                                            {block.type === 'palier' && (
-                                              <button 
-                                                type="button"
-                                                onClick={() => {
-                                                  const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
-                                                  if (matchedFloor) setSelectedInspectFloor(matchedFloor);
-                                                }}
-                                                className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer shadow-xs shrink-0"
-                                              >
-                                                🔍 Voir contenu
-                                              </button>
-                                            )}
-                                          </h5>
-                                          <p className="text-[10px] text-slate-400 font-bold truncate">{block.desc}</p>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center gap-3 flex-shrink-0">
-                                        <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border">
-                                          <input 
-                                            type="number" 
-                                            min="1"
-                                            value={block.duration || 15}
-                                            onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)}
-                                            className="w-10 text-center bg-white border rounded p-0.5 font-black text-slate-900 text-xs"
-                                          />
-                                          <span className="text-[10px] font-black text-slate-400">min</span>
-                                        </div>
-                                        
-                                        {/* BOUTON ENGRENAGE DE MODIFICATION */}
-                                        <button 
-                                          type="button"
-                                          onClick={() => setEditingBlock(block)} 
-                                          className="text-slate-500 hover:text-slate-700 font-bold text-xs bg-slate-100 p-1.5 rounded-lg transition-colors"
-                                          title="Modifier le bloc"
-                                        >
-                                          ⚙️
-                                        </button>
-
-                                        <button 
-                                          type="button"
-                                          onClick={() => removePlanningBlock(block.id)} 
-                                          className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg"
-                                        >
-                                          🗑️
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </React.Fragment>
-                                );
-                              })}
-
-                              {/* ZONE DE DÉPÔT DE TOUTE FIN DE TIMELINE */}
-                              {(() => {
-                                const lastIndex = planning.length;
-                                let isLastTargetValid = false;
-                                
-                                if (draggedPlanningItem) {
-                                  const isImmediateSpot = draggedPlanningItem.source === 'timeline' && 
-                                                         (lastIndex === draggedPlanningItem.index || lastIndex === draggedPlanningItem.index + 1);
-                                  
-                                  if (!isImmediateSpot) {
-                                    let dragFloorId = null;
-                                    if (draggedPlanningItem.source === 'palette-palier') {
-                                      dragFloorId = draggedPlanningItem.data?.floorId;
-                                    } else if (draggedPlanningItem.source === 'timeline') {
-                                      const sourceBlock = planning[draggedPlanningItem.index];
-                                      if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
-                                    }
-
-                                    if (dragFloorId) {
-                                      const validation = getPlacementValidation(dragFloorId, lastIndex, planning, draggedPlanningItem);
-                                      isLastTargetValid = validation.isValid;
-                                    } else {
-                                      isLastTargetValid = true;
-                                    }
-                                  }
-                                }
-
-                                return (
-                                  <div 
-                                    onDragOver={(e) => { 
-                                      if (draggedPlanningItem && isLastTargetValid) {
-                                        e.preventDefault(); 
-                                        setActiveDropIndex(lastIndex); 
-                                      }
-                                    }}
-                                    onDragLeave={() => setActiveDropIndex(null)}
-                                    onDrop={() => {
-                                      if (isLastTargetValid) handleTimelineDrop(lastIndex);
-                                    }}
-                                    className={`transition-all duration-200 rounded-lg flex items-center justify-center font-bold text-[10px] ${
-                                      draggedPlanningItem && isLastTargetValid
-                                        ? activeDropIndex === lastIndex
-                                          ? 'bg-emerald-50 border-2 border-dashed border-emerald-500 text-emerald-700 h-12 my-2'
-                                          : 'border border-dashed border-slate-300/60 bg-slate-50/40 h-5 my-1 text-slate-400 hover:bg-slate-100 hover:border-slate-400'
-                                        : 'h-1 pointer-events-none'
-                                    }`}
-                                  >
-                                    {draggedPlanningItem && isLastTargetValid && activeDropIndex === lastIndex && (
-                                      <span>🟢 Déposer en fin de planning (Valide)</span>
-                                    )}
+                                    </h5>
+                                    <p className="text-[10px] text-slate-400 font-bold truncate">{block.desc}</p>
                                   </div>
-                                );
-                              })()}
-                            </>
+                                </div>
+
+                                <div className="flex items-center gap-3 flex-shrink-0">
+                                  <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border">
+                                    <input 
+                                      type="number" 
+                                      min="1"
+                                      value={block.duration || 15}
+                                      onChange={(e) => updatePlanningBlockDuration(block.id, e.target.value)}
+                                      className="w-10 text-center bg-white border rounded p-0.5 font-black text-slate-900 text-xs"
+                                    />
+                                    <span className="text-[10px] font-black text-slate-400">min</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => openBlockEditor(block)}
+                                    className="text-slate-500 hover:text-slate-800 font-bold text-xs bg-slate-100 hover:bg-slate-200 p-1 rounded-lg"
+                                    title="Modifier en détail"
+                                  >
+                                    ⚙️
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    onClick={() => removePlanningBlock(block.id)} 
+                                    className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg"
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                              </div>
+                            </React.Fragment>
                           );
-                        })()}
+                        })}
+
+                        {/* DERNIER INDICATEUR DE FIN DE TIMELINE */}
+                        {(currentSession.planning || []).length > 0 && (
+                          (() => {
+                            const lastIndex = currentSession.planning.length;
+                            let isTargetIndexValid = true;
+
+                            const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
+                                                   (lastIndex === draggedPlanningItem.index || lastIndex === draggedPlanningItem.index + 1);
+
+                            if (draggedPlanningItem && !isImmediateSpot) {
+                              let dragFloorId = null;
+                              if (draggedPlanningItem.source === 'palette-palier') {
+                                dragFloorId = draggedPlanningItem.data?.floorId;
+                              } else if (draggedPlanningItem.source === 'timeline') {
+                                const sourceBlock = currentSession.planning[draggedPlanningItem.index];
+                                if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
+                              }
+
+                              if (dragFloorId) {
+                                const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning, draggedPlanningItem);
+                                isTargetIndexValid = validation.isValid;
+                              }
+                            } else {
+                              isTargetIndexValid = false;
+                            }
+
+                            if (!isTargetIndexValid) return null;
+
+                            return (
+                              <div 
+                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(lastIndex); }}
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => handleTimelineDrop(lastIndex)}
+                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  activeDropIndex === lastIndex 
+                                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                    : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
+                                }`}
+                              >
+                                {activeDropIndex === lastIndex && (
+                                  <span>🟢 Déposer en fin de planning (Valide)</span>
+                                )}
+                              </div>
+                            );
+                          })()
+                        )}
                       </div>
                     </div>
 
-                    {/* PALETTE D'ACTIVITES (1/3) */}
+                    {/* PALETTE D'ACTIVITES (1/3) : BLOC PERSO AU-DESSUS */}
                     <div className="space-y-4">
                       <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">🛠️ Palette</h4>
                       
@@ -1030,8 +994,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           draggable
                           onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
                           onDragEnd={() => {
-                            setDraggedPlanningItem(null);
-                            setActiveDropIndex(null);
+                            setTimeout(() => {
+                              setDraggedPlanningItem(null);
+                              setActiveDropIndex(null);
+                            }, 0);
                           }}
                           className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs select-none"
                           style={{ borderLeftWidth: '5px', borderLeftColor: customBlockConfig.color }}
@@ -1041,44 +1007,32 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </div>
                       </div>
 
-                      {/* LES PALIERS DE L'ARBRE (Filtrés si déjà présents) */}
+                      {/* LES PALIERS DE L'ARBRE */}
                       {linkedTree ? (
                         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
-                          {(() => {
-                            const availableFloors = (linkedTree.floors || []).filter(
-                              floor => !existingFloorIds.includes(floor.floorId)
-                            );
-
-                            if (availableFloors.length === 0) {
-                              return (
-                                <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
-                                  ✅ Tous les paliers de l'arbre sont actuellement dans le planning.
-                                </p>
-                              );
-                            }
-
-                            return availableFloors.map(floor => (
-                              <div
-                                key={floor.floorId}
-                                draggable
-                                onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                                onDragEnd={() => {
+                          {(linkedTree.floors || []).map(floor => (
+                            <div
+                              key={floor.floorId}
+                              draggable
+                              onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                              onDragEnd={() => {
+                                setTimeout(() => {
                                   setDraggedPlanningItem(null);
                                   setActiveDropIndex(null);
-                                }}
-                                className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
-                              >
-                                <div className="min-w-0">
-                                  <span className="font-extrabold text-xs text-purple-900 block truncate">
-                                    🎯 Palier {floor.floorId}
-                                  </span>
-                                  <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
-                                </div>
-                                <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
+                                }, 0);
+                              }}
+                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
+                            >
+                              <div className="min-w-0">
+                                <span className="font-extrabold text-xs text-purple-900 block truncate">
+                                  {floor.name && floor.name.trim() !== "" ? `🎯 Palier ${floor.floorId} : ${cleanBlockName(floor.name)}` : `🎯 Palier ${floor.floorId}`}
+                                </span>
+                                <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
                               </div>
-                            ));
-                          })()}
+                              <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500">
@@ -1112,7 +1066,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <div className="flex justify-between items-center border-b pb-4 mb-4">
                 <div>
                   <span className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">🔍 Inspecteur de Contenu</span>
-                  <h3 className="text-sm font-black text-slate-900 mt-1">Palier {selectedInspectFloor.floorId}{selectedInspectFloor.name ? ` : ${selectedInspectFloor.name}` : ''}</h3>
+                  <h3 className="text-sm font-black text-slate-900 mt-1">Palier {selectedInspectFloor.floorId} : {cleanBlockName(selectedInspectFloor.name) || 'Général'}</h3>
                 </div>
                 <button 
                   onClick={() => setSelectedInspectFloor(null)} 
@@ -1171,10 +1125,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         </div>
       )}
 
-      {/* --- MODALE D'ÉDITION D'UN BLOC (Engrenage) --- */}
+      {/* --- MODALE D'ÉDITION PRÉCISE D'UN BLOC (ENGRENAGE) --- */}
       {editingBlock && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border border-slate-200">
             <button 
               onClick={() => setEditingBlock(null)} 
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
@@ -1182,79 +1136,65 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               ×
             </button>
             
-            <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">⚙️ Modifier le bloc</h3>
-            <div className="space-y-4 text-xs mt-4">
+            <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider">⚙️ Configurer l'étape</h3>
+            
+            <div className="space-y-4 mt-4 text-xs">
               <div>
-                <label className="block text-slate-600 font-bold mb-1">Nom de l'étape :</label>
+                <label className="block text-slate-700 font-bold mb-1">Nom de l'activité :</label>
                 <input 
                   type="text" 
-                  value={editingBlock.name} 
+                  value={editingBlock.name || ''} 
                   onChange={(e) => setEditingBlock({ ...editingBlock, name: e.target.value })}
-                  className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-xs" 
+                  className="w-full border rounded-lg p-2 bg-slate-50 font-extrabold text-xs"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-slate-600 font-bold mb-1">Durée (en minutes) :</label>
-                <div className="flex items-center gap-3">
+                <label className="block text-slate-700 font-bold mb-1">Description :</label>
+                <textarea 
+                  rows="3"
+                  value={editingBlock.desc || ''} 
+                  onChange={(e) => setEditingBlock({ ...editingBlock, desc: e.target.value })}
+                  className="w-full border rounded-lg p-2 bg-slate-50 font-medium text-xs leading-relaxed"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Durée (minutes) :</label>
                   <input 
                     type="number" 
                     min="1"
                     value={editingBlock.duration || 15} 
                     onChange={(e) => setEditingBlock({ ...editingBlock, duration: Math.max(1, parseInt(e.target.value, 10) || 15) })}
-                    className="w-24 border rounded-lg p-2 bg-slate-50 font-black text-xs text-center" 
+                    className="w-full border rounded-lg p-2 bg-slate-50 font-black text-xs"
                   />
-                  <span className="text-[11px] text-slate-500 font-black bg-slate-100 border px-2.5 py-1 rounded-md font-mono">
-                    ⏱️ {formatDurationHM(editingBlock.duration)}
-                  </span>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">Description :</label>
-                <textarea 
-                  value={editingBlock.desc || ''} 
-                  onChange={(e) => setEditingBlock({ ...editingBlock, desc: e.target.value })}
-                  rows="3"
-                  className="w-full border rounded-lg p-2.5 bg-slate-50 text-xs leading-relaxed resize-none" 
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">Couleur d'identification :</label>
-                <div className="flex items-center gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Couleur d'identification :</label>
                   <input 
                     type="color" 
                     value={editingBlock.color || '#94a3b8'} 
                     onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })}
-                    className="w-10 h-10 border rounded cursor-pointer shrink-0" 
+                    className="w-full h-9 border rounded-lg p-1 bg-slate-50 cursor-pointer"
                   />
-                  <input 
-                    type="text" 
-                    value={editingBlock.color || '#94a3b8'} 
-                    onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })}
-                    placeholder="#ffffff"
-                    maxLength={7}
-                    className="border rounded-lg p-2 bg-slate-50 font-mono text-xs uppercase w-28 text-center font-extrabold tracking-wider" 
-                  />
-                  <span className="text-[10px] text-slate-400 font-semibold italic">(Pipette ou code Hexa)</span>
                 </div>
               </div>
-              
-              <div className="pt-2 flex gap-2">
+
+              <div className="flex gap-2 pt-2">
                 <button 
-                  type="button"
+                  type="button" 
                   onClick={() => setEditingBlock(null)}
-                  className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
+                  className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl uppercase tracking-wider"
                 >
                   Annuler
                 </button>
                 <button 
                   type="button" 
-                  onClick={() => handleSaveBlockEdit(editingBlock)}
-                  className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
+                  onClick={handleSaveBlockEdit}
+                  className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl uppercase tracking-wider"
                 >
-                  Valider
+                  Appliquer
                 </button>
               </div>
             </div>
