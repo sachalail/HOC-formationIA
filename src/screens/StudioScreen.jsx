@@ -63,6 +63,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         setCurrentUserId(session.user.id);
         await fetchSessions(session.user.id);
         await fetchTrees();
+        await fetchQuests();
       }
     };
     fetchInitialData();
@@ -117,6 +118,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const treesMap = {};
       data.forEach(t => { treesMap[t.id] = t; });
       if (typeof setTrees === 'function') setTrees(treesMap);
+    }
+  };
+
+  const fetchQuests = async () => {
+    const { data, error } = await supabase.from('quests').select('*');
+    if (data && !error && typeof setQuests === 'function') {
+      setQuests(data);
     }
   };
 
@@ -232,19 +240,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   // --- LOGIQUE ET VALIDATION DE PLACEMENT DU DRAG & DROP ---
   const getPlacementValidation = (floorId, targetIndex, timeline) => {
-    if (!floorId) return { isValid: true };
+    if (floorId === undefined || floorId === null) return { isValid: true };
     
+    const targetFloorId = parseInt(floorId, 10);
+    if (isNaN(targetFloorId)) return { isValid: true };
+
     let prevMaxFloor = -1;
     for (let i = 0; i < targetIndex; i++) {
-      if (timeline[i]?.type === 'palier') prevMaxFloor = Math.max(prevMaxFloor, timeline[i].floorId);
+      if (timeline[i]?.type === 'palier' && timeline[i]?.floorId !== undefined) {
+        prevMaxFloor = Math.max(prevMaxFloor, parseInt(timeline[i].floorId, 10));
+      }
     }
     
     let nextMinFloor = 999;
     for (let i = targetIndex; i < timeline.length; i++) {
-      if (timeline[i]?.type === 'palier') nextMinFloor = Math.min(nextMinFloor, timeline[i].floorId);
+      if (timeline[i]?.type === 'palier' && timeline[i]?.floorId !== undefined) {
+        nextMinFloor = Math.min(nextMinFloor, parseInt(timeline[i].floorId, 10));
+      }
     }
 
-    const isValid = floorId > prevMaxFloor && floorId < nextMinFloor;
+    const isValid = targetFloorId > prevMaxFloor && targetFloorId < nextMinFloor;
     return {
       isValid,
       prevMaxFloor: prevMaxFloor === -1 ? null : prevMaxFloor,
@@ -269,7 +284,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const newBlock = {
         id: `palier-${floor.floorId}-${Date.now()}`,
         type: 'palier',
-        floorId: floor.floorId,
+        floorId: parseInt(floor.floorId, 10),
         name: `🎯 Palier ${floor.floorId} : ${floor.name || 'Sans nom'}`,
         desc: `${(floor.quests || []).length} activités associées à ce niveau.`,
         color: '#7c3aed',
@@ -336,6 +351,23 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const timeString = `${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
       currentMinutes += parseInt(block.duration || 0, 10);
       return { ...block, startTimeFormatted: timeString };
+    });
+  };
+
+  // Résolution des détails complets des quêtes pour l'inspecteur
+  const getResolvedInspectQuests = () => {
+    if (!selectedInspectFloor) return [];
+    const floorQuestsRaw = selectedInspectFloor.quests || selectedInspectFloor.quest_ids || [];
+    
+    return floorQuestsRaw.map(fq => {
+      // Si la quête du palier est déjà un objet complet
+      if (fq && typeof fq === 'object' && (fq.title || fq.name)) {
+        return fq;
+      }
+      // Sinon, on cherche l'ID de la quête dans la liste globale
+      const targetId = typeof fq === 'object' ? (fq.id || fq.quest_id) : fq;
+      const foundGlobal = quests.find(q => String(q.id) === String(targetId));
+      return foundGlobal || { id: targetId, title: "Activité inconnue", description: "Pas de détails chargés." };
     });
   };
 
@@ -469,7 +501,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             style={{ borderLeftWidth: '5px', borderLeftColor: block.color || '#cbd5e1' }}
                             onClick={() => {
                               if (block.type === 'palier') {
-                                const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
+                                const matchedFloor = linkedTree?.floors?.find(f => parseInt(f.floorId, 10) === parseInt(block.floorId, 10));
                                 if (matchedFloor) setSelectedInspectFloor(matchedFloor);
                               }
                             }}
@@ -653,9 +685,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         )}
 
                         {(currentSession.planning || []).map((block, index) => {
-                          // Récupérer l'ID du palier en cours de drag (si c'en est un)
-                          let dragFloorId = null;
+                          // Evaluation de la validité de cette position de dépôt pour le bloc en cours de drag
+                          let isTargetIndexValid = true;
+                          let explanationText = "";
+
                           if (draggedPlanningItem) {
+                            let dragFloorId = null;
                             if (draggedPlanningItem.source === 'palette-palier') {
                               dragFloorId = draggedPlanningItem.data?.floorId;
                             } else if (draggedPlanningItem.source === 'timeline') {
@@ -664,52 +699,45 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 dragFloorId = sourceBlock.floorId;
                               }
                             }
-                          }
 
-                          const isDraggingPalier = !!dragFloorId;
-                          const validation = draggedPlanningItem ? getPlacementValidation(dragFloorId, index, currentSession.planning) : { isValid: true };
-                          const isTargetIndexValid = validation.isValid;
-
-                          // Logique de classe CSS dynamique pour les indicateurs de drop (zones de dépôt)
-                          let dropZoneClasses = "transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ";
-                          let dropZoneContent = null;
-
-                          if (draggedPlanningItem) {
-                            if (isDraggingPalier) {
-                              if (isTargetIndexValid) {
-                                // Affichage vert & visible (full) même sans être survolé
-                                const isOver = activeDropIndex === index;
-                                dropZoneClasses += `bg-emerald-50 border-emerald-500 text-emerald-700 h-14 my-2 ${isOver ? 'ring-2 ring-emerald-400 scale-[1.01]' : ''}`;
-                                dropZoneContent = <span>🟢 Déposer ici (Position autorisée)</span>;
-                              } else {
-                                // Masqué complètement (hauteur à 0, pas de bordure)
-                                dropZoneClasses += "bg-transparent h-0 my-0 border-none overflow-hidden";
-                              }
-                            } else {
-                              // Glissement d'un bloc custom classique
-                              const isOver = activeDropIndex === index;
-                              if (isOver) {
-                                dropZoneClasses += "bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2";
-                                dropZoneContent = <span>🟢 Déposer ici (Valide)</span>;
-                              } else {
-                                dropZoneClasses += "border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400";
+                            if (dragFloorId !== null && dragFloorId !== undefined) {
+                              const validation = getPlacementValidation(dragFloorId, index, currentSession.planning);
+                              isTargetIndexValid = validation.isValid;
+                              if (!isTargetIndexValid) {
+                                explanationText = `Doit être placé après Palier ${validation.prevMaxFloor || '0'}`;
+                                if (validation.nextMinFloor) {
+                                  explanationText += ` et avant Palier ${validation.nextMinFloor}`;
+                                }
                               }
                             }
-                          } else {
-                            dropZoneClasses += "bg-transparent h-2 border-none";
                           }
 
                           return (
                             <React.Fragment key={block.id}>
                               
-                              {/* ZONE DE DEPOT AUTORISÉE / RE-COLORÉE */}
+                              {/* INDICATEUR DE ZONE DE DEPOT RECONSTRUITE & COLORÉE */}
                               <div 
                                 onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
                                 onDragLeave={() => setActiveDropIndex(null)}
                                 onDrop={() => handleTimelineDrop(index)}
-                                className={dropZoneClasses}
+                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  activeDropIndex === index 
+                                    ? isTargetIndexValid 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                      : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
+                                    : draggedPlanningItem 
+                                      ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
+                                      : 'bg-transparent h-2 border-none'
+                                }`}
                               >
-                                {dropZoneContent}
+                                {activeDropIndex === index && (
+                                  <span>
+                                    {isTargetIndexValid 
+                                      ? '🟢 Déposer ici (Valide)' 
+                                      : `❌ Position interdite (${explanationText})`
+                                    }
+                                  </span>
+                                )}
                               </div>
                               
                               <div 
@@ -728,7 +756,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                         <button 
                                           type="button"
                                           onClick={() => {
-                                            const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
+                                            const matchedFloor = linkedTree?.floors?.find(f => parseInt(f.floorId, 10) === parseInt(block.floorId, 10));
                                             if (matchedFloor) setSelectedInspectFloor(matchedFloor);
                                           }}
                                           className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
@@ -769,46 +797,25 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         {(currentSession.planning || []).length > 0 && (
                           (() => {
                             const lastIndex = currentSession.planning.length;
-                            
-                            let dragFloorId = null;
+                            let isTargetIndexValid = true;
+                            let explanationText = "";
+
                             if (draggedPlanningItem) {
+                              let dragFloorId = null;
                               if (draggedPlanningItem.source === 'palette-palier') {
                                 dragFloorId = draggedPlanningItem.data?.floorId;
                               } else if (draggedPlanningItem.source === 'timeline') {
                                 const sourceBlock = currentSession.planning[draggedPlanningItem.index];
-                                if (sourceBlock?.type === 'palier') {
-                                  dragFloorId = sourceBlock.floorId;
+                                if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
+                              }
+
+                              if (dragFloorId !== null && dragFloorId !== undefined) {
+                                const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning);
+                                isTargetIndexValid = validation.isValid;
+                                if (!isTargetIndexValid) {
+                                  explanationText = `Doit être planifié après le palier ${validation.prevMaxFloor || '0'}`;
                                 }
                               }
-                            }
-
-                            const isDraggingPalier = !!dragFloorId;
-                            const validation = draggedPlanningItem ? getPlacementValidation(dragFloorId, lastIndex, currentSession.planning) : { isValid: true };
-                            const isTargetIndexValid = validation.isValid;
-
-                            let dropZoneClasses = "transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ";
-                            let dropZoneContent = null;
-
-                            if (draggedPlanningItem) {
-                              if (isDraggingPalier) {
-                                if (isTargetIndexValid) {
-                                  const isOver = activeDropIndex === lastIndex;
-                                  dropZoneClasses += `bg-emerald-50 border-emerald-500 text-emerald-700 h-14 my-2 ${isOver ? 'ring-2 ring-emerald-400 scale-[1.01]' : ''}`;
-                                  dropZoneContent = <span>🟢 Déposer ici (Position autorisée)</span>;
-                                } else {
-                                  dropZoneClasses += "bg-transparent h-0 my-0 border-none overflow-hidden";
-                                }
-                              } else {
-                                const isOver = activeDropIndex === lastIndex;
-                                if (isOver) {
-                                  dropZoneClasses += "bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2";
-                                  dropZoneContent = <span>🟢 Déposer en fin de planning (Valide)</span>;
-                                } else {
-                                  dropZoneClasses += "border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400";
-                                }
-                              }
-                            } else {
-                              dropZoneClasses += "bg-transparent h-2 border-none";
                             }
 
                             return (
@@ -816,9 +823,24 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(lastIndex); }}
                                 onDragLeave={() => setActiveDropIndex(null)}
                                 onDrop={() => handleTimelineDrop(lastIndex)}
-                                className={dropZoneClasses}
+                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  activeDropIndex === lastIndex 
+                                    ? isTargetIndexValid 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                      : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
+                                    : draggedPlanningItem 
+                                      ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
+                                      : 'bg-transparent h-2 border-none'
+                                }`}
                               >
-                                {dropZoneContent}
+                                {activeDropIndex === lastIndex && (
+                                  <span>
+                                    {isTargetIndexValid 
+                                      ? '🟢 Déposer en fin de planning (Valide)' 
+                                      : `❌ Impossible de déposer à la fin (${explanationText})`
+                                    }
+                                  </span>
+                                )}
                               </div>
                             );
                           })()
@@ -917,11 +939,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <div className="space-y-4 text-xs">
                 <div>
                   <h4 className="font-bold text-slate-500 uppercase text-[10px] mb-2">🎯 Quêtes & Exercices de ce palier :</h4>
-                  {(selectedInspectFloor.quests || []).length === 0 ? (
+                  {getResolvedInspectQuests().length === 0 ? (
                     <p className="text-slate-400 italic">Aucune quête définie sur ce palier.</p>
                   ) : (
                     <div className="space-y-2">
-                      {selectedInspectFloor.quests.map((q, qIndex) => (
+                      {getResolvedInspectQuests().map((q, qIndex) => (
                         <div key={q.id || qIndex} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
                           <p className="font-extrabold text-slate-900">⚔️ {q.title || q.name || "Activité sans titre"}</p>
                           <p className="text-slate-500 text-[10px] leading-relaxed">{q.description || q.desc || "Pas de description."}</p>
