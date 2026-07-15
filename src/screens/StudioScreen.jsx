@@ -29,7 +29,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   // États de sélection et modes
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState("");
-  const [viewMode, setViewMode] = useState("view"); // "view" (lecture seule) ou "edit" (modification)
+  const [viewMode, setViewMode] = useState("view"); // "view" ou "edit"
   const [activeModal, setActiveModal] = useState(null); 
   
   // Zoom sur un palier pour en inspecter le contenu
@@ -39,9 +39,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [newSessionCode, setNewSessionCode] = useState('');
   const [newSessionDate, setNewSessionDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Recherche RH & Cache
+  // Recherche RH & Cache d'emails local
   const [drhSearchQuery, setDrhSearchQuery] = useState('');
   const [drhSuggestions, setDrhSuggestions] = useState([]);
+  const [drhEmailsCache, setDrhEmailsCache] = useState({});
 
   // Config des blocs personnalisés
   const [customBlockConfig, setCustomBlockConfig] = useState({
@@ -54,17 +55,35 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [draggedPlanningItem, setDraggedPlanningItem] = useState(null);
   const [activeDropIndex, setActiveDropIndex] = useState(null);
 
+  // 1. CHARGEMENT INITIAL
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setCurrentUserId(session.user.id);
-        fetchSessions(session.user.id);
-        fetchTrees();
+        await fetchSessions(session.user.id);
+        await fetchTrees();
       }
     };
     fetchInitialData();
   }, []);
+
+  // Charger le dictionnaire des profils pour résoudre ID -> Email
+  const loadDrhEmailsCache = async (drhIds) => {
+    if (!drhIds || drhIds.length === 0) return;
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .in('id', drhIds);
+    
+    if (profiles && !error) {
+      const newCache = { ...drhEmailsCache };
+      profiles.forEach(p => {
+        newCache[p.id] = p.email;
+      });
+      setDrhEmailsCache(newCache);
+    }
+  };
 
   const fetchSessions = async (userId) => {
     const { data, error } = await supabase
@@ -84,6 +103,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         planning: s.planning || []
       }));
       setSessions(mappedSessions);
+
+      // Récupérer les emails des DRH pour toutes les sessions chargées
+      const allDrhIds = [...new Set(mappedSessions.flatMap(s => s.drh_ids || []))];
+      if (allDrhIds.length > 0) {
+        await loadDrhEmailsCache(allDrhIds);
+      }
     }
   };
 
@@ -122,38 +147,47 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return () => clearTimeout(delayDebounce);
   }, [drhSearchQuery, currentSession?.drh_ids]);
 
+  // Sauvegarde en Base de Données
   const handleSaveChanges = async () => {
-    if (currentSession) {
-      const { error } = await supabase.from('sessions').update({ 
-        tree_id: currentSession.tree_id, 
-        drh_ids: currentSession.drh_ids || [],
-        planning: currentSession.planning || [],
-        start_time: currentSession.start_time || '09:00',
-        end_time_mode: currentSession.end_time_mode || 'auto',
-        formation_date: currentSession.formation_date || null,
-        end_time: currentSession.end_time_mode === 'auto'
-          ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
-          : currentSession.end_time
-      }).eq('id', currentSession.id);
+    if (!currentSession) return;
+    
+    const calculatedEnd = currentSession.end_time_mode === 'auto'
+      ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
+      : currentSession.end_time;
 
-      if (error) alert(`❌ Erreur : ${error.message}`);
-      else {
-        alert(`🎉 Session enregistrée avec succès !`);
-        setViewMode("view"); // Repasse automatiquement en mode lecture seule après sauvegarde
-      }
+    const { error } = await supabase.from('sessions').update({ 
+      tree_id: currentSession.tree_id, 
+      drh_ids: currentSession.drh_ids || [],
+      planning: currentSession.planning || [],
+      start_time: currentSession.start_time || '09:00',
+      end_time_mode: currentSession.end_time_mode || 'auto',
+      formation_date: currentSession.formation_date || null,
+      end_time: calculatedEnd
+    }).eq('id', currentSession.id);
+
+    if (error) {
+      alert(`❌ Erreur : ${error.message}`);
+    } else {
+      alert(`🎉 Session "${currentSession.session_code}" enregistrée avec succès !`);
+      setViewMode("view");
     }
   };
 
+  // Met à jour la session dans l'état local réactivement
   const updateCurrentSessionInState = (updatedFields) => {
-    setSessions(prev => prev.map(s => {
-      if (s.id !== activeSessionId) return s;
-      const merged = { ...s, ...updatedFields };
-      const mode = merged.end_time_mode || 'auto';
-      const finalEndTime = mode === 'auto' 
-        ? calculateEndTime(merged.start_time || '09:00', merged.planning || []) 
-        : merged.end_time;
-      return { ...merged, end_time: finalEndTime };
-    }));
+    setSessions(prevSessions => {
+      return prevSessions.map(s => {
+        if (String(s.id) !== String(activeSessionId)) return s;
+        
+        const merged = { ...s, ...updatedFields };
+        const mode = merged.end_time_mode || 'auto';
+        merged.end_time = mode === 'auto' 
+          ? calculateEndTime(merged.start_time || '09:00', merged.planning || []) 
+          : merged.end_time;
+          
+        return merged;
+      });
+    });
   };
 
   const handleCreateSession = async (e) => {
@@ -174,6 +208,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }]).select().single();
     
     if (error) return alert(error.message);
+    
     setSessions(prev => [data, ...prev].sort((a, b) => new Date(b.formation_date) - new Date(a.formation_date)));
     setActiveSessionId(data.id);
     setViewMode("edit");
@@ -185,8 +220,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (!currentSession) return;
     const currentDrhIds = currentSession.drh_ids || [];
     if (currentDrhIds.includes(drhUser.id)) return;
+    
+    // Mettre à jour le dictionnaire local d'e-mails
+    setDrhEmailsCache(prev => ({ ...prev, [drhUser.id]: drhUser.email }));
+    
     updateCurrentSessionInState({ drh_ids: [...currentDrhIds, drhUser.id] });
-    setDrhSearchQuery(''); setDrhSuggestions([]);
+    setDrhSearchQuery(''); 
+    setDrhSuggestions([]);
   };
 
   const handleRemoveDRH = (drhId) => {
@@ -194,7 +234,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
   };
 
-  // --- DRAG & DROP LOGIQUE ---
+  // --- LOGIQUE DRAG & DROP SESSIONS ---
   const checkPlacementValidity = (floorId, targetIndex, timeline) => {
     if (!floorId) return true;
     let prevMaxFloor = -1;
@@ -210,13 +250,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   const handleTimelineDrop = (targetIndex) => {
     if (!currentSession || !draggedPlanningItem) return;
-    const timeline = currentSession.planning ? [...currentSession.planning] : [];
+    const timeline = currentSession.planning ? JSON.parse(JSON.stringify(currentSession.planning)) : [];
 
     if (draggedPlanningItem.source === 'palette-palier') {
       const floor = draggedPlanningItem.data;
       if (!checkPlacementValidity(floor.floorId, targetIndex, timeline)) {
         alert(`🚫 Le Palier ${floor.floorId} doit respecter l'ordre chronologique.`);
-        setActiveDropIndex(null); setDraggedPlanningItem(null);
+        setActiveDropIndex(null); 
+        setDraggedPlanningItem(null);
         return;
       }
       const newBlock = {
@@ -247,7 +288,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       
       if (movedBlock.type === 'palier' && !checkPlacementValidity(movedBlock.floorId, targetIndex, timeline)) {
         alert(`🚫 Mouvement invalide.`);
-        setActiveDropIndex(null); setDraggedPlanningItem(null);
+        setActiveDropIndex(null); 
+        setDraggedPlanningItem(null);
         return;
       }
       timeline.splice(targetIndex, 0, movedBlock);
@@ -260,13 +302,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   const removePlanningBlock = (blockId) => {
     if (!currentSession) return;
-    updateCurrentSessionInState({ planning: (currentSession.planning || []).filter(b => b.id !== blockId) });
+    const filtered = (currentSession.planning || []).filter(b => b.id !== blockId);
+    updateCurrentSessionInState({ planning: filtered });
   };
 
   const updatePlanningBlockDuration = (blockId, value) => {
     if (!currentSession) return;
     const mins = Math.max(1, parseInt(value, 10) || 15);
-    updateCurrentSessionInState({ planning: (currentSession.planning || []).map(b => b.id === blockId ? { ...b, duration: mins } : b) });
+    const updated = (currentSession.planning || []).map(b => b.id === blockId ? { ...b, duration: mins } : b);
+    updateCurrentSessionInState({ planning: updated });
   };
 
   // Calcule les horaires défilants pour l'aperçu du planning
@@ -546,7 +590,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </select>
                       </div>
 
-                      <div className="space-y-1">
+                      <div className="space-y-1 relative">
                         <label className="block font-black text-slate-700 text-[10px] uppercase">DRH Associés :</label>
                         <input 
                           type="text"
@@ -556,19 +600,29 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           className="w-full border rounded-lg p-2 bg-white text-xs"
                         />
                         {drhSuggestions.length > 0 && (
-                          <div className="absolute z-50 bg-white border rounded shadow-md mt-1 max-h-32 overflow-y-auto">
+                          <div className="absolute z-50 left-0 right-0 top-full bg-white border rounded shadow-md mt-1 max-h-32 overflow-y-auto">
                             {drhSuggestions.map(s => (
-                              <button key={s.id} onClick={() => handleAddDRH(s)} className="block w-full text-left p-1.5 text-xs font-bold hover:bg-slate-100">{s.email}</button>
+                              <button 
+                                key={s.id} 
+                                type="button"
+                                onClick={() => handleAddDRH(s)} 
+                                className="block w-full text-left p-2 text-xs font-bold hover:bg-slate-100 border-b"
+                              >
+                                {s.email}
+                              </button>
                             ))}
                           </div>
                         )}
                         <div className="flex flex-wrap gap-1 mt-1.5">
-                          {(currentSession.drh_ids || []).map(id => (
-                            <div key={id} className="bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1">
-                              <span>{id}</span>
-                              <button onClick={() => handleRemoveDRH(id)} className="text-red-500">×</button>
-                            </div>
-                          ))}
+                          {(currentSession.drh_ids || []).map(id => {
+                            const matchedEmail = drhEmailsCache[id] || id; // Affiche l'email s'il existe dans le cache, sinon l'ID temporairement
+                            return (
+                              <div key={id} className="bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1">
+                                <span>{matchedEmail}</span>
+                                <button type="button" onClick={() => handleRemoveDRH(id)} className="text-red-500 font-black">×</button>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -622,7 +676,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                           const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
                                           if (matchedFloor) setSelectedInspectFloor(matchedFloor);
                                         }}
-                                        className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black"
+                                        className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
                                       >
                                         🔍 Voir contenu
                                       </button>
@@ -643,7 +697,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   />
                                   <span className="text-[10px] font-black text-slate-400">min</span>
                                 </div>
-                                <button onClick={() => removePlanningBlock(block.id)} className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg">🗑️</button>
+                                <button 
+                                  type="button"
+                                  onClick={() => removePlanningBlock(block.id)} 
+                                  className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg"
+                                >
+                                  🗑️
+                                </button>
                               </div>
                             </div>
                           </React.Fragment>
@@ -755,7 +815,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       {selectedInspectFloor.quests.map((q, qIndex) => (
                         <div key={q.id || qIndex} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
                           <p className="font-extrabold text-slate-900">⚔️ {q.title || q.name || "Activité sans titre"}</p>
-                          <p className="text-slate-500 text-[10px] leading-relaxed">{q.description || q.desc || "Pas de description fournie."}</p>
+                          <p className="text-slate-500 text-[10px] leading-relaxed">{q.description || q.desc || "Pas de description."}</p>
                           {q.points && (
                             <span className="inline-block text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded mt-1">
                               💎 {q.points} XP
