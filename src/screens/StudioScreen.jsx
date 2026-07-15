@@ -843,9 +843,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 </div>
                               )}
                               
+                              {/* TOUT LE BLOC EST DÉSORMAIS DRAGGABLE DE MANIÈRE FLUIDE */}
                               <div 
+                                draggable={!isLocked}
+                                onDragStart={(e) => {
+                                  // Évite d'enclencher le drag si on clique sur un input de durée, un bouton d'action ou un select
+                                  if (e.target.closest('button, input, select')) {
+                                    e.preventDefault();
+                                    return;
+                                  }
+                                  setDraggedPlanningItem({ source: 'timeline', index });
+                                }}
+                                onDragEnd={(e) => {
+                                  e.preventDefault();
+                                  setDraggedPlanningItem(null);
+                                  setActiveDropIndex(null);
+                                }}
                                 className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
-                                  isLocked ? 'opacity-95' : ''
+                                  isLocked 
+                                    ? 'opacity-95 cursor-not-allowed' 
+                                    : 'cursor-grab active:cursor-grabbing hover:border-slate-300 hover:shadow-md'
                                 } ${
                                   isBeingDragged ? 'opacity-40 border-dashed bg-slate-50 border-slate-300' : ''
                                 }`}
@@ -861,17 +878,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                     </span>
                                   ) : (
                                     <span 
-                                      draggable
-                                      onDragStart={(e) => {
-                                        e.stopPropagation();
-                                        setDraggedPlanningItem({ source: 'timeline', index });
-                                      }}
-                                      onDragEnd={(e) => {
-                                        e.preventDefault();
-                                        setDraggedPlanningItem(null);
-                                        setActiveDropIndex(null);
-                                      }}
-                                      className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
+                                      className="text-slate-400 font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
                                     >
                                       ⠿
                                     </span>
