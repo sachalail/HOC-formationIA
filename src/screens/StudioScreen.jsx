@@ -35,6 +35,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   // Zoom sur un palier pour en inspecter le contenu
   const [selectedInspectFloor, setSelectedInspectFloor] = useState(null);
 
+  // Édition fine d'un bloc déposé (nom, desc, couleur, durée)
+  const [editingBlock, setEditingBlock] = useState(null);
+
   // États des formulaires
   const [newSessionCode, setNewSessionCode] = useState('');
   const [newSessionDate, setNewSessionDate] = useState(new Date().toISOString().split('T')[0]);
@@ -230,33 +233,27 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
   };
 
-  // --- NOUVELLE LOGIQUE ET VALIDATION DE PLACEMENT GLOBALE ET FLEXIBLE ---
+  // --- LOGIQUE ET VALIDATION DE PLACEMENT GLOBALE ET FLEXIBLE ---
   const getPlacementValidation = (floorId, targetIndex, timeline, draggedItem) => {
     if (!floorId) return { isValid: true };
     
-    // 1. On clone la timeline de test
     let checkTimeline = [...timeline];
     
-    // 2. Si l'élément provient de la timeline (repositionnement), on l'enlève pour éviter qu'il ne se compare avec lui-même !
     if (draggedItem && draggedItem.source === 'timeline') {
       checkTimeline.splice(draggedItem.index, 1);
     }
     
-    // 3. Ajustement de l'index d'insertion si on décale vers le bas
     let adjustedTargetIndex = targetIndex;
     if (draggedItem && draggedItem.source === 'timeline' && targetIndex > draggedItem.index) {
       adjustedTargetIndex = targetIndex - 1;
     }
     
-    // 4. On insère notre palier virtuellement dans la timeline épurée
     checkTimeline.splice(adjustedTargetIndex, 0, { type: 'palier', floorId });
 
-    // 5. On extrait uniquement la liste ordonnée des numéros de paliers présents
     const virtualPaliers = checkTimeline
       .filter(item => item?.type === 'palier')
       .map(item => item.floorId);
 
-    // 6. La position est valide ssi la suite des paliers est triée de façon strictement croissante
     let isValid = true;
     for (let i = 0; i < virtualPaliers.length - 1; i++) {
       if (virtualPaliers[i] >= virtualPaliers[i + 1]) {
@@ -277,22 +274,19 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     let validPositionsCount = 0;
     const dummyDraggedItem = { source: 'timeline', index };
 
-    // On teste toutes les positions d'insertions théoriques de 0 à N
     for (let i = 0; i <= timeline.length; i++) {
       const { isValid } = getPlacementValidation(floorId, i, timeline, dummyDraggedItem);
-      // Supprime de l'équation les emplacements équivalents à sa position actuelle pour le calcul du cadenas
       const isActualSpot = (i === index || i === index + 1);
       if (isValid && !isActualSpot) {
         validPositionsCount++;
       }
     }
 
-    // S'il n'y a aucun autre emplacement valide disponible à part sa position d'origine, il est verrouillé
     return validPositionsCount === 0;
   };
 
   const handleTimelineDrop = (targetIndex) => {
-    if (!currentSession || !draggedPlanningItem) return;
+    if (!currentSession || draggedPlanningItem === null) return;
     const timeline = currentSession.planning ? JSON.parse(JSON.stringify(currentSession.planning)) : [];
 
     if (draggedPlanningItem.source === 'palette-palier') {
@@ -347,16 +341,16 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     updateCurrentSessionInState({ planning: timeline });
     setActiveDropIndex(null);
-    // Timeout micro-tâche pour s'assurer que le dragend HTML5 soit purgé correctement avant de libérer le state
-    setTimeout(() => {
-      setDraggedPlanningItem(null);
-    }, 0);
+    setDraggedPlanningItem(null);
   };
 
   const removePlanningBlock = (blockId) => {
     if (!currentSession) return;
     const filtered = (currentSession.planning || []).filter(b => b.id !== blockId);
     updateCurrentSessionInState({ planning: filtered });
+    if (editingBlock && editingBlock.id === blockId) {
+      setEditingBlock(null);
+    }
   };
 
   const updatePlanningBlockDuration = (blockId, value) => {
@@ -364,6 +358,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     const mins = Math.max(1, parseInt(value, 10) || 15);
     const updated = (currentSession.planning || []).map(b => b.id === blockId ? { ...b, duration: mins } : b);
     updateCurrentSessionInState({ planning: updated });
+  };
+
+  const handleUpdateBlockField = (blockId, field, val) => {
+    if (!currentSession) return;
+    const updated = (currentSession.planning || []).map(b => b.id === blockId ? { ...b, [field]: val } : b);
+    updateCurrentSessionInState({ planning: updated });
+    setEditingBlock(prev => prev && prev.id === blockId ? { ...prev, [field]: val } : prev);
   };
 
   const getTimelineWithHours = () => {
@@ -555,7 +556,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     <div className="flex gap-2">
                       <button 
                         type="button"
-                        onClick={() => setViewMode("view")}
+                        onClick={() => {
+                          setViewMode("view");
+                          setEditingBlock(null);
+                        }}
                         className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2 px-4 rounded-xl text-xs uppercase"
                       >
                         Annuler
@@ -700,7 +704,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           let isTargetIndexValid = true;
                           const isBeingDragged = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && draggedPlanningItem.index === index;
 
-                          // Bloque le dépôt sur l'emplacement actuel direct (à gauche/droite de l'élément en cours de déplacement)
+                          // Bloque le dépôt sur l'emplacement actuel direct (pour éviter les déplacements sans changement)
                           const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
                                                  (index === draggedPlanningItem.index || index === draggedPlanningItem.index + 1);
 
@@ -719,18 +723,16 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               const validation = getPlacementValidation(dragFloorId, index, currentSession.planning, draggedPlanningItem);
                               isTargetIndexValid = validation.isValid;
                             }
-                          } else if (isImmediateSpot) {
-                            // On empêche d'afficher l'emplacement vert sur l'index d'origine direct (déplacement inutile)
+                          } else {
                             isTargetIndexValid = false;
                           }
 
-                          // Vérifie dynamiquement si le palier est verrouillé
                           const isLocked = block.type === 'palier' && isFloorLocked(block.id, block.floorId, currentSession.planning);
 
                           return (
                             <React.Fragment key={block.id}>
                               
-                              {/* ZONE DE DÉPÔT COHÉRENTE ET NON-REDONDANTE */}
+                              {/* ZONE DE DÉPÔT COHÉRENTE ET NON-REDONDANTE (Uniquement si valide et s'il y a un réel changement) */}
                               {draggedPlanningItem && isTargetIndexValid && (
                                 <div 
                                   onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
@@ -757,7 +759,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
-                                  {/* Cadenas si verrouillé ou poignée classique si déplaçable */}
                                   {isLocked ? (
                                     <span 
                                       className="text-amber-500 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1"
@@ -769,16 +770,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                     <span 
                                       draggable
                                       onDragStart={(e) => {
-                                        // Évite d'autres effets bizarres de sélection
                                         e.stopPropagation();
                                         setDraggedPlanningItem({ source: 'timeline', index });
                                       }}
                                       onDragEnd={() => {
-                                        // Nettoyage asynchrone sécurisé de l'arbre
-                                        setTimeout(() => {
-                                          setDraggedPlanningItem(null);
-                                          setActiveDropIndex(null);
-                                        }, 0);
+                                        setDraggedPlanningItem(null);
+                                        setActiveDropIndex(null);
                                       }}
                                       className="text-slate-400 cursor-grab active:cursor-grabbing font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
                                     >
@@ -807,6 +804,16 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 </div>
 
                                 <div className="flex items-center gap-3 flex-shrink-0">
+                                  {/* Bouton d'édition fine du bloc */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingBlock(block)}
+                                    className="text-slate-500 hover:text-slate-800 font-bold text-xs bg-slate-100 p-1.5 rounded-lg border border-slate-200"
+                                    title="Modifier ce bloc"
+                                  >
+                                    ⚙️ Modifier
+                                  </button>
+
                                   <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border">
                                     <input 
                                       type="number" 
@@ -820,7 +827,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   <button 
                                     type="button"
                                     onClick={() => removePlanningBlock(block.id)} 
-                                    className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1 rounded-lg"
+                                    className="text-red-500 hover:text-red-700 font-bold text-xs bg-red-50 p-1.5 rounded-lg"
                                   >
                                     🗑️
                                   </button>
@@ -897,10 +904,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           draggable
                           onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
                           onDragEnd={() => {
-                            setTimeout(() => {
-                              setDraggedPlanningItem(null);
-                              setActiveDropIndex(null);
-                            }, 0);
+                            setDraggedPlanningItem(null);
+                            setActiveDropIndex(null);
                           }}
                           className="bg-white hover:bg-slate-50 p-2.5 rounded-lg border border-dashed border-slate-300 cursor-grab active:cursor-grabbing flex justify-between items-center transition-all shadow-xs select-none"
                           style={{ borderLeftWidth: '5px', borderLeftColor: customBlockConfig.color }}
@@ -920,10 +925,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               draggable
                               onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
                               onDragEnd={() => {
-                                setTimeout(() => {
-                                  setDraggedPlanningItem(null);
-                                  setActiveDropIndex(null);
-                                }, 0);
+                                setDraggedPlanningItem(null);
+                                setActiveDropIndex(null);
                               }}
                               className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
                             >
@@ -958,6 +961,82 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         </div>
 
       </div>
+
+      {/* --- MODALE D'ÉDITION D'UN BLOC INDIVIDUEL --- */}
+      {editingBlock && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border space-y-4">
+            <button 
+              onClick={() => setEditingBlock(null)} 
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
+            >
+              ×
+            </button>
+            
+            <h3 className="text-sm font-black text-slate-950 uppercase tracking-wide">⚙️ Modifier le bloc</h3>
+            
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Nom :</label>
+                <input 
+                  type="text" 
+                  value={editingBlock.name || ''} 
+                  onChange={(e) => handleUpdateBlockField(editingBlock.id, 'name', e.target.value)}
+                  className="w-full border rounded-lg p-2 bg-slate-50 font-extrabold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Description :</label>
+                <textarea 
+                  rows="2"
+                  value={editingBlock.desc || ''} 
+                  onChange={(e) => handleUpdateBlockField(editingBlock.id, 'desc', e.target.value)}
+                  className="w-full border rounded-lg p-2 bg-slate-50 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">Couleur :</label>
+                  <div className="flex gap-2 items-center">
+                    <input 
+                      type="color" 
+                      value={editingBlock.color || '#94a3b8'} 
+                      onChange={(e) => handleUpdateBlockField(editingBlock.id, 'color', e.target.value)}
+                      className="w-10 h-8 border rounded cursor-pointer p-0"
+                    />
+                    <span className="font-mono text-[10px] text-slate-500 font-bold">{editingBlock.color}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1">Durée (minutes) :</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={editingBlock.duration || 15} 
+                    onChange={(e) => updatePlanningBlockDuration(editingBlock.id, e.target.value)}
+                    className="w-full border rounded-lg p-2 bg-slate-50 font-black text-center"
+                  />
+                </div>
+              </div>
+
+              {/* Conversion Heures/Minutes pour le confort visuel de l'utilisateur */}
+              <div className="bg-slate-50 p-2.5 rounded-lg border text-center font-semibold text-[11px] text-slate-500">
+                Équivaut à : <strong className="text-slate-800">{Math.floor(editingBlock.duration / 60)}h {editingBlock.duration % 60}m</strong>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setEditingBlock(null)} 
+              className="w-full bg-slate-900 text-white font-bold py-2 rounded-xl uppercase text-xs tracking-wider transition-all"
+            >
+              Terminer
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* --- INSPECTEUR DE PALIER --- */}
       {selectedInspectFloor && (
