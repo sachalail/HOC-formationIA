@@ -23,6 +23,15 @@ const calculateEndTime = (startTime, blocks = []) => {
   return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
 };
 
+// Formate les minutes en format lisible H + Min (ex: 75 -> 1h 15min)
+const formatDurationHM = (mins) => {
+  const m = parseInt(mins, 10) || 0;
+  if (m < 60) return `${m} min`;
+  const hours = Math.floor(m / 60);
+  const minutes = m % 60;
+  return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
+};
+
 export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
@@ -31,6 +40,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [activeSessionId, setActiveSessionId] = useState("");
   const [viewMode, setViewMode] = useState("view"); // "view" ou "edit"
   const [activeModal, setActiveModal] = useState(null); 
+  
+  // Filtre d'affichage pour les sessions passées
+  const [showPastSessions, setShowPastSessions] = useState(true);
   
   // Zoom sur un palier pour en inspecter le contenu
   const [selectedInspectFloor, setSelectedInspectFloor] = useState(null);
@@ -126,10 +138,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const currentSession = sessions.find(s => String(s.id) === String(activeSessionId));
   const linkedTree = currentSession ? trees[currentSession.tree_id] : null;
 
-  // Récupère dynamiquement le nom du bloc s'il s'agit d'un palier pour éviter "Sans nom"
-  const getBlockTitle = (block) => {
-    if (block.type === 'palier' && linkedTree) {
-      const matchedFloor = linkedTree.floors?.find(f => f.floorId === block.floorId);
+  // Résolution dynamique du nom du palier (Point 4)
+  const getBlockDisplayName = (block, sessionTree) => {
+    if (block.type === 'palier' && sessionTree) {
+      const matchedFloor = sessionTree.floors?.find(f => f.floorId === block.floorId);
       if (matchedFloor && matchedFloor.name) {
         return `🎯 Palier ${block.floorId} : ${matchedFloor.name}`;
       }
@@ -228,30 +240,34 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setActiveModal(null);
   };
 
-  // DUPLICATION D'UNE SESSION (Clonage)
+  // Duplication de session (Point 6)
   const handleDuplicateSession = async (sessionToDuplicate) => {
-    const baseCode = sessionToDuplicate.session_code.replace(/_DUP_\d+$/, "");
-    const duplicatedCode = `${baseCode}_DUP_${Math.floor(100 + Math.random() * 900)}`;
+    if (!sessionToDuplicate) return;
+    const cleanBaseCode = sessionToDuplicate.session_code.replace(/-COPY\d*$/, '');
+    const code = `${cleanBaseCode}-COPY${Date.now().toString().slice(-4)}`;
     
-    const { data, error } = await supabase.from('sessions').insert([{ 
-      session_code: duplicatedCode, 
-      created_by: currentUserId, 
-      manager_id: currentUserId, 
-      tree_id: sessionToDuplicate.tree_id, 
-      drh_ids: sessionToDuplicate.drh_ids || [], 
-      planning: sessionToDuplicate.planning || [], 
-      start_time: sessionToDuplicate.start_time || '09:00', 
-      end_time_mode: sessionToDuplicate.end_time_mode || 'auto', 
+    const { data, error } = await supabase.from('sessions').insert([{
+      session_code: code,
+      created_by: currentUserId,
+      manager_id: currentUserId,
+      tree_id: sessionToDuplicate.tree_id,
+      drh_ids: sessionToDuplicate.drh_ids || [],
+      planning: sessionToDuplicate.planning || [],
+      start_time: sessionToDuplicate.start_time || '09:00',
+      end_time_mode: sessionToDuplicate.end_time_mode || 'auto',
       end_time: sessionToDuplicate.end_time || '09:00',
       formation_date: sessionToDuplicate.formation_date
     }]).select().single();
-    
-    if (error) return alert(`❌ Échec de la duplication : ${error.message}`);
-    
-    alert(`👯 Session dupliquée sous le code "${duplicatedCode}" !`);
+
+    if (error) {
+      alert(`❌ Erreur lors de la duplication : ${error.message}`);
+      return;
+    }
+
     setSessions(prev => [data, ...prev].sort((a, b) => new Date(b.formation_date) - new Date(a.formation_date)));
     setActiveSessionId(data.id);
     setViewMode("edit");
+    alert(`👥 Session dupliquée avec succès sous le code "${code}" !`);
   };
 
   const handleAddDRH = (drhUser) => {
@@ -436,6 +452,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     ? currentSession.planning.filter(b => b.type === 'palier').map(b => b.floorId)
     : [];
 
+  // Filtrage des sessions selon les passées/futures (Point 5)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const displayedSessions = sessions.filter(s => {
+    if (showPastSessions) return true;
+    if (!s.formation_date) return true; // On garde les sessions sans date
+    return s.formation_date >= todayStr;
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
       
@@ -455,13 +479,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* COLONNE GAUCHE : LISTE DES SESSIONS (SANS LIMITATION DE HAUTEUR) */}
+        {/* COLONNE GAUCHE : LISTE DES SESSIONS */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-            <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">📅 Liste des sessions</h3>
             
-            <div className="space-y-3 pr-1">
-              {sessions.map(s => {
+            {/* SWITCH SESSIONS PASSÉES (Point 5) */}
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">📅 Sessions ({displayedSessions.length})</h3>
+              <label className="inline-flex items-center cursor-pointer gap-2 select-none">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Afficher passées</span>
+                <input 
+                  type="checkbox" 
+                  checked={showPastSessions}
+                  onChange={(e) => setShowPastSessions(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+              </label>
+            </div>
+            
+            <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
+              {displayedSessions.map(s => {
                 const isSelected = String(s.id) === String(activeSessionId);
                 const sTree = trees[s.tree_id];
                 const formattedDate = s.formation_date 
@@ -503,7 +540,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           setActiveSessionId(String(s.id));
                           setViewMode("view");
                         }}
-                        className={`py-1.5 px-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
                           isSelected && viewMode === "view"
                             ? 'bg-blue-600 text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -516,25 +553,30 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           setActiveSessionId(String(s.id));
                           setViewMode("edit");
                         }}
-                        className={`py-1.5 px-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
                           isSelected && viewMode === "edit"
                             ? 'bg-amber-500 text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                       >
-                        ✏️ Modif
+                        ✏️ Modifier
                       </button>
                       <button
                         onClick={() => handleDuplicateSession(s)}
-                        className="py-1.5 px-1 rounded-lg text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-200 font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1"
-                        title="Dupliquer cette session"
+                        className="py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 flex items-center justify-center gap-1 shrink-0"
+                        title="Dupliquer la session"
                       >
-                        👯 Dupliquer
+                        👥 Copier
                       </button>
                     </div>
                   </div>
                 );
               })}
+              {displayedSessions.length === 0 && (
+                <div className="text-center py-6 text-xs font-semibold text-slate-400">
+                  Aucune session à afficher.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -586,7 +628,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             <div className="flex justify-between items-start gap-2">
                               <div>
                                 <h4 className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                                  {getBlockTitle(block)}
+                                  {getBlockDisplayName(block, linkedTree)}
                                   {block.type === 'palier' && (
                                     <span className="text-[9px] bg-purple-100 text-purple-700 font-black px-1.5 py-0.2 rounded border border-purple-200">
                                       🔍 Inspecter le contenu
@@ -595,8 +637,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 </h4>
                                 <p className="text-[10px] text-slate-500 font-semibold mt-1">{block.desc}</p>
                               </div>
-                              <span className="text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded shrink-0">
-                                ⏱️ {block.duration} min
+                              <span className="text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded shrink-0 font-mono">
+                                ⏱️ {formatDurationHM(block.duration)}
                               </span>
                             </div>
                           </div>
@@ -853,7 +895,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   
                                   <div className="min-w-0">
                                     <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
-                                      {getBlockTitle(block)}
+                                      {getBlockDisplayName(block, linkedTree)}
                                       {block.type === 'palier' && (
                                         <button 
                                           type="button"
@@ -861,7 +903,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                             const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
                                             if (matchedFloor) setSelectedInspectFloor(matchedFloor);
                                           }}
-                                          className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
+                                          className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer shadow-xs shrink-0"
                                         >
                                           🔍 Voir contenu
                                         </button>
@@ -1018,7 +1060,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               >
                                 <div className="min-w-0">
                                   <span className="font-extrabold text-xs text-purple-900 block truncate">
-                                    🎯 Palier {floor.floorId} : {floor.name || 'Sans nom'}
+                                    🎯 Palier {floor.floorId}
                                   </span>
                                   <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
                                 </div>
@@ -1118,7 +1160,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         </div>
       )}
 
-      {/* --- MODALE D'ÉDITION D'UN BLOC (Engrenage) --- */}
+      {/* --- MODALE D'ÉDITION D'UN BLOC (Engrenage) (Points 2 & 7) --- */}
       {editingBlock && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
@@ -1140,6 +1182,24 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-xs" 
                 />
               </div>
+              
+              {/* MODIFICATION DIRECTE DE LA DURÉE + CONVERSION H/MIN (Point 7) */}
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Durée (en minutes) :</label>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={editingBlock.duration || 15} 
+                    onChange={(e) => setEditingBlock({ ...editingBlock, duration: Math.max(1, parseInt(e.target.value, 10) || 15) })}
+                    className="w-24 border rounded-lg p-2 bg-slate-50 font-black text-xs text-center" 
+                  />
+                  <span className="text-[11px] text-slate-500 font-black bg-slate-100 border px-2.5 py-1 rounded-md font-mono">
+                    ⏱️ {formatDurationHM(editingBlock.duration)}
+                  </span>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-slate-600 font-bold mb-1">Description :</label>
                 <textarea 
@@ -1149,16 +1209,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   className="w-full border rounded-lg p-2.5 bg-slate-50 text-xs leading-relaxed resize-none" 
                 />
               </div>
+
+              {/* SÉLECTION COULEUR : PIPETTE + CODE EXTRADÉCIMAL ÉDITABLE (Point 7) */}
               <div>
                 <label className="block text-slate-600 font-bold mb-1">Couleur d'identification :</label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <input 
                     type="color" 
                     value={editingBlock.color || '#94a3b8'} 
                     onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })}
-                    className="w-10 h-10 border rounded cursor-pointer" 
+                    className="w-10 h-10 border rounded cursor-pointer shrink-0" 
                   />
-                  <span className="font-mono text-[10px] text-slate-500 uppercase">{editingBlock.color || '#94a3b8'}</span>
+                  <input 
+                    type="text" 
+                    value={editingBlock.color || '#94a3b8'} 
+                    onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })}
+                    placeholder="#ffffff"
+                    maxLength={7}
+                    className="border rounded-lg p-2 bg-slate-50 font-mono text-xs uppercase w-28 text-center font-extrabold tracking-wider" 
+                  />
+                  <span className="text-[10px] text-slate-400 font-semibold italic">(Pipette ou code Hexa)</span>
                 </div>
               </div>
               
