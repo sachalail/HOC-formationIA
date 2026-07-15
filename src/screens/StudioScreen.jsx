@@ -23,6 +23,15 @@ const calculateEndTime = (startTime, blocks = []) => {
   return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
 };
 
+// Formate les minutes en format lisible H + Min (ex: 75 -> 1h 15min)
+const formatDurationHM = (mins) => {
+  const m = parseInt(mins, 10) || 0;
+  if (m < 60) return `${m} min`;
+  const hours = Math.floor(m / 60);
+  const minutes = m % 60;
+  return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
+};
+
 export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
@@ -32,14 +41,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [viewMode, setViewMode] = useState("view"); // "view" ou "edit"
   const [activeModal, setActiveModal] = useState(null); 
   
+  // Filtre d'affichage pour les sessions passées
+  const [showPastSessions, setShowPastSessions] = useState(true);
+  
   // Zoom sur un palier pour en inspecter le contenu
   const [selectedInspectFloor, setSelectedInspectFloor] = useState(null);
 
-  // Édition d'un bloc spécifique de la timeline
+  // Édition individuelle d'un bloc (Modale de l'engrenage)
   const [editingBlock, setEditingBlock] = useState(null);
-
-  // Filtre des sessions passées
-  const [hidePastSessions, setHidePastSessions] = useState(false);
 
   // États des formulaires
   const [newSessionCode, setNewSessionCode] = useState('');
@@ -128,6 +137,17 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   const currentSession = sessions.find(s => String(s.id) === String(activeSessionId));
   const linkedTree = currentSession ? trees[currentSession.tree_id] : null;
+
+  // Résolution dynamique du nom du palier (Point 4)
+  const getBlockDisplayName = (block, sessionTree) => {
+    if (block.type === 'palier' && sessionTree) {
+      const matchedFloor = sessionTree.floors?.find(f => f.floorId === block.floorId);
+      if (matchedFloor && matchedFloor.name) {
+        return `🎯 Palier ${block.floorId} : ${matchedFloor.name}`;
+      }
+    }
+    return block.name;
+  };
 
   // Recherche dynamique DRH
   useEffect(() => {
@@ -220,32 +240,33 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setActiveModal(null);
   };
 
-  // Fonction de duplication d'une session
-  const handleDuplicateSession = async (sessionToDuplicate, e) => {
-    if (e) e.stopPropagation();
-    const baseCode = sessionToDuplicate.session_code.replace(/_COPY\d*$/, '');
-    const code = `${baseCode}_COPY`;
+  // Duplication de session (Point 6)
+  const handleDuplicateSession = async (sessionToDuplicate) => {
+    if (!sessionToDuplicate) return;
+    const cleanBaseCode = sessionToDuplicate.session_code.replace(/-COPY\d*$/, '');
+    const code = `${cleanBaseCode}-COPY${Date.now().toString().slice(-4)}`;
     
-    const { data, error } = await supabase.from('sessions').insert([{ 
-      session_code: code, 
-      created_by: currentUserId, 
-      manager_id: currentUserId, 
-      tree_id: sessionToDuplicate.tree_id, 
-      drh_ids: sessionToDuplicate.drh_ids || [], 
-      planning: sessionToDuplicate.planning || [], 
-      start_time: sessionToDuplicate.start_time || '09:00', 
-      end_time_mode: sessionToDuplicate.end_time_mode || 'auto', 
+    const { data, error } = await supabase.from('sessions').insert([{
+      session_code: code,
+      created_by: currentUserId,
+      manager_id: currentUserId,
+      tree_id: sessionToDuplicate.tree_id,
+      drh_ids: sessionToDuplicate.drh_ids || [],
+      planning: sessionToDuplicate.planning || [],
+      start_time: sessionToDuplicate.start_time || '09:00',
+      end_time_mode: sessionToDuplicate.end_time_mode || 'auto',
       end_time: sessionToDuplicate.end_time || '09:00',
       formation_date: sessionToDuplicate.formation_date
     }]).select().single();
 
     if (error) {
-      return alert(`Erreur lors de la duplication : ${error.message}`);
+      alert(`❌ Erreur lors de la duplication : ${error.message}`);
+      return;
     }
 
     setSessions(prev => [data, ...prev].sort((a, b) => new Date(b.formation_date) - new Date(a.formation_date)));
     setActiveSessionId(data.id);
-    setViewMode("view");
+    setViewMode("edit");
     alert(`👥 Session dupliquée avec succès sous le code "${code}" !`);
   };
 
@@ -344,7 +365,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         id: `palier-${floor.floorId}-${Date.now()}`,
         type: 'palier',
         floorId: floor.floorId,
-        name: `🎯 Palier ${floor.floorId}`,
+        name: `🎯 Palier ${floor.floorId}${floor.name ? ` : ${floor.name}` : ''}`,
         desc: `${(floor.quests || []).length} activités associées à ce niveau.`,
         color: '#7c3aed',
         duration: 45
@@ -401,17 +422,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ planning: updated });
   };
 
-  // Sauvegarde d'un bloc renommé ou modifié via la modale engrenage ⚙️
-  const handleSaveBlockEdit = (e) => {
-    if (e) e.preventDefault();
-    if (!currentSession || !editingBlock) return;
-    
-    const updated = (currentSession.planning || []).map(b => 
-      b.id === editingBlock.id 
-        ? { ...b, name: editingBlock.name, desc: editingBlock.desc, color: editingBlock.color } 
-        : b
-    );
-    updateCurrentSessionInState({ planning: updated });
+  // Enregistre les modifications détaillées d'un bloc (Modale Engrenage)
+  const handleSaveBlockEdit = (updatedBlock) => {
+    if (!currentSession) return;
+    const updatedPlanning = (currentSession.planning || []).map(b => b.id === updatedBlock.id ? updatedBlock : b);
+    updateCurrentSessionInState({ planning: updatedPlanning });
     setEditingBlock(null);
   };
 
@@ -432,15 +447,17 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     });
   };
 
-  // Filtrer les sessions si le filtre actif est coché
-  const filteredSessions = sessions.filter(s => {
-    if (!hidePastSessions) return true;
-    if (!s.formation_date) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const sessionDate = new Date(s.formation_date);
-    sessionDate.setHours(0, 0, 0, 0);
-    return sessionDate >= today;
+  // Récupère la liste des ID de paliers déjà présents dans le planning
+  const existingFloorIds = currentSession && currentSession.planning 
+    ? currentSession.planning.filter(b => b.type === 'palier').map(b => b.floorId)
+    : [];
+
+  // Filtrage des sessions selon les passées/futures (Point 5)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const displayedSessions = sessions.filter(s => {
+    if (showPastSessions) return true;
+    if (!s.formation_date) return true; // On garde les sessions sans date
+    return s.formation_date >= todayStr;
   });
 
   return (
@@ -466,27 +483,32 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
             
-            {/* Titre et Switch Alignés sur la même ligne */}
+            {/* SWITCH SESSIONS PASSÉES (Point 5) */}
             <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-              <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">📅 Liste des sessions</h3>
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">📅 Sessions ({displayedSessions.length})</h3>
+              <label className="inline-flex items-center cursor-pointer gap-2 select-none">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Afficher passées</span>
                 <input 
                   type="checkbox" 
-                  checked={hidePastSessions} 
-                  onChange={(e) => setHidePastSessions(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3 w-3"
+                  checked={showPastSessions}
+                  onChange={(e) => setShowPastSessions(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
                 />
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Masquer passées</span>
               </label>
             </div>
             
             <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
-              {filteredSessions.map(s => {
+              {displayedSessions.map(s => {
                 const isSelected = String(s.id) === String(activeSessionId);
                 const sTree = trees[s.tree_id];
                 const formattedDate = s.formation_date 
                   ? new Date(s.formation_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
                   : "Sans date";
+
+                // Calcul en direct de l'heure de fin pour l'affichage de la carte de session
+                const calculatedEnd = s.end_time_mode === 'auto'
+                  ? calculateEndTime(s.start_time || '09:00', s.planning || [])
+                  : (s.end_time || '09:00');
 
                 return (
                   <div 
@@ -508,7 +530,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                     <div className="text-[11px] text-slate-600 space-y-1">
                       <p>🌲 Arbre : <span className="font-extrabold text-slate-800">{sTree ? sTree.name : 'Non associé'}</span></p>
-                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {s.end_time_mode === 'auto' ? 'Calculé' : (s.end_time || 'Calculé')}</span></p>
+                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {calculatedEnd}</span></p>
                       <p>🔗 Étapes : <span className="font-extrabold text-blue-700">{s.planning?.length || 0} blocs</span></p>
                     </div>
 
@@ -518,7 +540,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           setActiveSessionId(String(s.id));
                           setViewMode("view");
                         }}
-                        className={`py-1.5 px-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
                           isSelected && viewMode === "view"
                             ? 'bg-blue-600 text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -531,27 +553,29 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           setActiveSessionId(String(s.id));
                           setViewMode("edit");
                         }}
-                        className={`py-1.5 px-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
                           isSelected && viewMode === "edit"
                             ? 'bg-amber-500 text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                       >
-                        ✏️ Modif
+                        ✏️ Modifier
                       </button>
                       <button
-                        onClick={(e) => handleDuplicateSession(s, e)}
-                        className="py-1.5 px-1 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1"
+                        onClick={() => handleDuplicateSession(s)}
+                        className="py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 flex items-center justify-center gap-1 shrink-0"
                         title="Dupliquer la session"
                       >
-                        👥 Dupl.
+                        👥 Copier
                       </button>
                     </div>
                   </div>
                 );
               })}
-              {filteredSessions.length === 0 && (
-                <p className="text-center text-xs text-slate-400 py-4 font-bold">Aucune session à afficher.</p>
+              {displayedSessions.length === 0 && (
+                <div className="text-center py-6 text-xs font-semibold text-slate-400">
+                  Aucune session à afficher.
+                </div>
               )}
             </div>
           </div>
@@ -604,7 +628,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             <div className="flex justify-between items-start gap-2">
                               <div>
                                 <h4 className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                                  {block.name}
+                                  {getBlockDisplayName(block, linkedTree)}
                                   {block.type === 'palier' && (
                                     <span className="text-[9px] bg-purple-100 text-purple-700 font-black px-1.5 py-0.2 rounded border border-purple-200">
                                       🔍 Inspecter le contenu
@@ -613,8 +637,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 </h4>
                                 <p className="text-[10px] text-slate-500 font-semibold mt-1">{block.desc}</p>
                               </div>
-                              <span className="text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded shrink-0">
-                                ⏱️ {block.duration} min
+                              <span className="text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded shrink-0 font-mono">
+                                ⏱️ {formatDurationHM(block.duration)}
                               </span>
                             </div>
                           </div>
@@ -783,7 +807,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           let isTargetIndexValid = true;
                           const isBeingDragged = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && draggedPlanningItem.index === index;
 
-                          // Bloque le dépôt sur l'emplacement actuel direct
+                          // Bloque le dépôt sur l'emplacement actuel direct (à gauche/droite de l'élément en cours de déplacement)
                           const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
                                                  (index === draggedPlanningItem.index || index === draggedPlanningItem.index + 1);
 
@@ -803,6 +827,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               isTargetIndexValid = validation.isValid;
                             }
                           } else if (isImmediateSpot) {
+                            // On empêche d'afficher l'emplacement vert sur l'index d'origine direct (déplacement inutile)
                             isTargetIndexValid = false;
                           }
 
@@ -812,29 +837,20 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           return (
                             <React.Fragment key={block.id}>
                               
-                              {/* ZONE DE DÉPÔT COHÉRENTE ET PERMANENTE SANS DEMONTAGE DU DOM */}
-                              {draggedPlanningItem && (
+                              {/* ZONE DE DÉPÔT COHÉRENTE ET NON-REDONDANTE */}
+                              {draggedPlanningItem && isTargetIndexValid && (
                                 <div 
-                                  onDragOver={(e) => { 
-                                    if (isTargetIndexValid) {
-                                      e.preventDefault(); 
-                                      setActiveDropIndex(index); 
-                                    }
-                                  }}
+                                  onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
                                   onDragLeave={() => setActiveDropIndex(null)}
-                                  onDrop={() => {
-                                    if (isTargetIndexValid) handleTimelineDrop(index);
-                                  }}
-                                  className={`transition-all duration-200 rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[10px] ${
-                                    !isTargetIndexValid
-                                      ? 'h-0 opacity-0 pointer-events-none' // Zone invalide masquée
-                                      : activeDropIndex === index 
-                                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700 h-12 my-2' // Survol
-                                        : 'bg-slate-50/50 border-slate-300 text-slate-400 h-6 my-1 hover:bg-slate-100' // Guide pré-survol visible
+                                  onDrop={() => handleTimelineDrop(index)}
+                                  className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                    activeDropIndex === index 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                      : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
                                   }`}
                                 >
-                                  {isTargetIndexValid && (
-                                    <span>{activeDropIndex === index ? '🟢 Déposer ici (Valide)' : '🎯 Emplacement disponible'}</span>
+                                  {activeDropIndex === index && (
+                                    <span>🟢 Déposer ici (Valide)</span>
                                   )}
                                 </div>
                               )}
@@ -860,10 +876,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                     <span 
                                       draggable
                                       onDragStart={(e) => {
+                                        // Évite d'autres effets bizarres de sélection
                                         e.stopPropagation();
                                         setDraggedPlanningItem({ source: 'timeline', index });
                                       }}
                                       onDragEnd={() => {
+                                        // Nettoyage asynchrone sécurisé de l'arbre
                                         setTimeout(() => {
                                           setDraggedPlanningItem(null);
                                           setActiveDropIndex(null);
@@ -877,7 +895,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   
                                   <div className="min-w-0">
                                     <h5 className="font-extrabold text-slate-800 text-xs truncate flex items-center gap-1.5">
-                                      {block.name}
+                                      {getBlockDisplayName(block, linkedTree)}
                                       {block.type === 'palier' && (
                                         <button 
                                           type="button"
@@ -885,7 +903,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                             const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
                                             if (matchedFloor) setSelectedInspectFloor(matchedFloor);
                                           }}
-                                          className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
+                                          className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer shadow-xs shrink-0"
                                         >
                                           🔍 Voir contenu
                                         </button>
@@ -895,7 +913,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-center gap-3 flex-shrink-0">
                                   <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border">
                                     <input 
                                       type="number" 
@@ -906,13 +924,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                     />
                                     <span className="text-[10px] font-black text-slate-400">min</span>
                                   </div>
-
-                                  {/* Bouton d'édition (engrenage) pour renommer le bloc */}
+                                  
+                                  {/* BOUTON ENGRENAGE DE MODIFICATION */}
                                   <button 
                                     type="button"
-                                    onClick={() => setEditingBlock(block)}
-                                    className="text-slate-500 hover:text-slate-700 font-bold text-xs bg-slate-100 p-1 rounded-lg hover:bg-slate-200"
-                                    title="Modifier le nom ou la couleur"
+                                    onClick={() => setEditingBlock(block)} 
+                                    className="text-slate-500 hover:text-slate-700 font-bold text-xs bg-slate-100 p-1.5 rounded-lg transition-colors"
+                                    title="Modifier le bloc"
                                   >
                                     ⚙️
                                   </button>
@@ -956,32 +974,23 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               isTargetIndexValid = false;
                             }
 
+                            if (!isTargetIndexValid) return null;
+
                             return (
-                              draggedPlanningItem && (
-                                <div 
-                                  onDragOver={(e) => { 
-                                    if (isTargetIndexValid) {
-                                      e.preventDefault(); 
-                                      setActiveDropIndex(lastIndex); 
-                                    }
-                                  }}
-                                  onDragLeave={() => setActiveDropIndex(null)}
-                                  onDrop={() => {
-                                    if (isTargetIndexValid) handleTimelineDrop(lastIndex);
-                                  }}
-                                  className={`transition-all duration-200 rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[10px] ${
-                                    !isTargetIndexValid
-                                      ? 'h-0 opacity-0 pointer-events-none'
-                                      : activeDropIndex === lastIndex 
-                                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700 h-12 my-2'
-                                        : 'bg-slate-50/50 border-slate-300 text-slate-400 h-6 my-1 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  {isTargetIndexValid && (
-                                    <span>{activeDropIndex === lastIndex ? '🟢 Déposer en fin de planning (Valide)' : '🎯 Déposer en fin de planning'}</span>
-                                  )}
-                                </div>
-                              )
+                              <div 
+                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(lastIndex); }}
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => handleTimelineDrop(lastIndex)}
+                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  activeDropIndex === lastIndex 
+                                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
+                                    : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
+                                }`}
+                              >
+                                {activeDropIndex === lastIndex && (
+                                  <span>🟢 Déposer en fin de planning (Valide)</span>
+                                )}
+                              </div>
                             );
                           })()
                         )}
@@ -1019,30 +1028,46 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </div>
                       </div>
 
-                      {/* LES PALIERS DE L'ARBRE */}
+                      {/* LES PALIERS DE L'ARBRE (Filtrés si déjà présents) */}
                       {linkedTree ? (
                         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
-                          {(linkedTree.floors || []).map(floor => (
-                            <div
-                              key={floor.floorId}
-                              draggable
-                              onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                              onDragEnd={() => {
-                                setTimeout(() => {
-                                  setDraggedPlanningItem(null);
-                                  setActiveDropIndex(null);
-                                }, 0);
-                              }}
-                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
-                            >
-                              <div className="min-w-0">
-                                <span className="font-extrabold text-xs text-purple-900 block truncate">🎯 Palier {floor.floorId}</span>
-                                <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                          {(() => {
+                            const availableFloors = (linkedTree.floors || []).filter(
+                              floor => !existingFloorIds.includes(floor.floorId)
+                            );
+
+                            if (availableFloors.length === 0) {
+                              return (
+                                <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
+                                  ✅ Tous les paliers de l'arbre sont actuellement dans le planning.
+                                </p>
+                              );
+                            }
+
+                            return availableFloors.map(floor => (
+                              <div
+                                key={floor.floorId}
+                                draggable
+                                onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                                onDragEnd={() => {
+                                  setTimeout(() => {
+                                    setDraggedPlanningItem(null);
+                                    setActiveDropIndex(null);
+                                  }, 0);
+                                }}
+                                className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
+                              >
+                                <div className="min-w-0">
+                                  <span className="font-extrabold text-xs text-purple-900 block truncate">
+                                    🎯 Palier {floor.floorId}
+                                  </span>
+                                  <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                                </div>
+                                <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
                               </div>
-                              <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
-                            </div>
-                          ))}
+                            ));
+                          })()}
                         </div>
                       ) : (
                         <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500">
@@ -1068,61 +1093,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       </div>
 
-      {/* --- MODALE D'ÉDITION D'UN BLOC --- */}
-      {editingBlock && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
-            <button 
-              onClick={() => setEditingBlock(null)} 
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
-            >
-              ×
-            </button>
-            
-            <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">⚙️ Modifier le Bloc</h3>
-            <form onSubmit={handleSaveBlockEdit} className="space-y-4 text-xs mt-4">
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">Nom de l'étape :</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={editingBlock.name} 
-                  onChange={(e) => setEditingBlock({ ...editingBlock, name: e.target.value })} 
-                  className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-slate-800 text-xs" 
-                />
-              </div>
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">Description :</label>
-                <textarea 
-                  rows="3" 
-                  value={editingBlock.desc || ''} 
-                  onChange={(e) => setEditingBlock({ ...editingBlock, desc: e.target.value })} 
-                  className="w-full border rounded-lg p-2.5 bg-slate-50 text-slate-800 text-xs"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-600 font-bold mb-1">Couleur d'identification :</label>
-                <div className="flex gap-2 items-center">
-                  <input 
-                    type="color" 
-                    value={editingBlock.color || '#cbd5e1'} 
-                    onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })} 
-                    className="w-10 h-10 border rounded-lg p-1 bg-white cursor-pointer shrink-0" 
-                  />
-                  <span className="text-[10px] font-mono text-slate-500 font-black">{editingBlock.color || '#cbd5e1'}</span>
-                </div>
-              </div>
-              <button 
-                type="submit" 
-                className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
-              >
-                Appliquer les modifications
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* --- INSPECTEUR DE PALIER --- */}
       {selectedInspectFloor && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-end z-50 transition-all">
@@ -1131,7 +1101,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <div className="flex justify-between items-center border-b pb-4 mb-4">
                 <div>
                   <span className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">🔍 Inspecteur de Contenu</span>
-                  <h3 className="text-sm font-black text-slate-900 mt-1">Palier {selectedInspectFloor.floorId} : {selectedInspectFloor.name || 'Général'}</h3>
+                  <h3 className="text-sm font-black text-slate-900 mt-1">Palier {selectedInspectFloor.floorId}{selectedInspectFloor.name ? ` : ${selectedInspectFloor.name}` : ''}</h3>
                 </div>
                 <button 
                   onClick={() => setSelectedInspectFloor(null)} 
@@ -1185,6 +1155,99 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               >
                 Fermer l'inspecteur
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODALE D'ÉDITION D'UN BLOC (Engrenage) (Points 2 & 7) --- */}
+      {editingBlock && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
+            <button 
+              onClick={() => setEditingBlock(null)} 
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
+            >
+              ×
+            </button>
+            
+            <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">⚙️ Modifier le bloc</h3>
+            <div className="space-y-4 text-xs mt-4">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Nom de l'étape :</label>
+                <input 
+                  type="text" 
+                  value={editingBlock.name} 
+                  onChange={(e) => setEditingBlock({ ...editingBlock, name: e.target.value })}
+                  className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-xs" 
+                />
+              </div>
+              
+              {/* MODIFICATION DIRECTE DE LA DURÉE + CONVERSION H/MIN (Point 7) */}
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Durée (en minutes) :</label>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={editingBlock.duration || 15} 
+                    onChange={(e) => setEditingBlock({ ...editingBlock, duration: Math.max(1, parseInt(e.target.value, 10) || 15) })}
+                    className="w-24 border rounded-lg p-2 bg-slate-50 font-black text-xs text-center" 
+                  />
+                  <span className="text-[11px] text-slate-500 font-black bg-slate-100 border px-2.5 py-1 rounded-md font-mono">
+                    ⏱️ {formatDurationHM(editingBlock.duration)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Description :</label>
+                <textarea 
+                  value={editingBlock.desc || ''} 
+                  onChange={(e) => setEditingBlock({ ...editingBlock, desc: e.target.value })}
+                  rows="3"
+                  className="w-full border rounded-lg p-2.5 bg-slate-50 text-xs leading-relaxed resize-none" 
+                />
+              </div>
+
+              {/* SÉLECTION COULEUR : PIPETTE + CODE EXTRADÉCIMAL ÉDITABLE (Point 7) */}
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Couleur d'identification :</label>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="color" 
+                    value={editingBlock.color || '#94a3b8'} 
+                    onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })}
+                    className="w-10 h-10 border rounded cursor-pointer shrink-0" 
+                  />
+                  <input 
+                    type="text" 
+                    value={editingBlock.color || '#94a3b8'} 
+                    onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })}
+                    placeholder="#ffffff"
+                    maxLength={7}
+                    className="border rounded-lg p-2 bg-slate-50 font-mono text-xs uppercase w-28 text-center font-extrabold tracking-wider" 
+                  />
+                  <span className="text-[10px] text-slate-400 font-semibold italic">(Pipette ou code Hexa)</span>
+                </div>
+              </div>
+              
+              <div className="pt-2 flex gap-2">
+                <button 
+                  type="button"
+                  onClick={() => setEditingBlock(null)}
+                  className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => handleSaveBlockEdit(editingBlock)}
+                  className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
+                >
+                  Valider
+                </button>
+              </div>
             </div>
           </div>
         </div>
