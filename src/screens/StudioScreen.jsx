@@ -35,6 +35,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   // Zoom sur un palier pour en inspecter le contenu
   const [selectedInspectFloor, setSelectedInspectFloor] = useState(null);
 
+  // Édition individuelle d'un bloc (Modale de l'engrenage)
+  const [editingBlock, setEditingBlock] = useState(null);
+
   // États des formulaires
   const [newSessionCode, setNewSessionCode] = useState('');
   const [newSessionDate, setNewSessionDate] = useState(new Date().toISOString().split('T')[0]);
@@ -309,7 +312,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         id: `palier-${floor.floorId}-${Date.now()}`,
         type: 'palier',
         floorId: floor.floorId,
-        name: `🎯 Palier ${floor.floorId} : ${floor.name || 'Sans nom'}`,
+        name: `🎯 Palier ${floor.floorId}${floor.name ? ` : ${floor.name}` : ''}`,
         desc: `${(floor.quests || []).length} activités associées à ce niveau.`,
         color: '#7c3aed',
         duration: 45
@@ -366,6 +369,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ planning: updated });
   };
 
+  // Enregistre les modifications détaillées d'un bloc (Modale Engrenage)
+  const handleSaveBlockEdit = (updatedBlock) => {
+    if (!currentSession) return;
+    const updatedPlanning = (currentSession.planning || []).map(b => b.id === updatedBlock.id ? updatedBlock : b);
+    updateCurrentSessionInState({ planning: updatedPlanning });
+    setEditingBlock(null);
+  };
+
   const getTimelineWithHours = () => {
     if (!currentSession) return [];
     let currentMinutes = 0;
@@ -382,6 +393,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       return { ...block, startTimeFormatted: timeString };
     });
   };
+
+  // Récupère la liste des ID de paliers déjà présents dans le planning
+  const existingFloorIds = currentSession && currentSession.planning 
+    ? currentSession.planning.filter(b => b.type === 'palier').map(b => b.floorId)
+    : [];
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
@@ -415,6 +431,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   ? new Date(s.formation_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
                   : "Sans date";
 
+                // Calcul en direct de l'heure de fin pour l'affichage de la carte de session
+                const calculatedEnd = s.end_time_mode === 'auto'
+                  ? calculateEndTime(s.start_time || '09:00', s.planning || [])
+                  : (s.end_time || '09:00');
+
                 return (
                   <div 
                     key={s.id}
@@ -435,7 +456,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                     <div className="text-[11px] text-slate-600 space-y-1">
                       <p>🌲 Arbre : <span className="font-extrabold text-slate-800">{sTree ? sTree.name : 'Non associé'}</span></p>
-                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {s.end_time_mode === 'auto' ? 'Calculé' : (s.end_time || 'Calculé')}</span></p>
+                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {calculatedEnd}</span></p>
                       <p>🔗 Étapes : <span className="font-extrabold text-blue-700">{s.planning?.length || 0} blocs</span></p>
                     </div>
 
@@ -769,14 +790,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                     <span 
                                       draggable
                                       onDragStart={(e) => {
+                                        // Évite d'autres effets bizarres de sélection
                                         e.stopPropagation();
-                                        // On utilise un setTimeout(..., 0) pour forcer React à repousser son re-render
-                                        // à la micro-tâche suivante. Cela permet au navigateur d'initier le drag HTML5
-                                        // sans interruption visuelle et d'éviter que le drag ne s'annule immédiatement.
-                                        const dragData = { source: 'timeline', index };
-                                        setTimeout(() => {
-                                          setDraggedPlanningItem(dragData);
-                                        }, 0);
+                                        setDraggedPlanningItem({ source: 'timeline', index });
                                       }}
                                       onDragEnd={() => {
                                         // Nettoyage asynchrone sécurisé de l'arbre
@@ -822,6 +838,17 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                     />
                                     <span className="text-[10px] font-black text-slate-400">min</span>
                                   </div>
+                                  
+                                  {/* BOUTON ENGRENAGE DE MODIFICATION */}
+                                  <button 
+                                    type="button"
+                                    onClick={() => setEditingBlock(block)} 
+                                    className="text-slate-500 hover:text-slate-700 font-bold text-xs bg-slate-100 p-1.5 rounded-lg transition-colors"
+                                    title="Modifier le bloc"
+                                  >
+                                    ⚙️
+                                  </button>
+
                                   <button 
                                     type="button"
                                     onClick={() => removePlanningBlock(block.id)} 
@@ -900,12 +927,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         />
                         <div 
                           draggable
-                          onDragStart={() => {
-                            const dragData = { source: 'palette-custom' };
-                            setTimeout(() => {
-                              setDraggedPlanningItem(dragData);
-                            }, 0);
-                          }}
+                          onDragStart={() => setDraggedPlanningItem({ source: 'palette-custom' })}
                           onDragEnd={() => {
                             setTimeout(() => {
                               setDraggedPlanningItem(null);
@@ -920,35 +942,46 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </div>
                       </div>
 
-                      {/* LES PALIERS DE L'ARBRE */}
+                      {/* LES PALIERS DE L'ARBRE (Filtrés si déjà présents) */}
                       {linkedTree ? (
                         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
-                          {(linkedTree.floors || []).map(floor => (
-                            <div
-                              key={floor.floorId}
-                              draggable
-                              onDragStart={() => {
-                                const dragData = { source: 'palette-palier', data: floor };
-                                setTimeout(() => {
-                                  setDraggedPlanningItem(dragData);
-                                }, 0);
-                              }}
-                              onDragEnd={() => {
-                                setTimeout(() => {
-                                  setDraggedPlanningItem(null);
-                                  setActiveDropIndex(null);
-                                }, 0);
-                              }}
-                              className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
-                            >
-                              <div className="min-w-0">
-                                <span className="font-extrabold text-xs text-purple-900 block truncate">🎯 Palier {floor.floorId}</span>
-                                <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                          {(() => {
+                            const availableFloors = (linkedTree.floors || []).filter(
+                              floor => !existingFloorIds.includes(floor.floorId)
+                            );
+
+                            if (availableFloors.length === 0) {
+                              return (
+                                <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
+                                  ✅ Tous les paliers de l'arbre sont actuellement dans le planning.
+                                </p>
+                              );
+                            }
+
+                            return availableFloors.map(floor => (
+                              <div
+                                key={floor.floorId}
+                                draggable
+                                onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                                onDragEnd={() => {
+                                  setTimeout(() => {
+                                    setDraggedPlanningItem(null);
+                                    setActiveDropIndex(null);
+                                  }, 0);
+                                }}
+                                className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
+                              >
+                                <div className="min-w-0">
+                                  <span className="font-extrabold text-xs text-purple-900 block truncate">
+                                    🎯 Palier {floor.floorId}
+                                  </span>
+                                  <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                                </div>
+                                <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
                               </div>
-                              <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
-                            </div>
-                          ))}
+                            ));
+                          })()}
                         </div>
                       ) : (
                         <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500">
@@ -982,7 +1015,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <div className="flex justify-between items-center border-b pb-4 mb-4">
                 <div>
                   <span className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">🔍 Inspecteur de Contenu</span>
-                  <h3 className="text-sm font-black text-slate-900 mt-1">Palier {selectedInspectFloor.floorId} : {selectedInspectFloor.name || 'Général'}</h3>
+                  <h3 className="text-sm font-black text-slate-900 mt-1">Palier {selectedInspectFloor.floorId}{selectedInspectFloor.name ? ` : ${selectedInspectFloor.name}` : ''}</h3>
                 </div>
                 <button 
                   onClick={() => setSelectedInspectFloor(null)} 
@@ -1036,6 +1069,71 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               >
                 Fermer l'inspecteur
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODALE D'ÉDITION D'UN BLOC (Engrenage) --- */}
+      {editingBlock && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
+            <button 
+              onClick={() => setEditingBlock(null)} 
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
+            >
+              ×
+            </button>
+            
+            <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">⚙️ Modifier le bloc</h3>
+            <div className="space-y-4 text-xs mt-4">
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Nom de l'étape :</label>
+                <input 
+                  type="text" 
+                  value={editingBlock.name} 
+                  onChange={(e) => setEditingBlock({ ...editingBlock, name: e.target.value })}
+                  className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-xs" 
+                />
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Description :</label>
+                <textarea 
+                  value={editingBlock.desc || ''} 
+                  onChange={(e) => setEditingBlock({ ...editingBlock, desc: e.target.value })}
+                  rows="3"
+                  className="w-full border rounded-lg p-2.5 bg-slate-50 text-xs leading-relaxed resize-none" 
+                />
+              </div>
+              <div>
+                <label className="block text-slate-600 font-bold mb-1">Couleur d'identification :</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="color" 
+                    value={editingBlock.color || '#94a3b8'} 
+                    onChange={(e) => setEditingBlock({ ...editingBlock, color: e.target.value })}
+                    className="w-10 h-10 border rounded cursor-pointer" 
+                  />
+                  <span className="font-mono text-[10px] text-slate-500 uppercase">{editingBlock.color || '#94a3b8'}</span>
+                </div>
+              </div>
+              
+              <div className="pt-2 flex gap-2">
+                <button 
+                  type="button"
+                  onClick={() => setEditingBlock(null)}
+                  className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => handleSaveBlockEdit(editingBlock)}
+                  className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all"
+                >
+                  Valider
+                </button>
+              </div>
             </div>
           </div>
         </div>
