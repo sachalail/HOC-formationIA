@@ -143,7 +143,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     if (block.type === 'palier' && sessionTree) {
       const matchedFloor = sessionTree.floors?.find(f => f.floorId === block.floorId);
       if (matchedFloor && matchedFloor.name) {
-        return `🎯 Palier ${block.floorId} : ${matchedFloor.name}`;
+        return `🎯 Palier ${block.floorId}`;
       }
     }
     return block.name;
