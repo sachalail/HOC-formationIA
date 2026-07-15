@@ -63,7 +63,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         setCurrentUserId(session.user.id);
         await fetchSessions(session.user.id);
         await fetchTrees();
-        await fetchQuests();
       }
     };
     fetchInitialData();
@@ -118,13 +117,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const treesMap = {};
       data.forEach(t => { treesMap[t.id] = t; });
       if (typeof setTrees === 'function') setTrees(treesMap);
-    }
-  };
-
-  const fetchQuests = async () => {
-    const { data, error } = await supabase.from('quests').select('*');
-    if (data && !error && typeof setQuests === 'function') {
-      setQuests(data);
     }
   };
 
@@ -238,28 +230,37 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
   };
 
-  // --- LOGIQUE ET VALIDATION DE PLACEMENT DU DRAG & DROP ---
-  const getPlacementValidation = (floorId, targetIndex, timeline) => {
-    if (floorId === undefined || floorId === null) return { isValid: true };
+  // --- LOGIQUE DE VALIDATION SANS AUTO-INTERFÉRENCE ---
+  const getPlacementValidation = (floorId, targetIndex, timeline, draggedItem) => {
+    if (!floorId) return { isValid: true };
     
-    const targetFloorId = parseInt(floorId, 10);
-    if (isNaN(targetFloorId)) return { isValid: true };
-
+    // On extrait l'élément déplacé s'il provient de la timeline pour ne pas fausser le calcul des voisins
+    let checkTimeline = [...timeline];
+    let adjustedTargetIndex = targetIndex;
+    
+    if (draggedItem?.source === 'timeline') {
+      const sourceIndex = draggedItem.index;
+      checkTimeline.splice(sourceIndex, 1);
+      if (targetIndex > sourceIndex) {
+        adjustedTargetIndex = targetIndex - 1;
+      }
+    }
+    
     let prevMaxFloor = -1;
-    for (let i = 0; i < targetIndex; i++) {
-      if (timeline[i]?.type === 'palier' && timeline[i]?.floorId !== undefined) {
-        prevMaxFloor = Math.max(prevMaxFloor, parseInt(timeline[i].floorId, 10));
+    for (let i = 0; i < adjustedTargetIndex; i++) {
+      if (checkTimeline[i]?.type === 'palier') {
+        prevMaxFloor = Math.max(prevMaxFloor, checkTimeline[i].floorId);
       }
     }
     
     let nextMinFloor = 999;
-    for (let i = targetIndex; i < timeline.length; i++) {
-      if (timeline[i]?.type === 'palier' && timeline[i]?.floorId !== undefined) {
-        nextMinFloor = Math.min(nextMinFloor, parseInt(timeline[i].floorId, 10));
+    for (let i = adjustedTargetIndex; i < checkTimeline.length; i++) {
+      if (checkTimeline[i]?.type === 'palier') {
+        nextMinFloor = Math.min(nextMinFloor, checkTimeline[i].floorId);
       }
     }
 
-    const isValid = targetFloorId > prevMaxFloor && targetFloorId < nextMinFloor;
+    const isValid = floorId > prevMaxFloor && floorId < nextMinFloor;
     return {
       isValid,
       prevMaxFloor: prevMaxFloor === -1 ? null : prevMaxFloor,
@@ -273,7 +274,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     if (draggedPlanningItem.source === 'palette-palier') {
       const floor = draggedPlanningItem.data;
-      const { isValid, prevMaxFloor, nextMinFloor } = getPlacementValidation(floor.floorId, targetIndex, timeline);
+      const { isValid, prevMaxFloor, nextMinFloor } = getPlacementValidation(floor.floorId, targetIndex, timeline, draggedPlanningItem);
       
       if (!isValid) {
         alert(`🚫 Placement invalide.\nLe Palier ${floor.floorId} doit être planifié après le palier ${prevMaxFloor || 'précédent'} et avant le palier ${nextMinFloor || 'suivant'}.`);
@@ -284,7 +285,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const newBlock = {
         id: `palier-${floor.floorId}-${Date.now()}`,
         type: 'palier',
-        floorId: parseInt(floor.floorId, 10),
+        floorId: floor.floorId,
         name: `🎯 Palier ${floor.floorId} : ${floor.name || 'Sans nom'}`,
         desc: `${(floor.quests || []).length} activités associées à ce niveau.`,
         color: '#7c3aed',
@@ -305,10 +306,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     } 
     else if (draggedPlanningItem.source === 'timeline') {
       const sourceIndex = draggedPlanningItem.index;
-      const [movedBlock] = timeline.splice(sourceIndex, 1);
+      const movedBlock = timeline[sourceIndex];
       
       if (movedBlock.type === 'palier') {
-        const { isValid } = getPlacementValidation(movedBlock.floorId, targetIndex, timeline);
+        const { isValid } = getPlacementValidation(movedBlock.floorId, targetIndex, currentSession.planning, draggedPlanningItem);
         if (!isValid) {
           alert(`🚫 Déplacement invalide pour le Palier ${movedBlock.floorId} (L'ordre chronologique doit être préservé).`);
           setActiveDropIndex(null); 
@@ -316,7 +317,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           return;
         }
       }
-      timeline.splice(targetIndex, 0, movedBlock);
+      timeline.splice(sourceIndex, 1);
+      const adjustedTargetIndex = targetIndex > sourceIndex ? targetIndex - 1 : targetIndex;
+      timeline.splice(adjustedTargetIndex, 0, movedBlock);
     }
 
     updateCurrentSessionInState({ planning: timeline });
@@ -351,23 +354,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       const timeString = `${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
       currentMinutes += parseInt(block.duration || 0, 10);
       return { ...block, startTimeFormatted: timeString };
-    });
-  };
-
-  // Résolution des détails complets des quêtes pour l'inspecteur
-  const getResolvedInspectQuests = () => {
-    if (!selectedInspectFloor) return [];
-    const floorQuestsRaw = selectedInspectFloor.quests || selectedInspectFloor.quest_ids || [];
-    
-    return floorQuestsRaw.map(fq => {
-      // Si la quête du palier est déjà un objet complet
-      if (fq && typeof fq === 'object' && (fq.title || fq.name)) {
-        return fq;
-      }
-      // Sinon, on cherche l'ID de la quête dans la liste globale
-      const targetId = typeof fq === 'object' ? (fq.id || fq.quest_id) : fq;
-      const foundGlobal = quests.find(q => String(q.id) === String(targetId));
-      return foundGlobal || { id: targetId, title: "Activité inconnue", description: "Pas de détails chargés." };
     });
   };
 
@@ -501,7 +487,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             style={{ borderLeftWidth: '5px', borderLeftColor: block.color || '#cbd5e1' }}
                             onClick={() => {
                               if (block.type === 'palier') {
-                                const matchedFloor = linkedTree?.floors?.find(f => parseInt(f.floorId, 10) === parseInt(block.floorId, 10));
+                                const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
                                 if (matchedFloor) setSelectedInspectFloor(matchedFloor);
                               }
                             }}
@@ -685,9 +671,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         )}
 
                         {(currentSession.planning || []).map((block, index) => {
-                          // Evaluation de la validité de cette position de dépôt pour le bloc en cours de drag
                           let isTargetIndexValid = true;
-                          let explanationText = "";
 
                           if (draggedPlanningItem) {
                             let dragFloorId = null;
@@ -700,45 +684,34 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               }
                             }
 
-                            if (dragFloorId !== null && dragFloorId !== undefined) {
-                              const validation = getPlacementValidation(dragFloorId, index, currentSession.planning);
+                            if (dragFloorId) {
+                              const validation = getPlacementValidation(dragFloorId, index, currentSession.planning, draggedPlanningItem);
                               isTargetIndexValid = validation.isValid;
-                              if (!isTargetIndexValid) {
-                                explanationText = `Doit être placé après Palier ${validation.prevMaxFloor || '0'}`;
-                                if (validation.nextMinFloor) {
-                                  explanationText += ` et avant Palier ${validation.nextMinFloor}`;
-                                }
-                              }
                             }
                           }
 
                           return (
                             <React.Fragment key={block.id}>
                               
-                              {/* INDICATEUR DE ZONE DE DEPOT RECONSTRUITE & COLORÉE */}
-                              <div 
-                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
-                                onDragLeave={() => setActiveDropIndex(null)}
-                                onDrop={() => handleTimelineDrop(index)}
-                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
-                                  activeDropIndex === index 
-                                    ? isTargetIndexValid 
+                              {/* ZONE DE DÉPÔT SÉLECTIVE (N'affiche que si l'emplacement est accessible) */}
+                              {(!draggedPlanningItem || isTargetIndexValid) && (
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
+                                  onDragLeave={() => setActiveDropIndex(null)}
+                                  onDrop={() => handleTimelineDrop(index)}
+                                  className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                    activeDropIndex === index 
                                       ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
-                                      : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
-                                    : draggedPlanningItem 
-                                      ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
-                                      : 'bg-transparent h-2 border-none'
-                                }`}
-                              >
-                                {activeDropIndex === index && (
-                                  <span>
-                                    {isTargetIndexValid 
-                                      ? '🟢 Déposer ici (Valide)' 
-                                      : `❌ Position interdite (${explanationText})`
-                                    }
-                                  </span>
-                                )}
-                              </div>
+                                      : draggedPlanningItem 
+                                        ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
+                                        : 'bg-transparent h-2 border-none'
+                                  }`}
+                                >
+                                  {activeDropIndex === index && (
+                                    <span>🟢 Déposer ici (Valide)</span>
+                                  )}
+                                </div>
+                              )}
                               
                               <div 
                                 draggable
@@ -756,7 +729,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                         <button 
                                           type="button"
                                           onClick={() => {
-                                            const matchedFloor = linkedTree?.floors?.find(f => parseInt(f.floorId, 10) === parseInt(block.floorId, 10));
+                                            const matchedFloor = linkedTree?.floors?.find(f => f.floorId === block.floorId);
                                             if (matchedFloor) setSelectedInspectFloor(matchedFloor);
                                           }}
                                           className="text-[9px] text-purple-600 bg-purple-50 hover:bg-purple-100 border px-1.5 py-0.5 rounded font-black cursor-pointer"
@@ -793,12 +766,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           );
                         })}
 
-                        {/* DERNIER INDICATEUR DE FIN DE TIMELINE */}
+                        {/* INDICATEUR DE FIN DE TIMELINE (Masqué s'il n'est pas accessible) */}
                         {(currentSession.planning || []).length > 0 && (
                           (() => {
                             const lastIndex = currentSession.planning.length;
                             let isTargetIndexValid = true;
-                            let explanationText = "";
 
                             if (draggedPlanningItem) {
                               let dragFloorId = null;
@@ -809,14 +781,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
                               }
 
-                              if (dragFloorId !== null && dragFloorId !== undefined) {
-                                const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning);
+                              if (dragFloorId) {
+                                const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning, draggedPlanningItem);
                                 isTargetIndexValid = validation.isValid;
-                                if (!isTargetIndexValid) {
-                                  explanationText = `Doit être planifié après le palier ${validation.prevMaxFloor || '0'}`;
-                                }
                               }
                             }
+
+                            // Si on drag un palier mais que la position finale est interdite, on masque complètement cette zone de dépôt
+                            if (draggedPlanningItem && !isTargetIndexValid) return null;
 
                             return (
                               <div 
@@ -825,21 +797,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 onDrop={() => handleTimelineDrop(lastIndex)}
                                 className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
                                   activeDropIndex === lastIndex 
-                                    ? isTargetIndexValid 
-                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
-                                      : 'bg-red-50/90 border-red-500 text-red-700 h-14 my-2'
+                                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
                                     : draggedPlanningItem 
                                       ? 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
                                       : 'bg-transparent h-2 border-none'
                                 }`}
                               >
                                 {activeDropIndex === lastIndex && (
-                                  <span>
-                                    {isTargetIndexValid 
-                                      ? '🟢 Déposer en fin de planning (Valide)' 
-                                      : `❌ Impossible de déposer à la fin (${explanationText})`
-                                    }
-                                  </span>
+                                  <span>🟢 Déposer en fin de planning (Valide)</span>
                                 )}
                               </div>
                             );
@@ -939,11 +904,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <div className="space-y-4 text-xs">
                 <div>
                   <h4 className="font-bold text-slate-500 uppercase text-[10px] mb-2">🎯 Quêtes & Exercices de ce palier :</h4>
-                  {getResolvedInspectQuests().length === 0 ? (
+                  {(selectedInspectFloor.quests || []).length === 0 ? (
                     <p className="text-slate-400 italic">Aucune quête définie sur ce palier.</p>
                   ) : (
                     <div className="space-y-2">
-                      {getResolvedInspectQuests().map((q, qIndex) => (
+                      {selectedInspectFloor.quests.map((q, qIndex) => (
                         <div key={q.id || qIndex} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
                           <p className="font-extrabold text-slate-900">⚔️ {q.title || q.name || "Activité sans titre"}</p>
                           <p className="text-slate-500 text-[10px] leading-relaxed">{q.description || q.desc || "Pas de description."}</p>
