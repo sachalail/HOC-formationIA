@@ -526,7 +526,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                     <div className="text-[11px] text-slate-600 space-y-1">
                       <p>🌲 Arbre : <span className="font-extrabold text-slate-800">{sTree ? sTree.name : 'Non associé'}</span></p>
-                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {s.end_time_mode === 'auto' ? 'Calculé' : (s.end_time || 'Calculé')}</span></p>
+                      <p>⏰ Agenda : <span className="font-extrabold text-slate-800 font-mono">{(s.start_time || '09:00')} - {s.end_time_mode === 'auto' ? calculateEndTime(s.start_time || '09:00', s.planning || []) : (s.end_time || 'Calculé')}</span></p>
                       <p>🔗 Étapes : <span className="font-extrabold text-blue-700">{s.planning?.length || 0} blocs</span></p>
                     </div>
 
@@ -858,6 +858,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   e.preventDefault();
                                   setDraggedPlanningItem(null);
                                   setActiveDropIndex(null);
+                                }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
                                 }}
                                 className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
                                   isLocked 
