@@ -41,6 +41,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
     if (found) {
       setSelectedSession(found);
+      // Réinitialisation des filtres à vide lors d'un changement manuel (ils seront re-remplis par défaut via le useEffect)
       setSelectedStudents([]);
       setSelectedQuests([]);
     }
@@ -144,6 +145,12 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               };
             });
             setSessionStudents(formattedStudents);
+            
+            // SÉLECTION PAR DÉFAUT : Si aucun filtre n'est encore enregistré en session, on sélectionne TOUT
+            const savedStudents = sessionStorage.getItem('drh_filter_students');
+            if (!savedStudents || JSON.parse(savedStudents).length === 0) {
+              setSelectedStudents(formattedStudents);
+            }
           } else {
             setSessionStudents([]);
           }
@@ -172,7 +179,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               floorsObj.forEach(floor => {
                 if (floor && floor.quests && Array.isArray(floor.quests)) {
                   floor.quests.forEach(qId => {
-                    // SÉCURITÉ : On garde la valeur brute textuelle/UUID sans forcer Number()
                     if (qId !== undefined && qId !== null && String(qId).trim() !== "") {
                       extractedQuestIds.push(String(qId));
                     }
@@ -197,11 +203,17 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               const { data: fetchedQuests, error: qError } = await supabase
                 .from('quests')
                 .select('*')
-                .in('id', uniqueQuestIds); // Plus aucun risque de NaN ici
+                .in('id', uniqueQuestIds);
 
               if (qError) throw qError;
               if (fetchedQuests) {
                 setSessionQuests(fetchedQuests);
+                
+                // SÉLECTION PAR DÉFAUT : Si aucun filtre n'est encore enregistré en session, on sélectionne TOUT
+                const savedQuests = sessionStorage.getItem('drh_filter_quests');
+                if (!savedQuests || JSON.parse(savedQuests).length === 0) {
+                  setSelectedQuests(fetchedQuests);
+                }
                 return;
               }
             }
@@ -224,25 +236,28 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
   // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
-  const sessionQuestIdsOnly = sessionQuests.map(q => q.id);
+  const sessionQuestIdsOnly = sessionQuests.map(q => String(q.id));
 
+  // On s'assure d'un filtrage propre sur la session courante
   const activeSelectedStudents = selectedStudents.filter(s => studentIdsInCurrentSession.includes(s.uid));
-  const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(q.id));
+  const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(String(q.id)));
 
+  // FILTRAGE STRICT : Si l'un des filtres est totalement vide, on n'affiche rien du tout.
   const filteredProductions = allProductions.filter(p => {
     if (!p || !currentSessionSafe) return false;
 
+    // L'apprenant doit appartenir à la session actuelle
     const isStudentInSession = studentIdsInCurrentSession.includes(p.studentId);
-    const matchesSessionCode = p.session_code === currentSessionSafe.session_code;
+    if (!isStudentInSession) return false;
 
-    if (!isStudentInSession || !matchesSessionCode) return false;
-
+    // Si l'utilisateur n'a sélectionné aucun étudiant ou aucune quête, on n'affiche rien
     if (activeSelectedStudents.length === 0 || activeSelectedQuests.length === 0) {
       return false;
     }
 
+    // Le livrable doit correspondre à un étudiant sélectionné ET à une quête sélectionnée
     const matchesStudentFilter = activeSelectedStudents.some(s => s.uid === p.studentId);
-    const matchesQuestFilter = activeSelectedQuests.some(q => q.id === p.questId);
+    const matchesQuestFilter = activeSelectedQuests.some(q => String(q.id) === String(p.questId));
 
     return matchesStudentFilter && matchesQuestFilter;
   });
@@ -258,16 +273,23 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
   let totalXP = 0;
   const studentsProgress = sessionStudents.map(student => {
-    const studentProds = filteredProductions.filter(p => p.studentId === student.uid);
+    // On ne calcule l'XP pour un étudiant que si celui-ci fait partie du filtre actif
+    const isStudentActive = activeSelectedStudents.some(s => s.uid === student.uid);
+    
+    // On récupère ses productions associées aux quêtes sélectionnées
+    const studentProds = allProductions.filter(p => 
+      p.studentId === student.uid && 
+      activeSelectedQuests.some(q => String(q.id) === String(p.questId))
+    );
     const studentUniqueProds = studentProds.filter(p => !p.content?.startsWith("[Importé"));
 
     const studentPoints = studentProds.reduce((sum, prod) => {
-      const originalQuest = sessionQuests.find(q => q.id === prod.questId);
+      const originalQuest = sessionQuests.find(q => String(q.id) === String(prod.questId));
       if (originalQuest) return sum + getPointsByDifficulty(originalQuest.difficulty);
       return sum + 100;
     }, 0);
 
-    if (activeSelectedStudents.some(s => s.uid === student.uid)) {
+    if (isStudentActive) {
       totalXP += studentPoints;
     }
 
@@ -289,7 +311,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
   const availableStudents = [...sessionStudents].filter(st => !activeSelectedStudents.some(sel => sel.uid === st.uid));
-  const availableQuests = [...sessionQuests].filter(q => !activeSelectedQuests.some(sel => sel.id === q.id));
+  const availableQuests = [...sessionQuests].filter(q => !activeSelectedQuests.some(sel => String(sel.id) === String(q.id)));
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6 space-y-6 text-slate-800 antialiased">
@@ -373,7 +395,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 <div className="bg-white border p-1.5 rounded-xl min-h-[42px] flex flex-col justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {activeSelectedStudents.length === 0 ? (
-                      <span className="text-[10px] text-slate-400 italic pl-1 py-1">Aucun collaborateur actif</span>
+                      <span className="text-[10px] text-red-500 italic pl-1 py-1 font-semibold">Aucun collaborateur sélectionné (dépôts masqués)</span>
                     ) : (
                       activeSelectedStudents.map(st => (
                         <span key={st.uid} className="bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -410,12 +432,12 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 <div className="bg-white border p-1.5 rounded-xl min-h-[42px] flex flex-col justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {activeSelectedQuests.length === 0 ? (
-                      <span className="text-[10px] text-slate-400 italic pl-1 py-1">Aucune quête active</span>
+                      <span className="text-[10px] text-red-500 italic pl-1 py-1 font-semibold">Aucune quête sélectionnée (dépôts masqués)</span>
                     ) : (
                       activeSelectedQuests.map(q => (
                         <span key={q.id} className="bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                           🎯 {q.name} 
-                          <button type="button" onClick={() => setSelectedQuests(selectedQuests.filter(sq => sq.id !== q.id))} className="hover:text-purple-950 font-bold ml-0.5">✕</button>
+                          <button type="button" onClick={() => setSelectedQuests(selectedQuests.filter(sq => String(sq.id) !== String(q.id)))} className="hover:text-purple-950 font-bold ml-0.5">✕</button>
                         </span>
                       ))
                     )}
@@ -520,7 +542,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                         <span className="text-slate-900 font-black">👤 {sessionStudents.find(s => s.uid === prod.studentId)?.name || "Apprenant"}</span>
                         <span className="text-slate-400 font-mono">{prod.date}</span>
                       </div>
-                      <h4 className="font-bold text-xs text-slate-800">🎯 Quête : {prod.questName}</h4>
+                      <h4 className="font-bold text-xs text-slate-800">🎯 Quête : {sessionQuests.find(q => String(q.id) === String(prod.questId))?.name || "Quête Inconnue"}</h4>
                       <p className="text-[11px] text-slate-600 italic bg-white p-2.5 rounded-xl border line-clamp-4 mt-2 font-medium leading-relaxed shadow-sm">
                         "{prod.content}"
                       </p>
