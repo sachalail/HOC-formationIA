@@ -1,9 +1,9 @@
 // src/utils/validator.js
+import { supabase } from '../supabaseClient'; // Ajustez le chemin si nécessaire
 
 /**
  * ÉTAPE 1 : Analyse statistique locale (Détection de charabia / répétitions)
- * @param {string} text 
- * @returns {{isValid: boolean, reason?: string}}
+ * Filtre instantanément et gratuitement les saisies absurdes.
  */
 function checkGibberishAndNgrams(text) {
   const cleanText = text.trim().toLowerCase();
@@ -13,25 +13,25 @@ function checkGibberishAndNgrams(text) {
   }
 
   // 1. Détection de caractères répétés anormalement (ex: aaaaaa, fff, zzz)
-  const repetitionRegex = /([a-z])\1{3,}/g; // 4 fois la même lettre d'affilée
+  const repetitionRegex = /([a-z])\1{3,}/g; 
   if (repetitionRegex.test(cleanText)) {
-    return { isValid: false, reason: "Répétitions de caractères suspectes détectées." };
+    return { isValid: false, reason: "Répétitions de caractères suspectes détectées (charabia)." };
   }
 
-  // 2. Ratio voyelles/consonnes (dans une vraie langue, il est équilibré, généralement entre 25% et 65% de voyelles)
+  // 2. Ratio voyelles/consonnes (cohérence de la langue)
   const letters = cleanText.replace(/[^a-zâäàéèùêëîïôöûü]/g, '');
   if (letters.length > 0) {
     const vowels = letters.match(/[aeiouyâäàéèùêëîïôöûü]/g) || [];
     const vowelRatio = vowels.length / letters.length;
     if (vowelRatio < 0.20 || vowelRatio > 0.70) {
-      return { isValid: false, reason: "Structure linguistique incohérente (ratio voyelles/consonnes anormal)." };
+      return { isValid: false, reason: "Structure linguistique incohérente (ratio voyelles/consonnes suspect)." };
     }
   }
 
-  // 3. Détection de keyboard-smashing typique (consonnes impossibles en français)
+  // 3. Détection de keyboard-smashing typique (lettres impossibles côte à côte)
   const suspectTrigrams = /(qsd|dfg|fzf|vzz|xcv|vvv|zzz|fgh|qsp)/g;
   if (suspectTrigrams.test(cleanText)) {
-    return { isValid: false, reason: "Combinaisons de touches suspectes détectées." };
+    return { isValid: false, reason: "Combinaisons de touches de clavier suspectes." };
   }
 
   return { isValid: true };
@@ -39,13 +39,12 @@ function checkGibberishAndNgrams(text) {
 
 /**
  * ÉTAPE 2 : Dictionnaire et taux de mots valides
- * @param {string} text 
- * @returns {{isValid: boolean, ratio: number, reason?: string}}
+ * Vérifie que l'étudiant écrit de vrais mots français et non du faux texte.
  */
 function checkDictionaryRatio(text) {
-  // Mini dictionnaire des mots de structure et mots hyper fréquents en français (environ 100 mots outils)
+  // Liste restreinte de mots très fréquents en français servant d'ancres de validation
   const frenchCommonWords = new Set([
-    "le", "la", "les", "de", "des", "un", "une", "et", "en", "que", "est", "une", "pour", "dans", "plus", 
+    "le", "la", "les", "de", "des", "un", "une", "et", "en", "que", "est", "pour", "dans", "plus", 
     "ce", "cette", "ces", "qui", "avec", "tout", "aux", "sur", "mais", "pas", "nous", "vous", "ils", "elles",
     "je", "tu", "il", "elle", "on", "faire", "fait", "mon", "ma", "mes", "votre", "notre", "leur", "leurs",
     "y", "ou", "où", "par", "dans", "sans", "sous", "bien", "très", "avec", "comme", "alors", "donc", "si",
@@ -53,23 +52,19 @@ function checkDictionaryRatio(text) {
     "projet", "analyse", "action", "impact", "solution", "équipe", "travail", "client", "entreprise", "stratégie"
   ]);
 
-  // Découpage en mots (on enlève la ponctuation)
   const words = text.toLowerCase()
     .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, " ")
     .split(/\s+/)
-    .filter(w => w.length > 1); // on ignore les lettres isolées sauf exceptions
+    .filter(w => w.length > 1);
 
   if (words.length === 0) {
     return { isValid: false, ratio: 0, reason: "Aucun mot identifiable." };
   }
 
-  // Calcul du taux de mots connus/cohérents
   let knownCount = 0;
   words.forEach(word => {
-    // Si le mot est dans notre liste commune OU s'il respecte une règle de morphologie française simple 
-    // (par exemple, pas de suites de 4 consonnes de suite et terminaisons courantes comme -er, -é, -ment, -ation, -s, -e)
     const isCommon = frenchCommonWords.has(word);
-    const hasCoherentStructure = !/[bcdfghjklmnpqrstvwxz]{4,}/.test(word); // pas de bloc de 4 consonnes
+    const hasCoherentStructure = !/[bcdfghjklmnpqrstvwxz]{4,}/.test(word); // pas de suite illisible de consonnes
     
     if (isCommon || hasCoherentStructure) {
       knownCount++;
@@ -78,7 +73,7 @@ function checkDictionaryRatio(text) {
 
   const ratio = knownCount / words.length;
 
-  // Si moins de 70% des mots ont une structure cohérente ou sont connus
+  // Seuil de tolérance : 70% de mots cohérents minimum
   if (ratio < 0.70) {
     return { isValid: false, ratio, reason: "Trop de mots inexistants ou mal orthographiés détectés." };
   }
@@ -87,10 +82,8 @@ function checkDictionaryRatio(text) {
 }
 
 /**
- * ÉTAPE 3 : Analyse sémantique & LLM (Appel API de complétion)
- * @param {string} content - Le texte soumis par l'étudiant
- * @param {object} quest - Les informations de la quête (nom, description, consignes attendues)
- * @returns {Promise<{score: number, feedback: string, reasons: string[]}>}
+ * ÉTAPE 3 : Appel de l'IA (Edge Function Supabase)
+ * Analyse sémantique, notation pédagogique et conseils d'amélioration personnalisés.
  */
 async function callLLMForGradingAndCoaching(content, quest) {
   const prompt = `
@@ -112,20 +105,19 @@ Fais une analyse constructive et renvoie UNIQUEMENT un objet JSON valide contena
 `;
 
   try {
-    // Exemple d'appel Supabase Edge Function ou d'API directement (OpenAI / Gemini / Mistral)
-    // À adapter selon la clé ou l'Edge Function que vous utilisez
+    // Appel à votre Edge Function Supabase (qui gère l'appel sécurisé vers l'API OpenAI/Gemini/Mistral)
     const { data, error } = await supabase.functions.invoke('grade-submission', {
       body: { prompt }
     });
 
     if (error) throw error;
-    return data; // Attend un retour de type { score, feedback, pointsDAmelioration }
+    return data; // Attend { score, feedback, pointsDAmelioration }
 
   } catch (err) {
     console.error("Erreur lors de l'appel à l'IA pour la notation :", err);
     
-    // Système de secours (Fallback) basique si l'IA ne répond pas
-    const fallbackScore = Math.min(100, Math.round(content.length / 10)); // Score au prorata de la longueur
+    // Système de secours (Fallback) basique si l'IA ou l'Edge Function ne répond pas
+    const fallbackScore = Math.min(100, Math.round(content.length / 10));
     return {
       score: fallbackScore,
       feedback: "Votre rendu a bien été reçu et pré-validé. L'analyse détaillée par IA est temporairement indisponible, mais votre travail montre un engagement réel.",
@@ -138,9 +130,9 @@ Fais une analyse constructive et renvoie UNIQUEMENT un objet JSON valide contena
 }
 
 /**
- * FONCTION PRINCIPALE DE VALIDATION ET NOTATION (Pipeline complet en 3 étapes)
- * @param {string} content - Rendu de l'étudiant
- * @param {object} quest - Quête en cours d'évaluation ({ name, desc })
+ * FONCTION PRINCIPALE EXPORTABLE (Pipeline complet en 3 étapes)
+ * @param {string} content - Rendu textuel écrit par l'étudiant
+ * @param {object} quest - La quête concernée { name, desc }
  * @returns {Promise<{ isValid: boolean, score: number, feedback: string, reasons: string[] }>}
  */
 export async function validateAndGradeSubmission(content, quest) {
@@ -153,7 +145,7 @@ export async function validateAndGradeSubmission(content, quest) {
     };
   }
 
-  // Étape 1 : Filtre de charabia
+  // Étape 1 : Filtre statistique
   const step1 = checkGibberishAndNgrams(content);
   if (!step1.isValid) {
     return {
@@ -164,7 +156,7 @@ export async function validateAndGradeSubmission(content, quest) {
     };
   }
 
-  // Étape 2 : Filtre de dictionnaire / mots valides
+  // Étape 2 : Filtre de dictionnaire
   const step2 = checkDictionaryRatio(content);
   if (!step2.isValid) {
     return {
@@ -175,11 +167,11 @@ export async function validateAndGradeSubmission(content, quest) {
     };
   }
 
-  // Étape 3 : Évaluation intelligente et notation par IA
+  // Étape 3 : Notation intelligente IA
   const evaluation = await callLLMForGradingAndCoaching(content, quest);
 
   return {
-    isValid: evaluation.score >= 50, // Seuil de réussite à 50/100 par exemple
+    isValid: evaluation.score >= 50, // Seuil de réussite par défaut
     score: evaluation.score,
     feedback: evaluation.feedback,
     reasons: evaluation.pointsDAmelioration || []
