@@ -9,15 +9,6 @@ import ClientDashboardScreen from './screens/ClientDashboardScreen';
 import AdminScreen from './screens/AdminScreen'; 
 import DocScreen from './screens/DocScreen';
 
-import { validateAndGradeSubmission } from './utils/validator';
-
-// On l'attache temporairement à window pour pouvoir jouer avec dans la console !
-  window.testValidator = validateAndGradeSubmission;
-  window.testQuestTemplate = {
-    name: "Créer un plan de décarbonation",
-    desc: "Détailler 3 actions concrètes pour réduire de 20% les émissions de scope 1 d'une PME."
-  };
-
 // Définition de la charte de couleurs dynamique (Moderne, Lisible Collégiens & Pros)
 const themeColors = {
   apprenant: {
