@@ -41,7 +41,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
     if (found) {
       setSelectedSession(found);
-      // Réinitialisation des filtres à vide lors d'un changement manuel (ils seront re-remplis par défaut via le useEffect)
+      // On vide temporairement pour que le useEffect de chargement de cohorte ré-applique les valeurs par défaut globales
       setSelectedStudents([]);
       setSelectedQuests([]);
     }
@@ -67,7 +67,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   }, [currentSessionSafe]);
 
-  // 1. CHARGEMENT INITIAL DES SESSIONS ASSOCIÉES AU MANAGER / DRH
+  // 1. CHARGEMENT INITIAL DES SESSIONS ET PRODUCTIONS
   useEffect(() => {
     const initializeDRHData = async () => {
       try {
@@ -77,6 +77,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
         const hrUserId = authUser.id;
 
+        // Récupère les sessions gérées par ce DRH
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
@@ -95,10 +96,11 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           setSelectedSession(null);
         }
 
+        // CORRECTION DU TRI : Tri par created_at descendante (id est un UUID)
         const { data: fetchedProductions, error: pError } = await supabase
           .from('productions')
           .select('*')
-          .order('id', { ascending: false });
+          .order('created_at', { ascending: false });
 
         if (pError) throw pError;
         if (fetchedProductions) setAllProductions(fetchedProductions);
@@ -122,7 +124,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
 
     const fetchCohortContext = async () => {
-      // --- PARTIE A : CHARGEMENT ISOLE DES COLLABORATEURS ---
+      // --- PARTIE A : CHARGEMENT DES COLLABORATEURS ---
       try {
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
@@ -145,8 +147,8 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               };
             });
             setSessionStudents(formattedStudents);
-            
-            // SÉLECTION PAR DÉFAUT : Si aucun filtre n'est encore enregistré en session, on sélectionne TOUT
+
+            // SÉLECTION PAR DÉFAUT : Si le filtre stocké est vide, on coche tout au premier chargement
             const savedStudents = sessionStorage.getItem('drh_filter_students');
             if (!savedStudents || JSON.parse(savedStudents).length === 0) {
               setSelectedStudents(formattedStudents);
@@ -162,7 +164,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
         setSessionStudents([]);
       }
 
-      // --- PARTIE B : CHARGEMENT ISOLE ET COMPATIBLE UUID DES QUETES VIA L'ARBRE ---
+      // --- PARTIE B : CHARGEMENT DES QUETES VIA L'ARBRE ---
       try {
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
@@ -208,8 +210,8 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               if (qError) throw qError;
               if (fetchedQuests) {
                 setSessionQuests(fetchedQuests);
-                
-                // SÉLECTION PAR DÉFAUT : Si aucun filtre n'est encore enregistré en session, on sélectionne TOUT
+
+                // SÉLECTION PAR DÉFAUT : Si le filtre stocké est vide, on coche tout au premier chargement
                 const savedQuests = sessionStorage.getItem('drh_filter_quests');
                 if (!savedQuests || JSON.parse(savedQuests).length === 0) {
                   setSelectedQuests(fetchedQuests);
@@ -229,7 +231,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
 
-  // PROTECTION DE CHARGEMENT DE SÉCURITÉ
+  // PROTECTION DE CHARGEMENT
   if (loading) {
     return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement de l'espace de pilotage...</div>;
   }
@@ -238,26 +240,28 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   const sessionQuestIdsOnly = sessionQuests.map(q => String(q.id));
 
-  // On s'assure d'un filtrage propre sur la session courante
+  // Ajustement des sélections actives par rapport aux données réelles chargées
   const activeSelectedStudents = selectedStudents.filter(s => studentIdsInCurrentSession.includes(s.uid));
   const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(String(q.id)));
 
-  // FILTRAGE STRICT : Si l'un des filtres est totalement vide, on n'affiche rien du tout.
+  // FILTRAGE ET CORRECTION DES CLÉS BASE DE DONNÉES (student_id, quest_id, session_code)
   const filteredProductions = allProductions.filter(p => {
     if (!p || !currentSessionSafe) return false;
 
-    // L'apprenant doit appartenir à la session actuelle
-    const isStudentInSession = studentIdsInCurrentSession.includes(p.studentId);
-    if (!isStudentInSession) return false;
+    // Utilisation des colonnes SQL réelles : student_id et session_code
+    const isStudentInSession = studentIdsInCurrentSession.includes(p.student_id);
+    const matchesSessionCode = p.session_code === currentSessionSafe.session_code;
 
-    // Si l'utilisateur n'a sélectionné aucun étudiant ou aucune quête, on n'affiche rien
+    if (!isStudentInSession || !matchesSessionCode) return false;
+
+    // RÈGLE STRICTE : Si l'utilisateur décoche tout, on n'affiche rien (le tableau est vide)
     if (activeSelectedStudents.length === 0 || activeSelectedQuests.length === 0) {
       return false;
     }
 
-    // Le livrable doit correspondre à un étudiant sélectionné ET à une quête sélectionnée
-    const matchesStudentFilter = activeSelectedStudents.some(s => s.uid === p.studentId);
-    const matchesQuestFilter = activeSelectedQuests.some(q => String(q.id) === String(p.questId));
+    // Utilisation des colonnes SQL réelles : student_id et quest_id
+    const matchesStudentFilter = activeSelectedStudents.some(s => s.uid === p.student_id);
+    const matchesQuestFilter = activeSelectedQuests.some(q => String(q.id) === String(p.quest_id));
 
     return matchesStudentFilter && matchesQuestFilter;
   });
@@ -273,18 +277,19 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
   let totalXP = 0;
   const studentsProgress = sessionStudents.map(student => {
-    // On ne calcule l'XP pour un étudiant que si celui-ci fait partie du filtre actif
+    // On ne calcule et filtre les productions de l'apprenant que s'il est sélectionné dans le filtre actif
     const isStudentActive = activeSelectedStudents.some(s => s.uid === student.uid);
-    
-    // On récupère ses productions associées aux quêtes sélectionnées
+
+    // Recherche dans allProductions en utilisant les colonnes SQL réelles (student_id et quest_id)
     const studentProds = allProductions.filter(p => 
-      p.studentId === student.uid && 
-      activeSelectedQuests.some(q => String(q.id) === String(p.questId))
+      p.student_id === student.uid && 
+      p.session_code === currentSessionSafe.session_code &&
+      activeSelectedQuests.some(q => String(q.id) === String(p.quest_id))
     );
     const studentUniqueProds = studentProds.filter(p => !p.content?.startsWith("[Importé"));
 
     const studentPoints = studentProds.reduce((sum, prod) => {
-      const originalQuest = sessionQuests.find(q => String(q.id) === String(prod.questId));
+      const originalQuest = sessionQuests.find(q => String(q.id) === String(prod.quest_id));
       if (originalQuest) return sum + getPointsByDifficulty(originalQuest.difficulty);
       return sum + 100;
     }, 0);
@@ -534,24 +539,31 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {uniqueProductionsGlobal.map(prod => (
-                  <div key={prod.id} className="border rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between gap-2 relative overflow-hidden">
-                    <div className="absolute top-0 bottom-0 left-0 w-1 bg-emerald-500" />
-                    <div className="space-y-1">
-                      <div className="flex justify-between items-center text-[10px] font-bold">
-                        <span className="text-slate-900 font-black">👤 {sessionStudents.find(s => s.uid === prod.studentId)?.name || "Apprenant"}</span>
-                        <span className="text-slate-400 font-mono">{prod.date}</span>
+                {uniqueProductionsGlobal.map(prod => {
+                  const matchingQuest = sessionQuests.find(q => String(q.id) === String(prod.quest_id));
+                  return (
+                    <div key={prod.id} className="border rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between gap-2 relative overflow-hidden">
+                      <div className="absolute top-0 bottom-0 left-0 w-1 bg-emerald-500" />
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center text-[10px] font-bold">
+                          <span className="text-slate-900 font-black">👤 {sessionStudents.find(s => s.uid === prod.student_id)?.name || "Apprenant"}</span>
+                          <span className="text-slate-400 font-mono">
+                            {prod.created_at ? new Date(prod.created_at).toLocaleDateString() : "Date inconnue"}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-xs text-slate-800">
+                          🎯 Quête : {matchingQuest ? matchingQuest.name : (prod.quest_name || "Quête Inconnue")}
+                        </h4>
+                        <p className="text-[11px] text-slate-600 italic bg-white p-2.5 rounded-xl border line-clamp-4 mt-2 font-medium leading-relaxed shadow-sm">
+                          "{prod.content}"
+                        </p>
                       </div>
-                      <h4 className="font-bold text-xs text-slate-800">🎯 Quête : {sessionQuests.find(q => String(q.id) === String(prod.questId))?.name || "Quête Inconnue"}</h4>
-                      <p className="text-[11px] text-slate-600 italic bg-white p-2.5 rounded-xl border line-clamp-4 mt-2 font-medium leading-relaxed shadow-sm">
-                        "{prod.content}"
-                      </p>
+                      <div className="text-[9px] font-mono text-slate-400 text-right pt-1 border-t border-slate-100">
+                        ID Livrable : {prod.id}
+                      </div>
                     </div>
-                    <div className="text-[9px] font-mono text-slate-400 text-right pt-1 border-t border-slate-100">
-                      ID Livrable : {prod.id}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
