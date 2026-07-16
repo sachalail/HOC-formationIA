@@ -14,6 +14,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   }); 
   const [sessionStudents, setSessionStudents] = useState([]); 
   const [sessionQuests, setSessionQuests] = useState([]); 
+  const [sessionFloors, setSessionFloors] = useState([]); // Stockage dynamique des paliers de la session
   const [allProductions, setAllProductions] = useState([]); 
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +42,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
     if (found) {
       setSelectedSession(found);
-      // On vide temporairement pour que le useEffect de chargement de cohorte ré-applique les valeurs par défaut globales
       setSelectedStudents([]);
       setSelectedQuests([]);
     }
@@ -67,7 +67,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   }, [currentSessionSafe]);
 
-  // 1. CHARGEMENT INITIAL DES SESSIONS ET PRODUCTIONS
+  // 1. CHARGEMENT INITIAL DES SESSIONS ET DES LIVRABLES (PRODUCTIONS)
   useEffect(() => {
     const initializeDRHData = async () => {
       try {
@@ -77,7 +77,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
         const hrUserId = authUser.id;
 
-        // Récupère les sessions gérées par ce DRH
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
@@ -96,7 +95,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           setSelectedSession(null);
         }
 
-        // CORRECTION DU TRI : Tri par created_at descendante (id est un UUID)
+        // Tri par date de création descendante sur la clé SQL correcte 'created_at'
         const { data: fetchedProductions, error: pError } = await supabase
           .from('productions')
           .select('*')
@@ -115,16 +114,17 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     initializeDRHData();
   }, []); 
 
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES ET DES APPRENANTS
+  // 2. EXTRACTION DYNAMIQUE DES QUÊTES, PALIERS ET APPRENANTS
   useEffect(() => {
     if (!currentSessionSafe) {
       setSessionStudents([]);
       setSessionQuests([]);
+      setSessionFloors([]);
       return;
     }
 
     const fetchCohortContext = async () => {
-      // --- PARTIE A : CHARGEMENT DES COLLABORATEURS ---
+      // --- PARTIE A : CHARGEMENT ISOLE DES COLLABORATEURS ---
       try {
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
@@ -148,7 +148,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             });
             setSessionStudents(formattedStudents);
 
-            // SÉLECTION PAR DÉFAUT : Si le filtre stocké est vide, on coche tout au premier chargement
+            // Présélection automatique de tous les étudiants s'il n'y a pas de sauvegarde antérieure
             const savedStudents = sessionStorage.getItem('drh_filter_students');
             if (!savedStudents || JSON.parse(savedStudents).length === 0) {
               setSelectedStudents(formattedStudents);
@@ -164,7 +164,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
         setSessionStudents([]);
       }
 
-      // --- PARTIE B : CHARGEMENT DES QUETES VIA L'ARBRE ---
+      // --- PARTIE B : CHARGEMENT ET EXTRACTION DES PALIERS / QUETES ---
       try {
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
@@ -177,27 +177,31 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             const extractedQuestIds = [];
             const floorsObj = typeof treeData.floors === 'string' ? JSON.parse(treeData.floors) : treeData.floors;
             
+            let normalizedFloors = [];
+
             if (Array.isArray(floorsObj)) {
-              floorsObj.forEach(floor => {
-                if (floor && floor.quests && Array.isArray(floor.quests)) {
-                  floor.quests.forEach(qId => {
-                    if (qId !== undefined && qId !== null && String(qId).trim() !== "") {
-                      extractedQuestIds.push(String(qId));
-                    }
-                  });
-                }
+              normalizedFloors = floorsObj.map((floor, index) => {
+                const qIds = floor && Array.isArray(floor.quests) ? floor.quests.map(String) : [];
+                extractedQuestIds.push(...qIds);
+                return {
+                  id: index + 1,
+                  name: floor.name || `Palier ${index + 1}`,
+                  questIds: qIds
+                };
               });
             } else if (typeof floorsObj === 'object' && floorsObj !== null) {
-              Object.values(floorsObj).forEach(floor => {
-                if (floor && Array.isArray(floor.quests)) {
-                  floor.quests.forEach(qId => {
-                    if (qId !== undefined && qId !== null && String(qId).trim() !== "") {
-                      extractedQuestIds.push(String(qId));
-                    }
-                  });
-                }
+              normalizedFloors = Object.entries(floorsObj).map(([key, floor]) => {
+                const qIds = floor && Array.isArray(floor.quests) ? floor.quests.map(String) : [];
+                extractedQuestIds.push(...qIds);
+                return {
+                  id: key,
+                  name: floor.name || `Palier ${key}`,
+                  questIds: qIds
+                };
               });
             }
+
+            setSessionFloors(normalizedFloors);
 
             if (extractedQuestIds.length > 0) {
               const uniqueQuestIds = [...new Set(extractedQuestIds)];
@@ -211,7 +215,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               if (fetchedQuests) {
                 setSessionQuests(fetchedQuests);
 
-                // SÉLECTION PAR DÉFAUT : Si le filtre stocké est vide, on coche tout au premier chargement
+                // Présélection automatique de toutes les quêtes s'il n'y a pas de sauvegarde antérieure
                 const savedQuests = sessionStorage.getItem('drh_filter_quests');
                 if (!savedQuests || JSON.parse(savedQuests).length === 0) {
                   setSelectedQuests(fetchedQuests);
@@ -222,16 +226,18 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           }
         }
         setSessionQuests([]);
+        setSessionFloors([]);
       } catch (err) {
         console.error("Erreur lors de l'extraction des quêtes depuis l'arbre :", err);
         setSessionQuests([]);
+        setSessionFloors([]);
       }
     };
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
 
-  // PROTECTION DE CHARGEMENT
+  // PROTECTION DE CHARGEMENT DE SÉCURITÉ
   if (loading) {
     return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement de l'espace de pilotage...</div>;
   }
@@ -240,26 +246,24 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   const sessionQuestIdsOnly = sessionQuests.map(q => String(q.id));
 
-  // Ajustement des sélections actives par rapport aux données réelles chargées
   const activeSelectedStudents = selectedStudents.filter(s => studentIdsInCurrentSession.includes(s.uid));
   const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(String(q.id)));
 
-  // FILTRAGE ET CORRECTION DES CLÉS BASE DE DONNÉES (student_id, quest_id, session_code)
+  // FILTRAGE DES LIVRABLES (En utilisant les bonnes clés de la base de données !)
   const filteredProductions = allProductions.filter(p => {
     if (!p || !currentSessionSafe) return false;
 
-    // Utilisation des colonnes SQL réelles : student_id et session_code
+    // Correction ici : student_id et quest_id au lieu de studentId/questId
     const isStudentInSession = studentIdsInCurrentSession.includes(p.student_id);
     const matchesSessionCode = p.session_code === currentSessionSafe.session_code;
 
     if (!isStudentInSession || !matchesSessionCode) return false;
 
-    // RÈGLE STRICTE : Si l'utilisateur décoche tout, on n'affiche rien (le tableau est vide)
+    // Si l'utilisateur décoche tout volontairement, on n'affiche aucun livrable
     if (activeSelectedStudents.length === 0 || activeSelectedQuests.length === 0) {
       return false;
     }
 
-    // Utilisation des colonnes SQL réelles : student_id et quest_id
     const matchesStudentFilter = activeSelectedStudents.some(s => s.uid === p.student_id);
     const matchesQuestFilter = activeSelectedQuests.some(q => String(q.id) === String(p.quest_id));
 
@@ -275,12 +279,10 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     return 100;
   };
 
+  // CALCULS STATISTIQUES DES ETUDIANTS
   let totalXP = 0;
   const studentsProgress = sessionStudents.map(student => {
-    // On ne calcule et filtre les productions de l'apprenant que s'il est sélectionné dans le filtre actif
-    const isStudentActive = activeSelectedStudents.some(s => s.uid === student.uid);
-
-    // Recherche dans allProductions en utilisant les colonnes SQL réelles (student_id et quest_id)
+    // Correction ici : p.student_id et p.quest_id
     const studentProds = allProductions.filter(p => 
       p.student_id === student.uid && 
       p.session_code === currentSessionSafe.session_code &&
@@ -294,7 +296,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
       return sum + 100;
     }, 0);
 
-    if (isStudentActive) {
+    if (activeSelectedStudents.some(s => s.uid === student.uid)) {
       totalXP += studentPoints;
     }
 
@@ -305,13 +307,40 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     };
   });
 
+  // CALCULS DU MINI-GRAPHE PAR PALIER
+  const floorsWithProgress = sessionFloors.map(floor => {
+    const questIds = floor.questIds;
+    if (questIds.length === 0 || sessionStudents.length === 0) {
+      return { ...floor, progress: 0, questCount: 0 };
+    }
+
+    let completedResolutionsCount = 0;
+
+    // Pour chaque quête du palier, on compte combien d'étudiants ont soumis au moins un livrable
+    questIds.forEach(qId => {
+      sessionStudents.forEach(student => {
+        const hasSubmitted = allProductions.some(p => 
+          p.student_id === student.uid && 
+          String(p.quest_id) === String(qId) && 
+          p.session_code === currentSessionSafe.session_code
+        );
+        if (hasSubmitted) {
+          completedResolutionsCount++;
+        }
+      });
+    });
+
+    const totalPossibleResolutions = sessionStudents.length * questIds.length;
+    const progressPct = Math.round((completedResolutionsCount / totalPossibleResolutions) * 100);
+
+    return {
+      ...floor,
+      progress: progressPct,
+      questCount: questIds.length
+    };
+  });
+
   const totalStudents = sessionStudents.length;
-  const countPalier1 = studentsProgress.filter(s => s.maxFloor >= 1).length;
-  const countPalier2 = studentsProgress.filter(s => s.maxFloor >= 2).length;
-
-  const pctPalier1 = totalStudents > 0 ? Math.round((countPalier1 / totalStudents) * 100) : 0;
-  const pctPalier2 = totalStudents > 0 ? Math.round((countPalier2 / totalStudents) * 100) : 0;
-
   const activeStudentsCount = studentsProgress.filter(s => s.livrablesCount > 0).length;
   const engagementRate = totalStudents > 0 ? Math.round((activeStudentsCount / totalStudents) * 100) : 0;
 
@@ -359,20 +388,20 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
       {currentSessionSafe && (
         <>
           {/* COMPTEURS ET INDICES DE PERFORMANCE (KPI) */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden flex flex-col justify-center">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">👥 Effectif total</div>
               <div className="text-2xl font-black text-slate-900">{totalStudents} <span className="text-[11px] font-mono text-slate-400 font-normal">collaborateurs</span></div>
               <div className="text-[9px] font-mono text-slate-400">Inscrits sur le code {currentSessionSafe.session_code}</div>
             </div>
 
-            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden">
+            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden flex flex-col justify-center">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">⚡ Expérience cumulée</div>
               <div className="text-2xl font-black text-blue-600">{totalXP} <span className="text-[11px] font-mono text-slate-400 font-normal">XP</span></div>
               <div className="text-[9px] font-mono text-slate-400">Total pour la sélection active</div>
             </div>
 
-            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden">
+            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden flex flex-col justify-center">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">🎯 Taux d'Engagement</div>
               <div className="text-2xl font-black text-emerald-600">{engagementRate}%</div>
               <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden mt-1">
@@ -380,11 +409,28 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               </div>
             </div>
 
-            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">🏔️ Avancement Paliers</div>
-              <div className="text-xs font-bold text-slate-700 flex flex-col gap-0.5 justify-center h-8">
-                <div>Palier 1 : <span className="text-slate-900 font-black">{pctPalier1}%</span></div>
-                <div>Palier 2 : <span className="text-slate-900 font-black">{pctPalier2}%</span></div>
+            {/* GRAPHE DE PROGRESSION PAR PALIER (Remplace l'ancien rectangle fixe) */}
+            <div className="bg-white border rounded-2xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">🏔️ Résolution par Palier</div>
+              <div className="space-y-2 overflow-y-auto max-h-[85px] pr-1">
+                {floorsWithProgress.length === 0 ? (
+                  <div className="text-[10px] italic text-slate-400 font-mono">Aucun palier disponible</div>
+                ) : (
+                  floorsWithProgress.map(floor => (
+                    <div key={floor.id} className="space-y-0.5">
+                      <div className="flex justify-between text-[9px] font-bold text-slate-600">
+                        <span className="truncate max-w-[120px]">{floor.name}</span>
+                        <span className="font-mono text-slate-900">{floor.progress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-indigo-500 h-full rounded-full transition-all duration-500" 
+                          style={{ width: `${floor.progress}%` }} 
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -400,7 +446,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 <div className="bg-white border p-1.5 rounded-xl min-h-[42px] flex flex-col justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {activeSelectedStudents.length === 0 ? (
-                      <span className="text-[10px] text-red-500 italic pl-1 py-1 font-semibold">Aucun collaborateur sélectionné (dépôts masqués)</span>
+                      <span className="text-[10px] text-red-500 italic pl-1 py-1">Aucun collaborateur actif (dépôts masqués)</span>
                     ) : (
                       activeSelectedStudents.map(st => (
                         <span key={st.uid} className="bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -437,7 +483,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                 <div className="bg-white border p-1.5 rounded-xl min-h-[42px] flex flex-col justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {activeSelectedQuests.length === 0 ? (
-                      <span className="text-[10px] text-red-500 italic pl-1 py-1 font-semibold">Aucune quête sélectionnée (dépôts masqués)</span>
+                      <span className="text-[10px] text-red-500 italic pl-1 py-1">Aucune quête active (dépôts masqués)</span>
                     ) : (
                       activeSelectedQuests.map(q => (
                         <span key={q.id} className="bg-purple-50 border border-purple-200 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
