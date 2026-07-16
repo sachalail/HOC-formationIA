@@ -428,11 +428,24 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                 </div>
               )}
             </div>
+
+            {/* ENCART AJOUT DE SESSION (CORRIGÉ & BIEN ALIGNÉ EN LIGNE) */}
             <div className="bg-slate-50/70 border border-slate-200 p-5 rounded-2xl space-y-4">
               <h4 className="font-black text-xs uppercase text-slate-700">🔑 Ajouter une session</h4>
-              <form onSubmit={handleJoinSession} className="space-y-2">
-                <input type="text" placeholder="Ex: ORANGE-LILLE-26" value={accessCode} onChange={(e) => setAccessCode(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300" />
-                <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black py-3 rounded-xl transition-all uppercase cursor-pointer shadow-sm">Ajouter</button>
+              <form onSubmit={handleJoinSession} className="flex flex-col sm:flex-row gap-2">
+                <input 
+                  type="text" 
+                  placeholder="Ex: ORANGE-LILLE-26" 
+                  value={accessCode} 
+                  onChange={(e) => setAccessCode(e.target.value)} 
+                  className="flex-1 bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300" 
+                />
+                <button 
+                  type="submit" 
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-5 py-3 rounded-xl transition-all uppercase cursor-pointer shadow-sm whitespace-nowrap"
+                >
+                  Ajouter
+                </button>
               </form>
             </div>
           </div>
