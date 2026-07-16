@@ -78,6 +78,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) return;
 
+        // Récupération des sessions où l'utilisateur connecté fait partie de "drh_ids"
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
@@ -96,6 +97,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           setSelectedSession(null);
         }
 
+        // Récupération globale des productions
         const { data: fetchedProductions, error: pError } = await supabase
           .from('productions')
           .select('*')
@@ -126,17 +128,24 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     const fetchCohortContext = async () => {
       try {
         if (currentSessionSafe.session_code) {
+          // On récupère les profils associés au code de session
           const { data: profiles, error: pError } = await supabase
             .from('profiles')
-            .select('id, email')
+            .select('id, email, unlocked_floors')
             .contains('session_codes', JSON.stringify([currentSessionSafe.session_code]));
 
           if (pError) throw pError;
 
           if (profiles) {
             const formattedStudents = profiles.map(p => {
-              const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${currentSessionSafe.tree_id}`);
-              const maxFloor = savedFloor ? parseInt(savedFloor, 10) + 1 : 1;
+              // Lecture de unlocked_floors stocké en base de données pour cet arbre précis
+              let maxFloor = 1;
+              if (p.unlocked_floors && typeof p.unlocked_floors === 'object') {
+                const floorVal = p.unlocked_floors[currentSessionSafe.tree_id];
+                if (floorVal !== undefined) {
+                  maxFloor = parseInt(floorVal, 10) + 1; 
+                }
+              }
               return {
                 uid: p.id,
                 name: p.email ? p.email.split('@')[0] : "Apprenant",
@@ -619,6 +628,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                   <thead>
                     <tr className="bg-slate-50/40 text-slate-400 font-bold border-b border-slate-100 text-[10px] uppercase">
                       <th className="p-3 pl-4">Identité Collaborateur</th>
+                      <th className="p-3">Palier Max Atteint</th>
                       <th className="p-3">XP Cumulée</th>
                       <th className="p-3">Livrables Validés</th>
                       <th className="p-3 pr-4 text-right">Statut Filtre Tri</th>
@@ -627,7 +637,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                     {studentsProgress.length === 0 ? (
                       <tr>
-                        <td colSpan="4" className="text-center p-6 text-slate-400 italic">Aucun collaborateur trouvé pour cette cohorte.</td>
+                        <td colSpan="5" className="text-center p-6 text-slate-400 italic">Aucun collaborateur trouvé pour cette cohorte.</td>
                       </tr>
                     ) : (
                       studentsProgress.map(student => {
@@ -637,6 +647,11 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                             <td className="p-3 pl-4">
                               <div className="font-bold text-slate-900">{student.name}</div>
                               <div className="text-[10px] font-mono text-slate-400">{student.email}</div>
+                            </td>
+                            <td className="p-3 font-semibold text-slate-800">
+                              <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-lg font-mono text-[11px] border border-slate-200">
+                                Palier {student.maxFloor}
+                              </span>
                             </td>
                             <td className="p-3 font-bold text-slate-900">{student.xp} XP</td>
                             <td className="p-3">
@@ -668,7 +683,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               </div>
             </div>
 
-            {/* PORTFOLIO LIVRABLES */}
+            {/* PORTFOLIO LIVRABLES (AVEC FICHIERS REJOINTS) */}
             <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
               <h3 className="text-xs font-black uppercase text-slate-800">📂 Registre d'audit des Livrables correspondants</h3>
               {uniqueProductionsGlobal.length === 0 ? (
@@ -680,8 +695,9 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                   {uniqueProductionsGlobal.map(prod => {
                     const matchingQuest = sessionQuests.find(q => String(q.id) === String(prod.quest_id));
                     return (
-                      <div key={prod.id} className="border border-slate-100 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between gap-2 relative overflow-hidden">
+                      <div key={prod.id} className="border border-slate-100 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between gap-3 relative overflow-hidden">
                         <div className="absolute top-0 bottom-0 left-0 w-1 bg-amber-500" />
+                        
                         <div className="space-y-1">
                           <div className="flex justify-between items-center text-[10px] font-bold">
                             <span className="text-slate-900 font-black">👤 {sessionStudents.find(s => s.uid === prod.student_id)?.name || "Apprenant"}</span>
@@ -692,13 +708,36 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
                           <h4 className="font-bold text-xs text-slate-800">
                             🎯 Quête : {matchingQuest ? matchingQuest.name : (prod.quest_name || "Quête Inconnue")}
                           </h4>
-                          <p className="text-[11px] text-slate-600 italic bg-white p-2.5 rounded-xl border border-slate-100 line-clamp-4 mt-2 font-medium leading-relaxed shadow-sm">
-                            "{prod.content}"
-                          </p>
+                          
+                          {prod.content && (
+                            <p className="text-[11px] text-slate-600 italic bg-white p-2.5 rounded-xl border border-slate-100 line-clamp-4 mt-2 font-medium leading-relaxed shadow-sm">
+                              "{prod.content}"
+                            </p>
+                          )}
                         </div>
-                        <div className="text-[9px] font-mono text-slate-400 text-right pt-1 border-t border-slate-100">
-                          ID Livrable : {prod.id}
+
+                        {/* SECTION FICHIER SUPABASE EN ENTRÉE */}
+                        <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                          <div>
+                            {prod.file_url ? (
+                              <a 
+                                href={prod.file_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-1 rounded-lg border border-amber-200 transition-colors inline-flex items-center gap-1.5"
+                              >
+                                📄 Ouvrir le document joint
+                              </a>
+                            ) : (
+                              <span className="text-[9px] text-slate-400 italic">Aucune pièce jointe</span>
+                            )}
+                          </div>
+                          
+                          <div className="text-[9px] font-mono text-slate-400">
+                            ID : {prod.id.slice(0, 8)}...
+                          </div>
                         </div>
+
                       </div>
                     );
                   })}
