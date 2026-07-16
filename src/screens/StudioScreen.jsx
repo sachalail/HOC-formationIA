@@ -825,47 +825,39 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           return (
                             <React.Fragment key={block.id}>
                               
-                              {/* ZONE DE DÉPÔT COHÉRENTE ET NON-REDONDANTE */}
-                              {draggedPlanningItem && isTargetIndexValid && (
-                                <div 
-                                  onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(index); }}
-                                  onDragLeave={() => setActiveDropIndex(null)}
-                                  onDrop={() => handleTimelineDrop(index)}
-                                  className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
-                                    activeDropIndex === index 
-                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
-                                      : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100 hover:border-slate-400' 
-                                  }`}
-                                >
-                                  {activeDropIndex === index && (
-                                    <span>🟢 Déposer ici (Valide)</span>
-                                  )}
-                                </div>
-                              )}
-                              
-                              {/* TOUT LE BLOC EST DÉSORMAIS DRAGGABLE DE MANIÈRE FLUIDE */}
+                              {/* ZONE DE DÉPÔT COHÉRENTE ET SANS DÉCALAGE PHYSIQUE AU DÉMARRAGE */}
                               <div 
-                                draggable={!isLocked}
-                                onDragStart={(e) => {
-                                  // Évite d'enclencher le drag si on clique sur un input de durée, un bouton d'action ou un select
-                                  if (e.target.closest('button, input, select')) {
-                                    e.preventDefault();
-                                    return;
+                                onDragOver={(e) => { 
+                                  if (draggedPlanningItem && isTargetIndexValid) {
+                                    e.preventDefault(); 
+                                    setActiveDropIndex(index); 
                                   }
-                                  setDraggedPlanningItem({ source: 'timeline', index });
                                 }}
-                                onDragEnd={(e) => {
-                                  e.preventDefault();
-                                  setDraggedPlanningItem(null);
-                                  setActiveDropIndex(null);
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => {
+                                  if (draggedPlanningItem && isTargetIndexValid) {
+                                    handleTimelineDrop(index);
+                                  }
                                 }}
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                }}
+                                className={`transition-all duration-200 rounded-xl border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  draggedPlanningItem && isTargetIndexValid
+                                    ? activeDropIndex === index 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2 border-2'
+                                      : 'border-slate-300/40 bg-slate-50/10 h-6 my-1 border text-slate-400/50 hover:bg-slate-100 hover:border-slate-400'
+                                    : 'h-0 overflow-hidden border-0 my-0'
+                                }`}
+                              >
+                                {draggedPlanningItem && isTargetIndexValid && activeDropIndex === index && (
+                                  <span>🟢 Déposer ici (Valide)</span>
+                                )}
+                              </div>
+                              
+                              {/* LE BLOC N'EST PLUS DRAGGABLE EN ENTIER (POIGNÉE UNIQUE CI-DESSOUS) */}
+                              <div 
                                 className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
                                   isLocked 
-                                    ? 'opacity-95 cursor-not-allowed' 
-                                    : 'cursor-grab active:cursor-grabbing hover:border-slate-300 hover:shadow-md'
+                                    ? 'opacity-95' 
+                                    : 'hover:border-slate-300 hover:shadow-md'
                                 } ${
                                   isBeingDragged ? 'opacity-40 border-dashed bg-slate-50 border-slate-300' : ''
                                 }`}
@@ -881,7 +873,17 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                     </span>
                                   ) : (
                                     <span 
-                                      className="text-slate-400 font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md"
+                                      draggable={true}
+                                      onDragStart={() => {
+                                        setDraggedPlanningItem({ source: 'timeline', index });
+                                      }}
+                                      onDragEnd={(e) => {
+                                        e.preventDefault();
+                                        setDraggedPlanningItem(null);
+                                        setActiveDropIndex(null);
+                                      }}
+                                      className="text-slate-400 font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md cursor-grab active:cursor-grabbing hover:text-slate-800"
+                                      title="Faites glisser cette poignée pour réorganiser"
                                     >
                                       ⠿
                                     </span>
@@ -921,7 +923,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   <button
                                     type="button"
                                     onClick={() => openBlockEditor(block)}
-                                    className="text-slate-500 hover:text-slate-800 font-bold text-xs bg-slate-100 hover:bg-slate-200 p-1 rounded-lg"
+                                    className="text-slate-500 hover:text-slate-800 font-bold text-xs bg-slate-100 hover:bg-slate-200 p-1 rounded-lg animate-none"
                                     title="Modifier en détail"
                                   >
                                     ⚙️
@@ -969,16 +971,27 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                             return (
                               <div 
-                                onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(lastIndex); }}
+                                onDragOver={(e) => { 
+                                  if (draggedPlanningItem && isTargetIndexValid) {
+                                    e.preventDefault(); 
+                                    setActiveDropIndex(lastIndex); 
+                                  }
+                                }}
                                 onDragLeave={() => setActiveDropIndex(null)}
-                                onDrop={() => handleTimelineDrop(lastIndex)}
-                                className={`transition-all rounded-xl border-2 border-dashed flex items-center justify-center font-bold text-[11px] ${
-                                  activeDropIndex === lastIndex 
-                                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2'
-                                    : 'border-slate-300/40 bg-slate-50/20 h-6 my-1 text-slate-400/80 hover:bg-slate-100' 
+                                onDrop={() => {
+                                  if (draggedPlanningItem && isTargetIndexValid) {
+                                    handleTimelineDrop(lastIndex);
+                                  }
+                                }}
+                                className={`transition-all duration-200 rounded-xl border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  draggedPlanningItem && isTargetIndexValid
+                                    ? activeDropIndex === lastIndex 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2 border-2'
+                                      : 'border-slate-300/40 bg-slate-50/10 h-6 my-1 border text-slate-400/50 hover:bg-slate-100'
+                                    : 'h-0 overflow-hidden border-0 my-0'
                                 }`}
                               >
-                                {activeDropIndex === lastIndex && (
+                                {draggedPlanningItem && isTargetIndexValid && activeDropIndex === lastIndex && (
                                   <span>🟢 Déposer en fin de planning (Valide)</span>
                                 )}
                               </div>
