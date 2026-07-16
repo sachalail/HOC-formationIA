@@ -348,14 +348,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   });
 
-  // --- LOGIQUE D'EXTRACTION DES QUÊTES POUR LA BIBLIOTHÈQUE (CORRIGÉE POUR L'ACTUALISATION GLOBALE) ---
+  // --- LOGIQUE D'EXTRACTION DES QUÊTES POUR LA BIBLIOTHÈQUE ---
   const getAllQuestsFromTrees = (mode) => {
     const targetTrees = Object.values(trees || {}).filter(t => {
       if (mode === 'local') return t.owner_id === currentUserId;
       return t.visibility === 'public';
     });
 
-    // Si un arbre spécifique est sélectionné (qu'il soit local ou global)
+    // Si un arbre spécifique est sélectionné
     if (librarySelectedTreeId !== 'all') {
       const selected = targetTrees.find(t => t.id === librarySelectedTreeId);
       return selected ? extractQuestsFromTree(selected) : [];
@@ -366,7 +366,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       allExtracted = [...allExtracted, ...extractQuestsFromTree(t)];
     });
 
-    // Supprimer les doublons éventuels par ID de quête
+    // Élimination des doublons
     const uniqueQuests = [];
     const seenIds = new Set();
     allExtracted.forEach(item => {
@@ -406,8 +406,95 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
+    <div className="max-w-7xl mx-auto px-6 py-8 pr-16 space-y-6 relative">
       
+      {/* ────────────────────────────────────────────────────────────────────────
+          TRAIT VERTICAL ULTRA-DISCRET DANS LA MARGE DE DROITE
+          ──────────────────────────────────────────────────────────────────────── */}
+      <div className="fixed right-3 top-1/4 bottom-1/4 w-[1px] bg-slate-200/80 hover:bg-slate-300 transition-colors flex flex-col items-center justify-center gap-6 z-40">
+        
+        {/* 1. Bouton Créer un Arbre */}
+        <div className="relative group flex items-center justify-center">
+          <button 
+            onClick={() => setActiveModal('tree')}
+            className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-purple-500 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
+          >
+            🌳
+          </button>
+          {/* Tooltip Sombre : s'affiche à GAUCHE */}
+          <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+            <p className="text-[11px] font-bold text-white">Nouveau parcours</p>
+            <p className="text-[9px] text-slate-400">Créer un nouvel arbre d'apprentissage</p>
+          </div>
+        </div>
+
+        {/* 2. Bouton Créer une Mission */}
+        <div className="relative group flex items-center justify-center">
+          <button 
+            onClick={() => setActiveModal('quest')}
+            className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-purple-500 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
+          >
+            ⚔️
+          </button>
+          <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+            <p className="text-[11px] font-bold text-white">Nouvelle mission</p>
+            <p className="text-[9px] text-slate-400">Ajouter un exercice au catalogue</p>
+          </div>
+        </div>
+
+        {/* 3. Bouton Bibliothèque */}
+        <div className="relative group flex items-center justify-center">
+          <button 
+            onClick={() => {
+              setLibraryTab('local');
+              setLibrarySelectedTreeId('all');
+              setActiveModal('quest_library');
+            }}
+            className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-purple-500 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
+          >
+            📖
+          </button>
+          <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+            <p className="text-[11px] font-bold text-white">Bibliothèque</p>
+            <p className="text-[9px] text-slate-400">Parcourir les quêtes des arbres</p>
+          </div>
+        </div>
+
+        {/* 4. Partager l'arbre */}
+        {currentTree && isOwnerOfCurrentTree && (
+          <div className="relative group flex items-center justify-center">
+            <button 
+              onClick={handleShareTree}
+              disabled={currentTree.visibility === 'public'}
+              className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-blue-500 hover:text-blue-600 transition-all active:scale-90 disabled:opacity-40 cursor-pointer"
+            >
+              🌍
+            </button>
+            <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+              <p className="text-[11px] font-bold text-white">Partager l'arbre</p>
+              <p className="text-[9px] text-slate-400">{currentTree.visibility === 'public' ? 'Déjà partagé' : 'Rendre cet arbre public'}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 5. Bouton Enregistrer */}
+        {currentTree && (
+          <div className="relative group flex items-center justify-center pt-2 border-t border-slate-200 w-full">
+            <button 
+              onClick={handleSaveChanges}
+              disabled={!isOwnerOfCurrentTree}
+              className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-sm flex items-center justify-center shadow-xs hover:bg-emerald-600 hover:text-white transition-all active:scale-90 disabled:opacity-40 cursor-pointer"
+            >
+              💾
+            </button>
+            <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+              <p className="text-[11px] font-bold text-white">Sauvegarder</p>
+              <p className="text-[9px] text-slate-400">Enregistrer les changements sur l'arbre</p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* EN-TÊTE PRINCIPAL */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border border-slate-200 shadow-xs gap-4">
         <div>
@@ -582,107 +669,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           )}
         </div>
 
-        {/* COLONNE DE DROITE : DOCK VERTICAL & CATALOGUE */}
-        <div className="lg:col-span-1 space-y-6 flex flex-col">
-          
-          {/* MENU D'OUTILS DE CONCEPTION - DOCK ICONIQUE VERTICAL AVEC TOOLTIPS SOMBRE (INSPIRÉ DU DESSIN) */}
-          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col items-center gap-5 w-20 mx-auto">
-            <div className="text-[9px] font-black uppercase text-slate-500 tracking-wider text-center border-b border-slate-800 pb-1.5 w-full">
-              STUDIO
-            </div>
-            
-            {/* Alignement vertical des outils d'édition */}
-            <div className="flex flex-col gap-4">
-              
-              {/* 1. Créer un Arbre */}
-              <div className="group relative flex justify-center">
-                <button 
-                  onClick={() => setActiveModal('tree')}
-                  className="w-12 h-12 rounded-xl bg-slate-900 hover:bg-purple-900/40 border border-slate-800 text-lg flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95"
-                >
-                  🌳
-                </button>
-                {/* Tooltip Sombre */}
-                <div className="absolute left-16 top-1/2 -translate-y-1/2 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap">
-                  <p className="text-[11px] font-bold text-slate-100">Créer un Arbre</p>
-                  <p className="text-[9px] text-slate-400">Générer un nouveau parcours</p>
-                </div>
-              </div>
-
-              {/* 2. Créer une Mission */}
-              <div className="group relative flex justify-center">
-                <button 
-                  onClick={() => setActiveModal('quest')}
-                  className="w-12 h-12 rounded-xl bg-slate-900 hover:bg-purple-900/40 border border-slate-800 text-lg flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95"
-                >
-                  ⚔️
-                </button>
-                {/* Tooltip Sombre */}
-                <div className="absolute left-16 top-1/2 -translate-y-1/2 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap">
-                  <p className="text-[11px] font-bold text-slate-100">Créer une Mission</p>
-                  <p className="text-[9px] text-slate-400">Ajouter un exercice au catalogue</p>
-                </div>
-              </div>
-
-              {/* 3. La Bibliothèque de quêtes */}
-              <div className="group relative flex justify-center">
-                <button 
-                  onClick={() => {
-                    setLibraryTab('local');
-                    setLibrarySelectedTreeId('all');
-                    setActiveModal('quest_library');
-                  }}
-                  className="w-12 h-12 rounded-xl bg-purple-900 text-purple-200 hover:bg-purple-800 border border-purple-700/50 text-lg flex items-center justify-center transition-all shadow-md cursor-pointer active:scale-95 animate-pulse-slow"
-                >
-                  📖
-                </button>
-                {/* Tooltip Sombre */}
-                <div className="absolute left-16 top-1/2 -translate-y-1/2 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-purple-900/50 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap">
-                  <p className="text-[11px] font-bold text-purple-200">Bibliothèque des Quêtes</p>
-                  <p className="text-[9px] text-slate-400">Voir les quêtes rattachées aux arbres</p>
-                </div>
-              </div>
-
-              {/* 4. Partager l'Arbre */}
-              {currentTree && isOwnerOfCurrentTree && (
-                <div className="group relative flex justify-center">
-                  <button 
-                    onClick={handleShareTree}
-                    disabled={currentTree.visibility === 'public'}
-                    className="w-12 h-12 rounded-xl bg-slate-900 disabled:opacity-40 hover:bg-blue-950 border border-slate-800 text-lg flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95"
-                  >
-                    🌍
-                  </button>
-                  {/* Tooltip Sombre */}
-                  <div className="absolute left-16 top-1/2 -translate-y-1/2 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap">
-                    <p className="text-[11px] font-bold text-slate-100">Partager le parcours</p>
-                    <p className="text-[9px] text-slate-400">{currentTree.visibility === 'public' ? 'Déjà public' : 'Rendre cet arbre communautaire'}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* 5. Enregistrer l'Arbre */}
-              {currentTree && (
-                <div className="group relative flex justify-center border-t border-slate-800 pt-3">
-                  <button 
-                    onClick={handleSaveChanges}
-                    disabled={!isOwnerOfCurrentTree}
-                    className="w-12 h-12 rounded-xl bg-emerald-950 hover:bg-emerald-900 text-emerald-300 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-40 border border-emerald-800/80 text-lg flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95"
-                  >
-                    💾
-                  </button>
-                  {/* Tooltip Sombre */}
-                  <div className="absolute left-16 top-1/2 -translate-y-1/2 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-emerald-900 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap">
-                    <p className="text-[11px] font-bold text-emerald-200">Enregistrer</p>
-                    <p className="text-[9px] text-slate-400">Sauvegarder les modifications</p>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-
-          {/* CATALOGUE GÉNÉRAL DES MISSIONS */}
+        {/* CATALOGUE GÉNÉRAL DES MISSIONS (COLONNE DE DROITE) */}
+        <div className="lg:col-span-1 space-y-6">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">📦 Catalogue Général des Missions ({safeQuestsList.length})</h3>
@@ -750,21 +738,20 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               )}
             </div>
           </div>
-
         </div>
 
       </div>
 
       {/* ==================== MODALES ==================== */}
 
-      {/* MODALE BIBLIOTHÈQUE DE QUÊTES (CORRIGÉE & ACTUALISÉE SUR LE SWITCH GLOBALS) */}
+      {/* MODALE BIBLIOTHÈQUE DE QUÊTES */}
       {activeModal === 'quest_library' && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 relative flex flex-col max-h-[85vh]">
             <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg cursor-pointer">×</button>
             
             <div className="border-b pb-3 mb-4">
-              <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">📖 Bibliothèque Globale des Quêtes d'Arbres</h3>
+              <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">📖 Bibliothèque des Quêtes d'Arbres</h3>
               <p className="text-[11px] text-slate-500 font-bold">Explorez et réutilisez toutes les quêtes rattachées à nos architectures de formation</p>
             </div>
 
@@ -790,11 +777,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               </button>
             </div>
 
-            {/* FILTRES INTERNES DE LA BIBLIOTHÈQUE (FONCTIONNELS LOCAUX & GLOBALS) */}
+            {/* FILTRES INTERNES DE LA BIBLIOTHÈQUE */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-              {/* Filtre par arbre (local ou global) */}
+              {/* Filtre par arbre dynamique */}
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Filtrer par Arbre :</label>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Filtrer par Arbre ({libraryTab === 'local' ? 'Local' : 'Global'}) :</label>
                 <select
                   value={librarySelectedTreeId}
                   onChange={(e) => setLibrarySelectedTreeId(e.target.value)}
@@ -866,7 +853,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         </div>
       )}
 
-      {/* 1. MODALE D'EXPLORATION ET DE CHOIX DES ARBRES */}
+      {/* 1. MODALE D'EXPLORATION DES ARBRES */}
       {activeModal === 'tree_browser' && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative border flex flex-col max-h-[85vh]">
