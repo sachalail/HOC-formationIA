@@ -409,90 +409,100 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     <div className="max-w-7xl mx-auto px-6 py-8 pr-16 space-y-6 relative">
       
       {/* ────────────────────────────────────────────────────────────────────────
-          TRAIT VERTICAL ULTRA-DISCRET DANS LA MARGE DE DROITE
+          DOCK DE DECK VERTICAL (SLIDE DECK CENTRÉ) DANS LA MARGE DE DROITE
           ──────────────────────────────────────────────────────────────────────── */}
-      <div className="fixed right-3 top-1/4 bottom-1/4 w-[1px] bg-slate-200/80 hover:bg-slate-300 transition-colors flex flex-col items-center justify-center gap-6 z-40">
+      <div className="fixed right-4 top-1/2 -translate-y-1/2 z-40 flex items-center group">
         
-        {/* 1. Bouton Créer un Arbre */}
-        <div className="relative group flex items-center justify-center">
-          <button 
-            onClick={() => setActiveModal('tree')}
-            className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-purple-500 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
-          >
-            🌳
-          </button>
-          {/* Tooltip Sombre : s'affiche à GAUCHE */}
-          <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
-            <p className="text-[11px] font-bold text-white">Nouveau parcours</p>
-            <p className="text-[9px] text-slate-400">Créer un nouvel arbre d'apprentissage</p>
-          </div>
-        </div>
+        {/* Poignée / Indicateur d'onglet visuel (Slide Deck) */}
+        <div className="w-1.5 h-20 bg-slate-300 rounded-l-md group-hover:bg-purple-500 transition-colors shadow-xs"></div>
 
-        {/* 2. Bouton Créer une Mission */}
-        <div className="relative group flex items-center justify-center">
-          <button 
-            onClick={() => setActiveModal('quest')}
-            className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-purple-500 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
-          >
-            ⚔️
-          </button>
-          <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
-            <p className="text-[11px] font-bold text-white">Nouvelle mission</p>
-            <p className="text-[9px] text-slate-400">Ajouter un exercice au catalogue</p>
-          </div>
-        </div>
-
-        {/* 3. Bouton Bibliothèque */}
-        <div className="relative group flex items-center justify-center">
-          <button 
-            onClick={() => {
-              setLibraryTab('local');
-              setLibrarySelectedTreeId('all');
-              setActiveModal('quest_library');
-            }}
-            className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-purple-500 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
-          >
-            📖
-          </button>
-          <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
-            <p className="text-[11px] font-bold text-white">Bibliothèque</p>
-            <p className="text-[9px] text-slate-400">Parcourir les quêtes des arbres</p>
-          </div>
-        </div>
-
-        {/* 4. Partager l'arbre */}
-        {currentTree && isOwnerOfCurrentTree && (
-          <div className="relative group flex items-center justify-center">
+        {/* Corps du Deck Vertical */}
+        <div className="flex flex-col items-center justify-center gap-4 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-r-2xl py-5 px-2.5 shadow-lg transition-all duration-300 translate-x-1 group-hover:translate-x-0 group-hover:bg-white group-hover:border-slate-300">
+          
+          {/* 1. Bouton Créer un Arbre */}
+          <div className="relative group/btn flex items-center justify-center">
             <button 
-              onClick={handleShareTree}
-              disabled={currentTree.visibility === 'public'}
-              className="w-8 h-8 rounded-full bg-white border border-slate-200 text-sm flex items-center justify-center shadow-xs hover:border-blue-500 hover:text-blue-600 transition-all active:scale-90 disabled:opacity-40 cursor-pointer"
+              onClick={() => setActiveModal('tree')}
+              className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 text-sm flex items-center justify-center shadow-2xs hover:bg-purple-50 hover:border-purple-400 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
             >
-              🌍
+              🌳
             </button>
-            <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
-              <p className="text-[11px] font-bold text-white">Partager l'arbre</p>
-              <p className="text-[9px] text-slate-400">{currentTree.visibility === 'public' ? 'Déjà partagé' : 'Rendre cet arbre public'}</p>
+            {/* Tooltip Sombre : s'affiche à GAUCHE */}
+            <div className="absolute right-12 scale-0 group-hover/btn:scale-100 opacity-0 group-hover/btn:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+              <p className="text-[11px] font-black text-white">Nouveau parcours</p>
+              <p className="text-[9px] text-slate-400">Créer un nouvel arbre d'apprentissage</p>
             </div>
           </div>
-        )}
 
-        {/* 5. Bouton Enregistrer */}
-        {currentTree && (
-          <div className="relative group flex items-center justify-center pt-2 border-t border-slate-200 w-full">
+          {/* 2. Bouton Créer une Mission */}
+          <div className="relative group/btn flex items-center justify-center">
             <button 
-              onClick={handleSaveChanges}
-              disabled={!isOwnerOfCurrentTree}
-              className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-sm flex items-center justify-center shadow-xs hover:bg-emerald-600 hover:text-white transition-all active:scale-90 disabled:opacity-40 cursor-pointer"
+              onClick={() => setActiveModal('quest')}
+              className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 text-sm flex items-center justify-center shadow-2xs hover:bg-purple-50 hover:border-purple-400 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
             >
-              💾
+              ⚔️
             </button>
-            <div className="absolute right-10 scale-0 group-hover:scale-100 opacity-0 group-hover:opacity-100 transition-all duration-150 z-50 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
-              <p className="text-[11px] font-bold text-white">Sauvegarder</p>
-              <p className="text-[9px] text-slate-400">Enregistrer les changements sur l'arbre</p>
+            <div className="absolute right-12 scale-0 group-hover/btn:scale-100 opacity-0 group-hover/btn:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+              <p className="text-[11px] font-black text-white">Nouvelle mission</p>
+              <p className="text-[9px] text-slate-400">Ajouter un exercice au catalogue</p>
             </div>
           </div>
-        )}
+
+          {/* 3. Bouton Bibliothèque */}
+          <div className="relative group/btn flex items-center justify-center">
+            <button 
+              onClick={() => {
+                setLibraryTab('local');
+                setLibrarySelectedTreeId('all');
+                setActiveModal('quest_library');
+              }}
+              className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 text-sm flex items-center justify-center shadow-2xs hover:bg-purple-50 hover:border-purple-400 hover:text-purple-600 transition-all active:scale-90 cursor-pointer"
+            >
+              📖
+            </button>
+            <div className="absolute right-12 scale-0 group-hover/btn:scale-100 opacity-0 group-hover/btn:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+              <p className="text-[11px] font-black text-white">Bibliothèque</p>
+              <p className="text-[9px] text-slate-400">Parcourir les quêtes des arbres</p>
+            </div>
+          </div>
+
+          {/* 4. Partager l'arbre */}
+          {currentTree && isOwnerOfCurrentTree && (
+            <div className="relative group/btn flex items-center justify-center">
+              <button 
+                onClick={handleShareTree}
+                disabled={currentTree.visibility === 'public'}
+                className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 text-sm flex items-center justify-center shadow-2xs hover:bg-blue-50 hover:border-blue-400 hover:text-blue-600 transition-all active:scale-90 disabled:opacity-40 cursor-pointer"
+              >
+                🌍
+              </button>
+              <div className="absolute right-12 scale-0 group-hover/btn:scale-100 opacity-0 group-hover/btn:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+                <p className="text-[11px] font-black text-white">Partager l'arbre</p>
+                <p className="text-[9px] text-slate-400">{currentTree.visibility === 'public' ? 'Déjà partagé' : 'Rendre cet arbre public'}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Separator */}
+          {currentTree && <div className="w-full border-t border-slate-200/80 my-1"></div>}
+
+          {/* 5. Bouton Enregistrer */}
+          {currentTree && (
+            <div className="relative group/btn flex items-center justify-center">
+              <button 
+                onClick={handleSaveChanges}
+                disabled={!isOwnerOfCurrentTree}
+                className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 text-sm flex items-center justify-center shadow-2xs hover:bg-emerald-600 hover:text-white transition-all active:scale-90 disabled:opacity-40 cursor-pointer"
+              >
+                💾
+              </button>
+              <div className="absolute right-12 scale-0 group-hover/btn:scale-100 opacity-0 group-hover/btn:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right">
+                <p className="text-[11px] font-black text-white">Sauvegarder</p>
+                <p className="text-[9px] text-slate-400">Enregistrer les changements sur l'arbre</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* EN-TÊTE PRINCIPAL */}
