@@ -384,42 +384,42 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         .animate-drop-bounce { animation: customBounce 0.6s forwards; }
       `}</style>
 
-      {/* BANNIÈRE SCORE - Version Blanc & Vert épurée */}
-      <div className="bg-white border-2 border-emerald-100 text-emerald-950 p-5 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-4">
+      {/* BANNIÈRE SCORE - Bleu-gris neutre & Vert d'action */}
+      <div className="bg-slate-50 border border-slate-200 text-slate-800 p-5 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-4">
         <div className="flex items-center gap-3">
-          <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 font-black px-4 py-1.5 rounded-xl text-xs font-mono">
+          <div className="bg-emerald-600 text-white font-black px-4 py-1.5 rounded-xl text-xs font-mono shadow-sm">
             ✨ {studentPoints} XP TOTAL
           </div>
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-slate-500 font-medium">
             Profil : <span className="font-bold text-slate-800">{user?.email || "Chargement..."}</span>
             {selectedSessionCode && <span> | Session : <strong className="text-emerald-700 font-mono">{selectedSessionCode}</strong></span>}
           </div>
         </div>
       </div>
 
-      {/* TABS */}
-      <div className="flex border-b border-emerald-100 gap-4">
-        <button onClick={() => { setActiveTab('parcours'); setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'parcours' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-emerald-500'}`}>🌳 Mes Sessions & Parcours</button>
-        <button onClick={() => { setActiveTab('portfolio'); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-emerald-500'}`}>📂 Mon Portfolio ({uniqueLivrables.length})</button>
+      {/* TABS - Bordures grises discrètes */}
+      <div className="flex border-b border-slate-200 gap-4">
+        <button onClick={() => { setActiveTab('parcours'); setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'parcours' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>🌳 Mes Sessions & Parcours</button>
+        <button onClick={() => { setActiveTab('portfolio'); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Mon Portfolio ({uniqueLivrables.length})</button>
       </div>
 
       {/* LISTE DES SESSIONS */}
       {activeTab === 'parcours' && !selectedSessionCode && (
-        <div className="bg-white border border-emerald-100 rounded-3xl p-6 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2 space-y-4">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">🧠 Vos sessions actives</h3>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1"> Vos sessions actives</h3>
               {mySessionsData.length === 0 ? (
-                <div className="bg-emerald-50/10 border-2 border-dashed border-emerald-100 p-8 rounded-2xl text-center text-xs text-emerald-600 italic">Vous n'avez rejoint aucune session.</div>
+                <div className="bg-slate-50/50 border-2 border-dashed border-slate-200 p-8 rounded-2xl text-center text-xs text-slate-400 italic">Vous n'avez rejoint aucune session.</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {mySessionsData.map(sessionItem => {
                     const linkedTree = trees[sessionItem.tree_id];
                     return (
-                      <div key={sessionItem.session_code} className="bg-white border-2 border-emerald-50 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-6 hover:border-emerald-200 transition-all">
+                      <div key={sessionItem.session_code} className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-6 hover:border-emerald-500 transition-all">
                         <div>
-                          <span className="text-[10px] bg-emerald-50 border border-emerald-100 text-emerald-700 px-2.5 py-1 rounded font-mono font-bold uppercase">CODE : {sessionItem.session_code}</span>
-                          <h4 className="text-sm font-black text-slate-800 mt-2.5">Arbre : {linkedTree ? linkedTree.name : `Chargement...`}</h4>
+                          <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-2.5 py-1 rounded font-mono font-bold uppercase">CODE : {sessionItem.session_code}</span>
+                          <h4 className="text-sm font-black text-slate-800 mt-3">Arbre : {linkedTree ? linkedTree.name : `Chargement...`}</h4>
                         </div>
                         <button onClick={() => { setSelectedSessionCode(sessionItem.session_code); setSelectedTreeId(sessionItem.tree_id); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition-all cursor-pointer shadow-sm">🚀 Entrer dans la session</button>
                       </div>
@@ -428,10 +428,10 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                 </div>
               )}
             </div>
-            <div className="bg-emerald-50/20 border border-emerald-100/50 p-5 rounded-2xl space-y-4">
-              <h4 className="font-black text-xs uppercase text-slate-800">🔑 Ajouter une session</h4>
+            <div className="bg-slate-50/70 border border-slate-200 p-5 rounded-2xl space-y-4">
+              <h4 className="font-black text-xs uppercase text-slate-700">🔑 Ajouter une session</h4>
               <form onSubmit={handleJoinSession} className="space-y-2">
-                <input type="text" placeholder="Ex: ORANGE-LILLE-26" value={accessCode} onChange={(e) => setAccessCode(e.target.value)} className="w-full bg-white border border-emerald-100 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30" />
+                <input type="text" placeholder="Ex: ORANGE-LILLE-26" value={accessCode} onChange={(e) => setAccessCode(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-bold uppercase focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300" />
                 <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black py-3 rounded-xl transition-all uppercase cursor-pointer shadow-sm">Ajouter</button>
               </form>
             </div>
@@ -443,11 +443,11 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
       {activeTab === 'parcours' && selectedSessionCode && selectedTreeId && trees[selectedTreeId] && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-4">
-            <div className="flex flex-wrap justify-between items-center gap-3 bg-white px-4 py-3 border border-emerald-100 rounded-xl shadow-sm">
-              <button onClick={() => { setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className="text-xs font-bold text-slate-400 hover:text-emerald-700 cursor-pointer">⬅️ Retour aux parcours</button>
+            <div className="flex flex-wrap justify-between items-center gap-3 bg-white px-4 py-3 border border-slate-200 rounded-xl shadow-sm">
+              <button onClick={() => { setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className="text-xs font-bold text-slate-400 hover:text-slate-700 cursor-pointer">⬅️ Retour aux parcours</button>
               <div className="flex items-center gap-2">
-                <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="bg-emerald-50/50 border border-emerald-100 rounded-lg px-2 py-1 text-[11px] font-bold text-emerald-800 cursor-pointer focus:outline-none"><option value="all">🌱 Toutes catégories</option><option value="env">🌍 RSE / Climat</option><option value="tech">⚙️ Outils Digitaux</option></select>
-                <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="bg-emerald-50/50 border border-emerald-100 rounded-lg px-2 py-1 text-[11px] font-bold text-emerald-800 cursor-pointer focus:outline-none"><option value="all">👥 Tous formats</option><option value="solo">👤 Solo uniquement</option><option value="collab">🤝 Équipe uniquement</option></select>
+                <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-700 cursor-pointer focus:outline-none"><option value="all">🌱 Toutes catégories</option><option value="env">🌍 RSE / Climat</option><option value="tech">⚙️ Outils Digitaux</option></select>
+                <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-700 cursor-pointer focus:outline-none"><option value="all">👥 Tous formats</option><option value="solo">👤 Solo uniquement</option><option value="collab">🤝 Équipe uniquement</option></select>
               </div>
             </div>
 
@@ -491,25 +491,25 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
               return (
                 <div className="flex gap-4 items-start">
-                  {/* BARRE DE PALIERS - Blanc & Vert épuré */}
-                  <div className="flex flex-col gap-3 bg-emerald-50/30 p-2 rounded-xl border border-emerald-100/50 w-11 shrink-0">
+                  {/* BARRE DE PALIERS - Gris-bleu sobre */}
+                  <div className="flex flex-col gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200 w-11 shrink-0">
                     {allFloors.map((floor, idx) => {
                       const isUnlocked = idx <= safeUnlockedIndex;
                       const isActive = idx === safeCurrentIndex;
                       return (
-                        <button key={floor.floorId} onClick={() => { setCurrentFloorIndex(idx); setActiveQuest(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer transition-all ${isActive ? 'bg-emerald-600 text-white shadow-md' : isUnlocked ? 'bg-white border border-emerald-100 text-emerald-700 hover:bg-emerald-50/50' : 'bg-emerald-50/10 text-emerald-300 opacity-40 cursor-not-allowed'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
+                        <button key={floor.floorId} onClick={() => { setCurrentFloorIndex(idx); setActiveQuest(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer transition-all ${isActive ? 'bg-emerald-600 text-white shadow-md' : isUnlocked ? 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-slate-100 text-slate-300 opacity-40 cursor-not-allowed'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
                       );
                     })}
                   </div>
 
                   {/* CARTE DE CONTENU DU PALIER */}
-                  <div className={`flex-1 bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm space-y-4 relative ${triggerDropAnimation ? 'animate-drop-bounce' : ''}`}>
-                    <div className="text-[11px] border-b border-emerald-50 pb-2 text-emerald-700 font-black uppercase">Palier {activeFloor.floorId} — {selectedTree.name}</div>
+                  <div className={`flex-1 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 relative ${triggerDropAnimation ? 'animate-drop-bounce' : ''}`}>
+                    <div className="text-[11px] border-b border-slate-100 pb-2 text-slate-400 font-bold uppercase tracking-wider">Palier {activeFloor.floorId} — {selectedTree.name}</div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
                       {isFloorViewLocked && (
-                        <div className="absolute inset-0 bg-emerald-50/30 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-3 text-center rounded-xl">
-                          <div className="bg-emerald-950 text-white text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-xl shadow-md border border-emerald-800">
+                        <div className="absolute inset-0 bg-slate-50/40 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-3 text-center rounded-xl">
+                          <div className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-xl shadow-md border border-slate-700">
                             🔒 Verrouillé - Rejetez d'abord le Palier {safeUnlockedIndex}
                           </div>
                         </div>
@@ -523,24 +523,24 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                         const isQuestCollab = quest.is_collaborative === true || quest.is_collaborative === 'true';
 
                         return (
-                          <button key={quest.id} disabled={isFloorViewLocked} onClick={() => { setActiveQuest(quest); setLivrableContent(''); setAttachedFile(null); }} className={`p-4 rounded-xl text-left border-2 transition-all flex flex-col justify-between gap-4 relative overflow-hidden ${isDoneHere ? 'bg-emerald-50/20 border-emerald-100 opacity-70' : isSelected ? 'bg-emerald-50/40 border-emerald-500 ring-4 ring-emerald-500/5' : 'bg-white border-slate-100 hover:border-emerald-200 cursor-pointer'}`}>
+                          <button key={quest.id} disabled={isFloorViewLocked} onClick={() => { setActiveQuest(quest); setLivrableContent(''); setAttachedFile(null); }} className={`p-4 rounded-xl text-left border transition-all flex flex-col justify-between gap-4 relative overflow-hidden ${isDoneHere ? 'bg-emerald-50/10 border-emerald-100 opacity-80' : isSelected ? 'bg-slate-50/50 border-emerald-500 ring-4 ring-emerald-500/5' : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'}`}>
                             <div>
-                              <div className="flex justify-between text-[9px] font-mono font-bold text-emerald-600">
+                              <div className="flex justify-between text-[9px] font-mono font-bold text-slate-400">
                                 <span>{quest.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
-                                <span className={isQuestCollab ? 'text-teal-600' : 'text-emerald-600'}>{isQuestCollab ? '👥 EQUIPE' : '👤 SOLO'}</span>
+                                <span className={isQuestCollab ? 'text-teal-600' : 'text-slate-500'}>{isQuestCollab ? '👥 EQUIPE' : '👤 SOLO'}</span>
                               </div>
                               <h4 className="font-bold text-xs text-slate-800 mt-1 leading-snug">{quest.name}</h4>
                             </div>
                             <div className="flex justify-between items-center w-full">
                               <span className="text-[9px] font-black font-mono text-slate-400 bg-slate-50 px-2 py-0.5 rounded">{getPointsByDifficulty(quest.difficulty)} XP</span>
                               {isDoneHere ? (
-                                <span className="text-emerald-700 font-mono font-bold text-[9px] bg-emerald-100/50 px-2 py-0.5 rounded">Validé ✓</span>
+                                <span className="text-emerald-700 font-mono font-bold text-[9px] bg-emerald-50 px-2 py-0.5 rounded">Validé ✓</span>
                               ) : isPendingHere ? (
                                 <span className="text-amber-700 font-mono font-bold text-[9px] bg-amber-50 px-2 py-0.5 rounded border border-amber-100">En attente ⏳</span>
                               ) : isDoneElsewhere ? (
-                                <span className="text-emerald-700 font-mono font-bold text-[9px] bg-emerald-50 px-2 py-0.5 rounded">Rendu Synchro 🔄</span>
+                                <span className="text-emerald-700 font-mono font-bold text-[9px] bg-slate-50 px-2 py-0.5 rounded border border-slate-100">Rendu Synchro 🔄</span>
                               ) : (
-                                <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider">Lancer ➔</span>
+                                <span className="text-[9px] text-slate-600 font-bold uppercase tracking-wider">Lancer ➔</span>
                               )}
                             </div>
                           </button>
@@ -550,11 +550,11 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
 
                     {/* BARRE DE REUSSITE DU PALIER */}
                     {!isFloorViewLocked && (
-                      <div className="border-t border-emerald-50 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div className="w-full sm:w-1/2 space-y-1.5">
-                          <div className="flex justify-between text-[10px] font-bold text-emerald-950 font-mono">
+                          <div className="flex justify-between text-[10px] font-bold text-slate-500 font-mono">
                             <span>Score du Palier : {currentFloorPoints} / {POINTS_REQUIRED_PER_FLOOR} XP</span>
-                            <span>{isFloorPassed ? 'Prêt !' : 'En cours...'}</span>
+                            <span className={isFloorPassed ? 'text-emerald-600 font-bold' : ''}>{isFloorPassed ? 'Prêt !' : 'En cours...'}</span>
                           </div>
                           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                             <div className="bg-emerald-600 h-2 rounded-full transition-all duration-300" style={{ width: `${Math.min(100, (currentFloorPoints / POINTS_REQUIRED_PER_FLOOR) * 100)}%` }} />
@@ -572,10 +572,10 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
             })()}
           </div>
 
-          {/* COLONNE DE TRAVAIL - Blanc & Vert épuré */}
+          {/* COLONNE DE TRAVAIL */}
           <div className="space-y-4">
             {activeQuest ? (
-              <div className={`bg-white border p-5 rounded-2xl shadow-sm space-y-4 sticky top-24 border-emerald-100 shadow-emerald-50/10`}>
+              <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-4 sticky top-24">
                 {(() => {
                   const isDoneHere = completedQuestIds.has(activeQuest.id);
                   const isPendingHere = pendingCollabQuestIds.has(activeQuest.id);
@@ -586,27 +586,27 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                     <>
                       <div className="flex justify-between items-start">
                         <div>
-                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-100 text-emerald-800' : isPendingHere ? 'bg-amber-100 text-amber-800' : isQuestCollab ? 'bg-teal-50 text-teal-800 border border-teal-100' : 'bg-emerald-50 text-emerald-800'}`}>
+                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : isPendingHere ? 'bg-amber-50 text-amber-800 border border-amber-100' : isQuestCollab ? 'bg-teal-50 text-teal-800 border border-teal-100' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
                             {isDoneHere ? 'Validée' : isPendingHere ? '⏳ En attente' : isQuestCollab ? '🤝 Mission Équipe' : '👤 Solo'}
                           </span>
                           <h3 className="font-black text-slate-900 text-sm mt-2">{activeQuest.name}</h3>
                         </div>
-                        <button onClick={() => setActiveQuest(null)} className="text-slate-400 hover:text-emerald-700 text-xs font-bold font-mono">✕</button>
+                        <button onClick={() => setActiveQuest(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold font-mono">✕</button>
                       </div>
 
                       {isQuestCollab && !isDoneHere && !isPendingHere && (
-                        <div className="p-3 bg-teal-50/30 border border-teal-100/50 rounded-xl">
-                          <p className="text-[11px] text-teal-900 leading-tight font-medium">
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                          <p className="text-[11px] text-slate-600 leading-tight font-medium">
                             🔒 <strong>Règle d'Équipe Strict :</strong> Le premier à déposer bloque la quête en attente. Elle se valide uniquement quand un coéquipier dépose <strong>exactement le même fichier</strong>.
                           </p>
                         </div>
                       )}
 
-                      <p className="text-xs text-emerald-800 italic bg-emerald-50/10 border border-emerald-100/50 p-3 rounded-xl">"{activeQuest.desc}"</p>
+                      <p className="text-xs text-slate-600 italic bg-slate-50 border border-slate-100 p-3 rounded-xl">"{activeQuest.desc}"</p>
 
                       {isDoneElsewhere ? (
-                        <div className="p-4 bg-emerald-50/40 border border-emerald-200 rounded-xl text-center space-y-3">
-                          <p className="text-xs text-emerald-950 font-bold leading-normal">🔄 Vous avez déjà réalisé cette mission dans une autre session. Souhaitez-vous l'importer ?</p>
+                        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-3">
+                          <p className="text-xs text-slate-800 font-bold leading-normal">🔄 Vous avez déjà réalisé cette mission dans une autre session. Souhaitez-vous l'importer ?</p>
                           <button onClick={handleImportPreviousProduction} className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black py-2.5 px-4 rounded-xl transition-all w-full cursor-pointer shadow-sm">Importer mon travail précédent</button>
                         </div>
                       ) : isDoneHere ? (
@@ -616,11 +616,11 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                       ) : isPendingHere ? (
                         <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-center space-y-2">
                           <p className="text-xs text-amber-900 font-medium">⏳ En attente de synchronisation d'un partenaire.</p>
-                          <span className="inline-block text-[10px] bg-white text-slate-400 px-2 py-1 rounded font-mono">ID : {activeQuest.id}</span>
+                          <span className="inline-block text-[10px] bg-white text-slate-400 px-2 py-1 rounded font-mono border border-slate-100">ID : {activeQuest.id}</span>
                         </div>
                       ) : (
                         <form onSubmit={handleSubmitLivrable} className="space-y-4">
-                          <textarea rows="4" required value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder="Décrivez votre contribution pédagogique ici..." className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 focus:outline-none placeholder:text-slate-300" />
+                          <textarea rows="4" required value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder="Décrivez votre contribution pédagogique ici..." className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs focus:border-slate-400 focus:ring-1 focus:ring-slate-300 focus:outline-none placeholder:text-slate-300" />
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">📁 Justificatif {isQuestCollab && <span className="text-teal-600 font-bold">(Obligatoire)</span>}</label>
                             <input type="file" required={isQuestCollab} onChange={handleFileChange} className="text-xs text-slate-500 block cursor-pointer" />
@@ -633,44 +633,43 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                 })()}
               </div>
             ) : (
-              <div className="bg-emerald-50/10 border border-dashed border-emerald-100 rounded-2xl p-6 text-center text-xs text-emerald-600/70 py-12">🎯 Sélectionnez une mission à gauche.</div>
+              <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-400 py-12">🎯 Sélectionnez une mission à gauche.</div>
             )}
           </div>
         </div>
       )}
 
-      {/* PORTFOLIO COMPLET */}
+      {/* Mon Portfolio */}
       {activeTab === 'portfolio' && user && (
         <div className="space-y-8">
-          <div className="bg-white border border-emerald-100 rounded-2xl p-5 flex flex-wrap justify-between items-center gap-4 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-wrap justify-between items-center gap-4 shadow-sm">
             <div>
               <h3 className="font-black text-sm text-slate-800 uppercase tracking-wide flex items-center gap-2"> 📂 Hub de Vos Missions & Historique </h3>
               <p className="text-[11px] text-slate-400 font-medium">Consultez vos rendus, téléchargez vos pièces jointes et localisez vos quêtes en un clic.</p>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-bold text-slate-500 uppercase font-mono">Affichage :</label>
-              <select value={portfolioFilter} onChange={(e) => setPortfolioFilter(e.target.value)} className="bg-emerald-50/30 border border-emerald-100 rounded-xl px-3 py-1.5 text-[11px] font-bold text-emerald-800 cursor-pointer shadow-sm focus:outline-none"><option value="all">📁 Tout voir</option><option value="validated">✅ Validées</option><option value="pending">⏳ En attente collab</option><option value="not_started">❌ Non initiées (Catalogue)</option></select>
+              <select value={portfolioFilter} onChange={(e) => setPortfolioFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold text-slate-700 cursor-pointer shadow-sm focus:outline-none"><option value="all">📁 Tout voir</option><option value="validated">✅ Validées</option><option value="pending">⏳ En attente collab</option><option value="not_started">❌ Non initiées (Catalogue)</option></select>
             </div>
           </div>
 
           {/* ✅ BLOC 1 : LES QUÊTES VALIDÉES */}
           {(portfolioFilter === 'all' || portfolioFilter === 'validated') && (
             <div className="space-y-3">
-              <div className="border-b border-emerald-100 pb-2">
-                <h4 className="font-black text-xs text-emerald-700 uppercase tracking-wider flex items-center gap-1.5"> ✅ Validées & Archivées ({uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]')).length}) </h4>
+              <div className="border-b border-slate-200 pb-2">
+                <h4 className="font-black text-xs text-slate-600 uppercase tracking-wider flex items-center gap-1.5"> ✅ Validées & Archivées ({uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]')).length}) </h4>
               </div>
               {(() => {
                 const validatedLivrables = uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]'));
                 if (validatedLivrables.length === 0) {
-                  return <div className="bg-emerald-50/10 border border-dashed border-emerald-100 rounded-xl p-4 text-[11px] text-emerald-600 italic">Aucune mission n'est validée pour le moment.</div>;
+                  return <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-4 text-[11px] text-slate-400 italic">Aucune mission n'est validée pour le moment.</div>;
                 }
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {validatedLivrables.map(p => {
-                      const isImported = p.content.startsWith("[Importé");
                       return (
-                        <div key={p.id} className="bg-white border border-emerald-100 rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-emerald-200 transition-all relative">
-                          <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">Validé</span>
+                        <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-slate-300 transition-all relative">
+                          <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">Validé</span>
                           <div className="space-y-2 pr-12">
                             <h5 className="font-bold text-xs text-slate-800 leading-snug">{p.questName}</h5>
                             <p className="text-[11px] text-slate-600 line-clamp-3 bg-slate-50 p-2 rounded-lg font-medium leading-relaxed">"{p.content.replace('[VALIDE_COLLAB]', '[COLLAB VALIDE]')}"</p>
@@ -678,9 +677,9 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                               <a href={p.file_url} download={`livrable_${p.questId}`} className="inline-flex items-center text-[10px] font-bold text-emerald-600 hover:underline gap-1 mt-1"> 📁 Ouvrir la pièce jointe </a>
                             )}
                           </div>
-                          <div className="flex justify-between items-center pt-2 border-t border-slate-50 text-[10px] text-slate-400">
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] text-slate-400">
                             <span>Fait le {p.date}</span>
-                            <button onClick={() => navigateToQuestInGame(p.questId)} className="text-emerald-700 hover:text-emerald-950 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-emerald-50 px-2.5 py-1 rounded hover:bg-emerald-100/50">🎯 Voir dans le Jeu ➔</button>
+                            <button onClick={() => navigateToQuestInGame(p.questId)} className="text-slate-700 hover:text-slate-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-slate-50 px-2.5 py-1 rounded hover:bg-slate-100">🎯 Voir dans le Jeu ➔</button>
                           </div>
                         </div>
                       );
@@ -694,27 +693,27 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
           {/* ⏳ BLOC 2 : LES QUÊTES EN ATTENTE */}
           {(portfolioFilter === 'all' || portfolioFilter === 'pending') && (
             <div className="space-y-3 pt-2">
-              <div className="border-b border-amber-100 pb-2">
+              <div className="border-b border-slate-200 pb-2">
                 <h4 className="font-black text-xs text-amber-700 uppercase tracking-wider flex items-center gap-1.5"> ⏳ En Attente de Synchronisation Équipe ({uniqueLivrables.filter(p => p.content.includes('[EN_ATTENTE_COLLAB]')).length}) </h4>
               </div>
               {(() => {
                 const pendingLivrables = uniqueLivrables.filter(p => p.content.includes('[EN_ATTENTE_COLLAB]'));
                 if (pendingLivrables.length === 0) {
-                  return <div className="bg-amber-50/10 border border-dashed border-amber-100 rounded-xl p-4 text-[11px] text-amber-700 italic">Aucun dépôt n'est bloqué en attente d'un partenaire.</div>;
+                  return <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-4 text-[11px] text-slate-400 italic">Aucun dépôt n'est bloqué en attente d'un partenaire.</div>;
                 }
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {pendingLivrables.map(p => (
-                      <div key={p.id} className="bg-white border border-amber-100 rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm relative">
+                      <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm relative">
                         <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100">En attente</span>
                         <div className="space-y-2 pr-16">
                           <h5 className="font-bold text-xs text-slate-800 leading-snug">{p.questName}</h5>
-                          <p className="text-[11px] text-amber-800 line-clamp-3 bg-amber-50/30 p-2 rounded-lg font-medium leading-relaxed">"{p.content.replace('[EN_ATTENTE_COLLAB]', '')}"</p>
+                          <p className="text-[11px] text-amber-800 line-clamp-3 bg-amber-50/20 p-2 rounded-lg font-medium leading-relaxed">"{p.content.replace('[EN_ATTENTE_COLLAB]', '')}"</p>
                           {p.file_url && (
-                            <div className="text-[10px] text-slate-400 font-medium">📄 Fichier déposé : <strong className="text-slate-600 font-mono">Inclus</strong></div>
+                            <div className="text-[10px] text-slate-400 font-medium">📄 Fichier déposé : <strong className="text-slate-600 font-mono font-bold">Inclus</strong></div>
                           )}
                         </div>
-                        <div className="flex justify-between items-center pt-2 border-t border-slate-50 text-[10px] text-slate-400">
+                        <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] text-slate-400">
                           <span>Dépôt le {p.date}</span>
                           <button onClick={() => navigateToQuestInGame(p.questId)} className="text-amber-700 hover:text-amber-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-amber-50 px-2.5 py-1 rounded">🎯 Voir dans le Jeu ➔</button>
                         </div>
@@ -729,7 +728,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
           {/* ❌ BLOC 3 : LES QUÊTES NON INITIÉES */}
           {(portfolioFilter === 'all' || portfolioFilter === 'not_started') && (
             <div className="space-y-3 pt-2">
-              <div className="border-b border-emerald-100 pb-2">
+              <div className="border-b border-slate-200 pb-2">
                 <h4 className="font-black text-xs text-slate-500 uppercase tracking-wider"> ❌ Restantes de mes Parcours </h4>
               </div>
               {(() => {
@@ -745,7 +744,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                 });
 
                 if (pendingQuests.length === 0) {
-                  return <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété toutes les missions de vos parcours rejoints !</div>;
+                  return <div className="bg-emerald-50/10 border border-emerald-100 p-5 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez complété toutes les missions de vos parcours rejoints !</div>;
                 }
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -753,7 +752,6 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                       const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
                       const isStartedButPending = pendingCollabQuestIds.has(q.id);
 
-                      // Évite de planter si l'arbre n'est pas prêt
                       let isQuestLockedInCatalogue = true;
                       for (const sItem of mySessionsData) {
                         const targetTree = trees[sItem.tree_id];
@@ -770,27 +768,27 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                       }
 
                       return (
-                        <div key={q.id} className={`bg-white border rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-emerald-100 transition-all relative ${isQuestLockedInCatalogue ? 'border-slate-100 opacity-60 bg-slate-50/30' : 'border-slate-200'}`}>
+                        <div key={q.id} className={`bg-white border rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-slate-300 transition-all relative ${isQuestLockedInCatalogue ? 'border-slate-100 opacity-60 bg-slate-50/50' : 'border-slate-200'}`}>
                           {isQuestLockedInCatalogue && (
                             <div className="absolute top-3 right-3 text-[9px] font-black tracking-wider text-slate-400 bg-slate-100/80 border border-slate-200 px-2 py-0.5 rounded uppercase">🔒 Étage Verrouillé</div>
                           )}
                           <div>
-                            <div className="flex justify-between items-center text-[9px] font-mono font-bold text-emerald-600">
+                            <div className="flex justify-between items-center text-[9px] font-mono font-bold text-slate-400">
                               <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
-                              <span className={isQuestCollab ? 'text-teal-600' : 'text-emerald-600'}>{isQuestCollab ? '🤝 ÉQUIPE' : '👤 SOLO'}</span>
+                              <span className={isQuestCollab ? 'text-teal-600' : 'text-slate-500'}>{isQuestCollab ? '🤝 ÉQUIPE' : '👤 SOLO'}</span>
                             </div>
-                            <h5 className={`font-black text-xs mt-2 leading-tight ${isQuestCollab ? 'text-teal-950' : 'text-slate-700'}`}>{isQuestCollab && <span className="mr-1">🤝</span>}{q.name}</h5>
+                            <h5 className={`font-black text-xs mt-2 leading-tight ${isQuestCollab ? 'text-slate-800' : 'text-slate-700'}`}>{isQuestCollab && <span className="mr-1">🤝</span>}{q.name}</h5>
                             <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{q.desc}"</p>
                           </div>
                           
-                          <div className={`flex justify-between items-center pt-2 border-t border-slate-50 text-[10px] ${isQuestLockedInCatalogue ? 'opacity-20' : ''}`}>
+                          <div className={`flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] ${isQuestLockedInCatalogue ? 'opacity-20' : ''}`}>
                             <span className="font-bold text-slate-400 uppercase tracking-wider text-[9px]">
                               {isStartedButPending ? '⏳ En attente' : '❌ Non initiée'}
                             </span>
                             <button 
                               disabled={isQuestLockedInCatalogue}
                               onClick={() => navigateToQuestInGame(q.id)} 
-                              className="text-emerald-700 hover:text-emerald-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-emerald-50 px-2.5 py-1 rounded hover:bg-emerald-100/50 disabled:opacity-30"
+                              className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded hover:bg-slate-100 disabled:opacity-30"
                             >
                               🚀 Lancer la mission ➔
                             </button>
