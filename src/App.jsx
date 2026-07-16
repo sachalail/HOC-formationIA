@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import LoginScreen from './screens/LoginScreen';
 import StudioScreen from './screens/StudioScreen';
-import QuestLinkerScreen from './screens/QuestLinkerScreen'; // <-- NOUVEL IMPORT
+import QuestLinkerScreen from './screens/QuestLinkerScreen';
 import StudentDashboardScreen from './screens/StudentDashboardScreen';
 import ClientDashboardScreen from './screens/ClientDashboardScreen';
 import AdminScreen from './screens/AdminScreen'; 
@@ -17,6 +17,9 @@ export default function App() {
   const [isManager, setIsManager] = useState(false); 
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [currentScreen, setCurrentScreen] = useState('apprenant'); 
+  
+  // État pour gérer l'ouverture/fermeture du menu vertical de gauche
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // État d'infiltration d'utilisateur réel Supabase
   const [impersonatedUser, setImpersonatedUser] = useState(null);
@@ -66,7 +69,7 @@ export default function App() {
         .eq('manager_id', user.id)
         .limit(1);
 
-      // B. NOUVEAU : On vérifie SI ton ID est présent dans les drh_ids d'une session
+      // B. On vérifie SI ton ID est présent dans les drh_ids d'une session
       const { data: hrSessions } = await supabase
         .from('sessions')
         .select('id')
@@ -100,7 +103,6 @@ export default function App() {
           theme: q.theme,
           difficulty: q.difficulty,
           ownerId: q.owner_id,
-          // 🤝 FIX: Conservation des données collaboratives après actualisation de la page
           is_collaborative: q.is_collaborative,
           required_partners: q.required_partners,
           sharing: { type: q.visibility || 'private', allowedUsers: [q.owner_id] },
@@ -118,7 +120,6 @@ export default function App() {
             name: t.name,
             ownerId: t.owner_id,
             floors: t.floors || [],
-            // 🤝 FIX: Conservation de la contrainte maximale d'équipe sur l'arbre après actualisation
             max_team_constraint: t.max_team_constraint || 1,
             sharing: { type: t.visibility === 'public' ? 'global' : 'private', allowedUsers: [t.owner_id] }
           };
@@ -149,13 +150,13 @@ export default function App() {
   // Logique du sous-titre dynamique dépendante de currentScreen
   const getDynamicSubtitle = () => {
     switch (currentScreen) {
-      case 'formateur': return "Espace Formateur & Administration";
-      case 'linker': return "Liaison & Catalogue de Quêtes"; // <-- SOUS-TITRE NOUVEL ÉCRAN
-      case 'apprenant': return "Espace Apprenant & Progression";
-      case 'client': return "Espace Décideur & Suivi RH";
-      case 'admin': return "Panel Super Administration";
-      case 'doc': return "Guide & Documentation du Jour";
-      default: return "Espace Formateur & Administration";
+      case 'formateur': return "Assigner";
+      case 'linker': return "Créer";
+      case 'apprenant': return "Apprenant";
+      case 'client': return "Résultats";
+      case 'admin': return "Admin";
+      case 'doc': return "Doc";
+      default: return "Assigner";
     }
   };
 
@@ -178,105 +179,200 @@ export default function App() {
     : session.user;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans relative">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex">
       
-      {impersonatedUser && (
-        <div className="bg-amber-500 text-slate-950 px-6 py-2.5 text-center text-xs font-black uppercase tracking-wider flex justify-between items-center z-50 sticky top-0 shadow-md">
-          <span className="flex items-center gap-1.5">⚠️ INFILTRATION EN COURS : Vous agissez à la place de <strong className="underline font-black font-mono">{impersonatedUser.email}</strong></span>
-          <button 
-            onClick={() => handleImpersonate(null)} 
-            className="bg-slate-950 hover:bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider transition-all cursor-pointer"
-          >
-            Quitter l'infiltration
-          </button>
-        </div>
-      )}
+      {/* ────────────────────────────────────────────────────────────────────────
+          MENU VERTICAL DE GAUCHE (DÉPLIABLE)
+          ──────────────────────────────────────────────────────────────────────── */}
+      <aside 
+        className={`bg-white border-r border-slate-200 h-screen fixed left-0 top-0 z-40 flex flex-col justify-between transition-all duration-300 shadow-sm ${
+          isSidebarOpen ? 'w-64' : 'w-16'
+        }`}
+      >
+        {/* En-tête du menu */}
+        <div>
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between overflow-hidden">
+            {isSidebarOpen ? (
+              <div className="flex items-center gap-2 animate-fade-in">
+                <span className="text-xl">🌳</span>
+                <div>
+                  <h1 className="text-sm font-black text-slate-950 uppercase tracking-wide">HOC</h1>
+                  <p className="text-[10px] text-purple-600 font-extrabold uppercase tracking-tight">{getDynamicSubtitle()}</p>
+                </div>
+              </div>
+            ) : (
+              <span className="text-xl mx-auto">🌳</span>
+            )}
 
-      {/* HEADER DE NAVIGATION GLOBAL */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 sticky top-0 z-40 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🌳</span>
-          <div>
-            <h1 className="text-sm font-black text-slate-950 uppercase tracking-wide">HOC - Formation</h1>
-            <p className="text-[10px] text-purple-600 font-extrabold uppercase tracking-tight">{getDynamicSubtitle()}</p>
+            {/* Bouton pour replier / déplier */}
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 text-xs font-bold transition-all cursor-pointer"
+              title={isSidebarOpen ? "Replier le menu" : "Déplier le menu"}
+            >
+              {isSidebarOpen ? '◀' : '▶'}
+            </button>
           </div>
+
+          {/* Navigation / Liens */}
+          <nav className="p-3 space-y-1.5 flex flex-col">
+            {/* Apprenant */}
+            <button 
+              onClick={() => setCurrentScreen('apprenant')} 
+              className={`flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 transition-all cursor-pointer ${
+                currentScreen === 'apprenant' 
+                  ? 'bg-slate-900 text-white shadow-xs' 
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+              title="Apprenant"
+            >
+              <span className="text-sm">🎮</span>
+              {isSidebarOpen && <span className="truncate">Apprenant</span>}
+            </button>
+
+            {/* Créer (Anciennement QuestLinkerScreen / Concepteur) */}
+            {(userRole === 'formateur' || userRole === 'admin') && (
+              <button 
+                onClick={() => setCurrentScreen('linker')} 
+                className={`flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 transition-all cursor-pointer ${
+                  currentScreen === 'linker' 
+                    ? 'bg-slate-900 text-white shadow-xs' 
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+                title="Créer"
+              >
+                <span className="text-sm">🔗</span>
+                {isSidebarOpen && <span className="truncate">Créer</span>}
+              </button>
+            )}
+
+            {/* Assigner (Anciennement StudioScreen / Éditeur de parcours) */}
+            {(userRole === 'formateur' || userRole === 'admin') && (
+              <button 
+                onClick={() => setCurrentScreen('formateur')} 
+                className={`flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 transition-all cursor-pointer ${
+                  currentScreen === 'formateur' 
+                    ? 'bg-slate-900 text-white shadow-xs' 
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+                title="Assigner"
+              >
+                <span className="text-sm">🛠️</span>
+                {isSidebarOpen && <span className="truncate">Assigner</span>}
+              </button>
+            )}
+
+            {/* Résultats (Anciennement Client/DRH) */}
+            {(isManager || userRole === 'admin') && (
+              <button 
+                onClick={() => setCurrentScreen('client')} 
+                className={`flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 transition-all cursor-pointer ${
+                  currentScreen === 'client' 
+                    ? 'bg-slate-900 text-white shadow-xs' 
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+                title="Résultats"
+              >
+                <span className="text-sm">📊</span>
+                {isSidebarOpen && <span className="truncate">Résultats</span>}
+              </button>
+            )}
+
+            {/* Admin */}
+            {userRole === 'admin' && (
+              <button 
+                onClick={() => setCurrentScreen('admin')} 
+                className={`flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 transition-all cursor-pointer ${
+                  currentScreen === 'admin' 
+                    ? 'bg-red-600 text-white shadow-xs' 
+                    : 'text-slate-600 hover:bg-red-50'
+                }`}
+                title="Admin"
+              >
+                <span className="text-sm">👑</span>
+                {isSidebarOpen && <span className="truncate">Admin</span>}
+              </button>
+            )}
+          </nav>
         </div>
 
-        <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1">
-          <button onClick={() => setCurrentScreen('apprenant')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'apprenant' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>🎮 Apprenant</button>
-
-          {(userRole === 'formateur' || userRole === 'admin') && (
-            <>
-              <button onClick={() => setCurrentScreen('formateur')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'formateur' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>🛠️ Studio (Concepteur)</button>
-              <button onClick={() => setCurrentScreen('linker')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'linker' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>🔗 Liaison & Catalogue</button>
-            </>
+        {/* Section profil & Déconnexion en bas du menu */}
+        <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+          {isSidebarOpen && activeUser?.email && (
+            <div className="px-2 py-1.5 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden text-[10px] font-mono font-bold text-slate-500 truncate" title={activeUser.email}>
+              {activeUser.email}
+            </div>
           )}
 
-          {(isManager || userRole === 'admin') && (
-            <button onClick={() => setCurrentScreen('client')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'client' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600'}`}>📊 Client (DRH)</button>
-          )}
-
-          {userRole === 'admin' && (
-            <button onClick={() => setCurrentScreen('admin')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${currentScreen === 'admin' ? 'bg-red-600 text-white shadow-sm' : 'text-slate-600'}`}>👑 Admin</button>
-          )}
-
-          {activeUser?.email && (
-            <>
-              <div className="w-[1px] h-4 bg-slate-200 mx-1" />
-              <span className="text-[11px] font-mono font-bold text-slate-500 px-1 truncate max-w-[180px]" title={activeUser.email}>
-                {activeUser.email}
-              </span>
-            </>
-          )}
-
-          <div className="w-[1px] h-4 bg-slate-200 mx-1" />
           <button 
             onClick={handleSignOutRequest} 
-            className="p-1.5 rounded-lg text-xs font-black text-red-500 hover:bg-red-50 transition-all cursor-pointer"
-            title="Se déconnecter / Changer de compte"
+            className="flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 text-red-500 hover:bg-red-50 transition-all cursor-pointer"
+            title="Se déconnecter"
           >
-            🚪
+            <span className="text-sm">🚪</span>
+            {isSidebarOpen && <span>Déconnexion</span>}
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* ZONE D'AFFICHAGE DE L'ÉCRAN ACTIF */}
-      <main className="transition-all duration-200">
-        {currentScreen === 'formateur' && (
-          <StudioScreen 
-            trees={trees} 
-            setTrees={setTrees} 
-            quests={quests} 
-            setQuests={setQuests} 
-          />
+      {/* ────────────────────────────────────────────────────────────────────────
+          ZONÉ DE CONTENU PRINCIPALE (Ajustée selon la largeur du menu vertical)
+          ──────────────────────────────────────────────────────────────────────── */}
+      <div 
+        className="flex-1 flex flex-col transition-all duration-300"
+        style={{ marginLeft: isSidebarOpen ? '16rem' : '4rem' }}
+      >
+        {/* Bandeau d'alerte en cas d'infiltration */}
+        {impersonatedUser && (
+          <div className="bg-amber-500 text-slate-950 px-6 py-2.5 text-center text-xs font-black uppercase tracking-wider flex justify-between items-center z-30 sticky top-0 shadow-md">
+            <span className="flex items-center gap-1.5">⚠️ INFILTRATION EN COURS : Vous agissez à la place de <strong className="underline font-black font-mono">{impersonatedUser.email}</strong></span>
+            <button 
+              onClick={() => handleImpersonate(null)} 
+              className="bg-slate-950 hover:bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Quitter l'infiltration
+            </button>
+          </div>
         )}
-        {/* RENDU DE L'ÉCRAN DE LIAISON ET CATALOGUE */}
-        {currentScreen === 'linker' && (
-          <QuestLinkerScreen 
-            trees={trees} 
-            setTrees={setTrees} 
-            quests={quests} 
-            setQuests={setQuests} 
-          />
-        )}
-        {currentScreen === 'apprenant' && <StudentDashboardScreen user={activeUser} trees={trees} quests={quests} />}
-        {currentScreen === 'client' && <ClientDashboardScreen user={activeUser} trees={trees} quests={quests} />}
-        {currentScreen === 'admin' && <AdminScreen onImpersonate={handleImpersonate} />}
-        {currentScreen === 'doc' && <DocScreen />}
-      </main>
 
-      <div className="fixed bottom-6 left-6 z-50">
-        <button 
-          onClick={() => setCurrentScreen(currentScreen === 'doc' ? 'formateur' : 'doc')}
-          className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-xl border cursor-pointer transition-all ${
-            currentScreen === 'doc' 
-              ? 'bg-purple-700 text-white border-purple-800' 
-              : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
-          }`}
-          title={currentScreen === 'doc' ? "Retourner au Studio" : "Accéder à la Doc du Jour"}
-        >
-          📄
-        </button>
+        {/* ZONE D'AFFICHAGE DE L'ÉCRAN ACTIF */}
+        <main className="p-8 transition-all duration-200">
+          {currentScreen === 'formateur' && (
+            <StudioScreen 
+              trees={trees} 
+              setTrees={setTrees} 
+              quests={quests} 
+              setQuests={setQuests} 
+            />
+          )}
+          {currentScreen === 'linker' && (
+            <QuestLinkerScreen 
+              trees={trees} 
+              setTrees={setTrees} 
+              quests={quests} 
+              setQuests={setQuests} 
+            />
+          )}
+          {currentScreen === 'apprenant' && <StudentDashboardScreen user={activeUser} trees={trees} quests={quests} />}
+          {currentScreen === 'client' && <ClientDashboardScreen user={activeUser} trees={trees} quests={quests} />}
+          {currentScreen === 'admin' && <AdminScreen onImpersonate={handleImpersonate} />}
+          {currentScreen === 'doc' && <DocScreen />}
+        </main>
+
+        {/* Bouton flottant d'accès à la documentation */}
+        <div className="fixed bottom-6 right-6 z-50">
+          <button 
+            onClick={() => setCurrentScreen(currentScreen === 'doc' ? 'formateur' : 'doc')}
+            className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-xl border cursor-pointer transition-all ${
+              currentScreen === 'doc' 
+                ? 'bg-purple-700 text-white border-purple-800' 
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
+            }`}
+            title={currentScreen === 'doc' ? "Retourner au Studio" : "Accéder à la Doc du Jour"}
+          >
+            📄
+          </button>
+        </div>
       </div>
 
     </div>
