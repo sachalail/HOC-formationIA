@@ -38,9 +38,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [isCollaborative, setIsCollaborative] = useState(false);
   const [requiredPartners, setRequiredPartners] = useState(2);
 
-  // Recherche et filtres pour la modale d'importation globale
+  // Recherche et filtres pour la modale d'importation globale/locale
   const [importSearchQuery, setImportSearchQuery] = useState('');
   const [importTheme, setImportTheme] = useState('all');
+  const [importOrigin, setImportOrigin] = useState('all'); // 'all', 'global', 'local'
 
   // Gestion et exploration des arbres
   const [treeBrowserTab, setTreeBrowserTab] = useState('local'); // 'local' ou 'shared'
@@ -79,10 +80,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const isOwnerOfCurrentTree = currentTree && currentTree.owner_id === currentUserId;
 
   // Récupérer la liste des quêtes officiellement importées pour cet arbre.
-  // On utilise un champ `imported_quests` (array d'IDs) ou on extrait les quêtes déjà présentes dans les paliers pour éviter de casser la structure existante si le champ n'existe pas en base.
   const getImportedQuestIds = () => {
     if (!currentTree) return [];
-    // Récupération des IDs explicitement importés OU déjà affectés à un palier
     const explicitImports = currentTree.imported_quests || [];
     const floorQuests = (currentTree.floors || []).flatMap(f => f.quests || []);
     return Array.from(new Set([...explicitImports, ...floorQuests]));
@@ -93,7 +92,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   // Liste des objets quêtes correspondants aux quêtes importées dans cet arbre
   const importedQuestsList = (quests || []).filter(q => q && importedQuestIds.includes(q.id));
 
-  // Liste de toutes les autres quêtes existantes (disponibles à l'importation)
+  // Liste de toutes les autres quêtes existantes (disponibles à l'importation - globales ET locales confondues !)
   const availableToImportQuests = (quests || []).filter(q => q && !importedQuestIds.includes(q.id));
 
   // Trouver tous les IDs de quêtes déjà positionnés dans un palier quelconque de l'arbre
@@ -225,27 +224,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  const handleDuplicateTreeAsLocal = async (treeToCopy) => {
-    if (!treeToCopy) return;
-    const { data, error } = await supabase
-      .from('trees')
-      .insert([{ 
-        name: `${treeToCopy.name} (Copie)`, 
-        owner_id: currentUserId, 
-        floors: treeToCopy.floors || [], 
-        imported_quests: treeToCopy.imported_quests || [],
-        visibility: 'private', 
-        max_team_constraint: treeToCopy.max_team_constraint || 1 
-      }])
-      .select().single();
-
-    if (!error && data) {
-      if (typeof setTrees === 'function') setTrees(prev => ({ ...prev, [data.id]: data }));
-      setActiveTreeId(data.id);
-      setActiveModal(null);
-    }
-  };
-
   const updateCurrentTreeInState = (updatedFields) => {
     if (!currentTree || !isOwnerOfCurrentTree) return; 
     if (typeof setTrees === 'function') {
@@ -288,6 +266,17 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     });
   };
 
+  // Mettre à jour le nombre de quêtes à tirer au sort (count) pour le mode aléatoire
+  const handleUpdateFloorCount = (floorId, newCount) => {
+    if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
+    const val = Math.max(1, parseInt(newCount, 10) || 1);
+    updateCurrentTreeInState({
+      floors: currentTree.floors.map(f => 
+        f.floorId === floorId ? { ...f, count: val } : f
+      )
+    });
+  };
+
   const handleToggleDifficultyInFloor = (floorId, diffLevel) => {
     if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
     updateCurrentTreeInState({
@@ -315,7 +304,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           quests: isSelected ? f.quests.filter(id => id !== questId) : [...(f.quests || []), questId]
         };
       }
-      // 2. EXCLUSION : On retire obligatoirement la quête de tous les autres paliers si elle vient d'y être assignée
+      // 2. EXCLUSION : On retire obligatoirement la quête de tous les autres paliers
       return {
         ...f,
         quests: (f.quests || []).filter(id => id !== questId)
@@ -363,7 +352,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         theme: newQuestTheme, 
         difficulty: String(calculatedDifficulty), 
         owner_id: currentUserId, 
-        visibility: 'private',
+        visibility: 'private', // Crée par défaut une quête locale (private)
         is_collaborative: isCollaborative,
         required_partners: isCollaborative ? requiredPartners : 2
       }])
@@ -371,7 +360,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     if (!error && data) {
       if (typeof setQuests === 'function') setQuests(prev => [...(prev || []), data]);
-      // Automatiquement importée dans l'arbre actif à la création
+      // Automatiquement importée dans l'arbre actif à la création si un arbre est ouvert
       if (currentTree) {
         handleImportQuestToTree(data.id);
       }
@@ -381,12 +370,21 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // Liste filtrée d'importation globale (Modale)
+  // Liste filtrée d'importation (Modale qui combine les quêtes globales et locales)
   const filteredAvailableImports = availableToImportQuests.filter(q => {
     const matchesSearch = q.name.toLowerCase().includes(importSearchQuery.toLowerCase()) || 
                           q.desc.toLowerCase().includes(importSearchQuery.toLowerCase());
     const matchesTheme = importTheme === 'all' || q.theme === importTheme;
-    return matchesSearch && matchesTheme;
+    
+    // Filtrer par Origine (Globales vs Locales)
+    // On considère comme "Locale" une quête privée appartenant à l'utilisateur actuel
+    const isLocal = q.owner_id === currentUserId;
+    const matchesOrigin = 
+      importOrigin === 'all' || 
+      (importOrigin === 'local' && isLocal) || 
+      (importOrigin === 'global' && !isLocal);
+
+    return matchesSearch && matchesTheme && matchesOrigin;
   });
 
   return (
@@ -407,12 +405,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             </div>
           </div>
 
-          {/* Importer depuis le Pool Global */}
+          {/* Importer depuis la bibliothèque */}
           <div className="relative group/btn flex items-center justify-center">
             <button onClick={() => setActiveModal('import_library')} className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 text-sm flex items-center justify-center shadow-2xs hover:bg-purple-50 hover:border-purple-400 hover:text-purple-600 transition-all cursor-pointer">📥</button>
             <div className="absolute right-12 scale-0 group-hover/btn:scale-100 opacity-0 group-hover/btn:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right text-white">
               <p className="text-[11px] font-black">Importer des quêtes</p>
-              <p className="text-[9px] text-slate-400">Piocher dans la bibliothèque globale</p>
+              <p className="text-[9px] text-slate-400">Piocher dans vos quêtes locales ou globales</p>
             </div>
           </div>
 
@@ -487,6 +485,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     <div className="flex flex-wrap justify-between items-center border-b border-slate-100 pb-3 gap-3">
                       <div className="flex items-center gap-3">
                         <span className="bg-purple-700 text-white font-extrabold px-2.5 py-1 text-xs rounded-lg shadow-sm">PALIER {floor.floorId}</span>
+                        
+                        {/* Type de Palier (Statique ou Aléatoire) */}
                         <button 
                           disabled={!isOwnerOfCurrentTree}
                           onClick={() => toggleFloorMode(floor.floorId)}
@@ -497,6 +497,24 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           {floor.mode === 'static' ? '📌 Statique' : '🎲 Aléatoire'}
                         </button>
 
+                        {/* RÉINTÉGRATION : Nb de missions à tirer si Aléatoire */}
+                        {floor.mode === 'random' && (
+                          <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                            <span className="text-[10px] font-black text-amber-800">Tirer :</span>
+                            <input 
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={floor.count || 2}
+                              disabled={!isOwnerOfCurrentTree}
+                              onChange={(e) => handleUpdateFloorCount(floor.floorId, e.target.value)}
+                              className="w-10 bg-white border border-amber-300 rounded text-center text-xs font-black text-amber-950 focus:ring-amber-500"
+                            />
+                            <span className="text-[10px] font-extrabold text-amber-800">missions</span>
+                          </div>
+                        )}
+
+                        {/* Filtre par Difficulté */}
                         <div className="flex items-center bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 gap-1" title="Difficultés autorisées">
                           {[1, 2, 3].map(level => {
                             const isChecked = allowedDiffs.includes(level);
@@ -522,7 +540,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     </div>
 
                     <div className="space-y-2">
-                      <div className="text-xs font-bold text-slate-500 uppercase">Quêtes disponibles dans l'arbre pour ce palier :</div>
+                      <div className="text-xs font-bold text-slate-500 uppercase">Quêtes de cet arbre valides pour ce palier :</div>
                       <div className="flex flex-wrap gap-2">
                         {importedQuestsList
                           .filter(q => allowedDiffs.includes(Number(q.difficulty)))
@@ -543,7 +561,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                         ? 'bg-slate-100 text-slate-400 border-slate-200 line-through opacity-50 cursor-not-allowed'
                                         : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                                   }`}
-                                  title={isOtherFloorSelected ? "Cette quête est déjà affectée à un autre palier." : "Cliquer pour affecter au palier"}
+                                  title={isOtherFloorSelected ? "Déjà affectée à un autre palier" : "Cliquer pour affecter au palier"}
                                 >
                                   <span>{quest.name}</span>
                                   {isQuestCollab && <span className="text-[10px]">🤝 {quest.required_partners}p</span>}
@@ -553,7 +571,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 {/* Bouton Inspection rapide */}
                                 <button 
                                   onClick={() => setInspectedQuest(quest)}
-                                  className="p-1 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[10px]"
+                                  className={`p-1 rounded border text-[10px] transition-all ${
+                                    inspectedQuest?.id === quest.id ? 'bg-purple-100 border-purple-300' : 'bg-slate-100 hover:bg-slate-200 border-slate-200'
+                                  }`}
                                   title="Inspecter la quête"
                                 >
                                   👁️
@@ -650,9 +670,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     >
                       <div className="flex justify-between items-start gap-2">
                         <span className="font-extrabold text-slate-900 text-xs leading-tight">{q.name}</span>
-                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border whitespace-nowrap ${getQuestBadgeStyle(q)}`}>
-                          {q.difficulty}★ {q.theme}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border whitespace-nowrap ${getQuestBadgeStyle(q)}`}>
+                            {q.difficulty}★ {q.theme}
+                          </span>
+                          {/* Badge indicateur d'origine local / global */}
+                          <span className={`text-[7px] font-black px-1 rounded ${q.owner_id === currentUserId ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
+                            {q.owner_id === currentUserId ? '🏠 locale' : '🌍 globale'}
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold pt-1 border-t border-slate-100">
@@ -685,7 +711,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       {/* ==================== MODALES ==================== */}
 
-      {/* MODALE BIBLIOTHÈQUE D'IMPORTATION GLOBALE */}
+      {/* MODALE BIBLIOTHÈQUE D'IMPORTATION (GLOBALE & LOCALE) */}
       {activeModal === 'import_library' && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50 animate-fade-in">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 relative flex flex-col max-h-[80vh]">
@@ -693,10 +719,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             
             <div className="border-b pb-3 mb-4">
               <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">📥 Importer des Quêtes dans l'Arbre</h3>
-              <p className="text-[11px] text-slate-500 font-bold">Sélectionnez les quêtes globales de l'application à intégrer à votre arbre de formation</p>
+              <p className="text-[11px] text-slate-500 font-bold">Sélectionnez les quêtes de l'application à intégrer à votre arbre de formation</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-4">
+            {/* BARRE DE FILTRES AMÉLIORÉE */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <input 
                 type="text" 
                 placeholder="Rechercher..." 
@@ -710,29 +737,42 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 <option value="env">Environnement 🌳</option>
                 <option value="tech">Technologie 💻</option>
               </select>
+              <select value={importOrigin} onChange={(e) => setImportOrigin(e.target.value)} className="border rounded-lg p-2 bg-white text-xs font-bold">
+                <option value="all">Toutes les quêtes (Globales & Locales)</option>
+                <option value="local">Uniquement mes quêtes locales 🏠</option>
+                <option value="global">Uniquement les quêtes globales 🌍</option>
+              </select>
             </div>
 
+            {/* LISTE DES QUÊTES DISPONIBLES À L'IMPORTATION */}
             <div className="space-y-2 overflow-y-auto flex-1 pr-1">
               {filteredAvailableImports.length === 0 ? (
-                <div className="text-center py-8 text-xs text-slate-400 font-bold">Aucune autre quête globale disponible pour importation.</div>
+                <div className="text-center py-8 text-xs text-slate-400 font-bold">Aucune autre quête disponible avec ces filtres.</div>
               ) : (
-                filteredAvailableImports.map((q) => (
-                  <div key={q.id} className="p-3 border rounded-xl flex justify-between items-center bg-slate-50/50 hover:bg-slate-50 transition-all">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-slate-900 text-xs">{q.name}</span>
-                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${getQuestBadgeStyle(q)}`}>{q.theme}</span>
+                filteredAvailableImports.map((q) => {
+                  const isLocal = q.owner_id === currentUserId;
+                  return (
+                    <div key={q.id} className="p-3 border rounded-xl flex justify-between items-center bg-slate-50/50 hover:bg-slate-50 transition-all">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-slate-900 text-xs">{q.name}</span>
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${getQuestBadgeStyle(q)}`}>{q.theme}</span>
+                          {/* Badge d'origine */}
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${isLocal ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-gray-100 text-gray-700'}`}>
+                            {isLocal ? '🏠 Locale' : '🌍 Globale'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 line-clamp-1 mt-1">{q.desc}</p>
                       </div>
-                      <p className="text-[10px] text-slate-400 line-clamp-1 mt-1">{q.desc}</p>
+                      <button 
+                        onClick={() => handleImportQuestToTree(q.id)}
+                        className="bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[10px] uppercase tracking-wide px-3 py-1.5 rounded-lg transition-all"
+                      >
+                        Ajouter +
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => handleImportQuestToTree(q.id)}
-                      className="bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[10px] uppercase tracking-wide px-3 py-1.5 rounded-lg transition-all"
-                    >
-                      Ajouter +
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
