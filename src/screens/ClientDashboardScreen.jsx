@@ -1,5 +1,5 @@
 // src/screens/ClientDashboardScreen.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
 export default function ClientDashboardScreen({ trees = [], quests = [] }) {
@@ -14,9 +14,13 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
   }); 
   const [sessionStudents, setSessionStudents] = useState([]); 
   const [sessionQuests, setSessionQuests] = useState([]); 
-  const [sessionFloors, setSessionFloors] = useState([]); // Stockage dynamique des paliers de la session
+  const [sessionFloors, setSessionFloors] = useState([]); 
   const [allProductions, setAllProductions] = useState([]); 
   const [loading, setLoading] = useState(true);
+
+  // ÉTAT DE LA MODALE KPI
+  const [activeKpiIndex, setActiveKpiIndex] = useState(null); // null, 0, 1, 2, ou 3
+  const slideRef = useRef(null);
 
   // FILTRES DRH PERSISTANTS
   const [selectedStudents, setSelectedStudents] = useState(() => {
@@ -36,7 +40,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   });
 
-  // FONCTION DE CHANGEMENT DE SESSION
+  // CHANGEMENT DE SESSION
   const handleSessionChange = (e) => {
     const sessionDocId = e.target.value;
     const found = sessions.find(s => String(s.id) === String(sessionDocId));
@@ -47,7 +51,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   };
 
-  // SECURITÉ ANTI-FANTÔME
   const isSelectedSessionValid = selectedSession && sessions.some(s => String(s.id) === String(selectedSession.id));
   const currentSessionSafe = isSelectedSessionValid ? selectedSession : (sessions[0] || null);
 
@@ -67,7 +70,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
   }, [currentSessionSafe]);
 
-  // 1. CHARGEMENT INITIAL DES SESSIONS ET DES LIVRABLES (PRODUCTIONS)
+  // 1. INITIALISATION DES SESSIONS ET PRODUCTIONS
   useEffect(() => {
     const initializeDRHData = async () => {
       try {
@@ -75,12 +78,10 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) return;
 
-        const hrUserId = authUser.id;
-
         const { data: fetchedSessions, error: sError } = await supabase
           .from('sessions')
           .select('*')
-          .contains('drh_ids', JSON.stringify([hrUserId]));
+          .contains('drh_ids', JSON.stringify([authUser.id]));
 
         if (sError) throw sError;
 
@@ -95,7 +96,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           setSelectedSession(null);
         }
 
-        // Tri par date de création descendante sur la clé SQL correcte 'created_at'
         const { data: fetchedProductions, error: pError } = await supabase
           .from('productions')
           .select('*')
@@ -105,7 +105,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
         if (fetchedProductions) setAllProductions(fetchedProductions);
 
       } catch (err) {
-        console.error("Erreur d'initialisation du tableau de bord client :", err);
+        console.error("Erreur d'initialisation :", err);
       } finally {
         setLoading(false);
       }
@@ -114,7 +114,7 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     initializeDRHData();
   }, []); 
 
-  // 2. EXTRACTION DYNAMIQUE DES QUÊTES, PALIERS ET APPRENANTS
+  // 2. EXTRACTION DYNAMIQUE DES PALIERS, QUÊTES ET PROFILS
   useEffect(() => {
     if (!currentSessionSafe) {
       setSessionStudents([]);
@@ -124,7 +124,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
     }
 
     const fetchCohortContext = async () => {
-      // --- PARTIE A : CHARGEMENT ISOLE DES COLLABORATEURS ---
       try {
         if (currentSessionSafe.session_code) {
           const { data: profiles, error: pError } = await supabase
@@ -138,7 +137,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             const formattedStudents = profiles.map(p => {
               const savedFloor = localStorage.getItem(`ecolearn_floor_${p.id}_${currentSessionSafe.tree_id}`);
               const maxFloor = savedFloor ? parseInt(savedFloor, 10) + 1 : 1;
-              
               return {
                 uid: p.id,
                 name: p.email ? p.email.split('@')[0] : "Apprenant",
@@ -148,23 +146,16 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
             });
             setSessionStudents(formattedStudents);
 
-            // Présélection automatique de tous les étudiants s'il n'y a pas de sauvegarde antérieure
             const savedStudents = sessionStorage.getItem('drh_filter_students');
             if (!savedStudents || JSON.parse(savedStudents).length === 0) {
               setSelectedStudents(formattedStudents);
             }
-          } else {
-            setSessionStudents([]);
           }
-        } else {
-          setSessionStudents([]);
         }
       } catch (err) {
-        console.error("Erreur lors du chargement des profils collaborateurs :", err);
-        setSessionStudents([]);
+        console.error("Erreur chargement profils :", err);
       }
 
-      // --- PARTIE B : CHARGEMENT ET EXTRACTION DES PALIERS / QUETES ---
       try {
         if (currentSessionSafe.tree_id) {
           const { data: treeData, error: tError } = await supabase
@@ -176,28 +167,19 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           if (!tError && treeData && treeData.floors) {
             const extractedQuestIds = [];
             const floorsObj = typeof treeData.floors === 'string' ? JSON.parse(treeData.floors) : treeData.floors;
-            
             let normalizedFloors = [];
 
             if (Array.isArray(floorsObj)) {
               normalizedFloors = floorsObj.map((floor, index) => {
                 const qIds = floor && Array.isArray(floor.quests) ? floor.quests.map(String) : [];
                 extractedQuestIds.push(...qIds);
-                return {
-                  id: index + 1,
-                  name: floor.name || `Palier ${index + 1}`,
-                  questIds: qIds
-                };
+                return { id: index + 1, name: floor.name || `Palier ${index + 1}`, questIds: qIds };
               });
             } else if (typeof floorsObj === 'object' && floorsObj !== null) {
               normalizedFloors = Object.entries(floorsObj).map(([key, floor]) => {
                 const qIds = floor && Array.isArray(floor.quests) ? floor.quests.map(String) : [];
                 extractedQuestIds.push(...qIds);
-                return {
-                  id: key,
-                  name: floor.name || `Palier ${key}`,
-                  questIds: qIds
-                };
+                return { id: key, name: floor.name || `Palier ${key}`, questIds: qIds };
               });
             }
 
@@ -205,7 +187,6 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
             if (extractedQuestIds.length > 0) {
               const uniqueQuestIds = [...new Set(extractedQuestIds)];
-
               const { data: fetchedQuests, error: qError } = await supabase
                 .from('quests')
                 .select('*')
@@ -214,75 +195,50 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
               if (qError) throw qError;
               if (fetchedQuests) {
                 setSessionQuests(fetchedQuests);
-
-                // Présélection automatique de toutes les quêtes s'il n'y a pas de sauvegarde antérieure
                 const savedQuests = sessionStorage.getItem('drh_filter_quests');
                 if (!savedQuests || JSON.parse(savedQuests).length === 0) {
                   setSelectedQuests(fetchedQuests);
                 }
-                return;
               }
             }
           }
         }
-        setSessionQuests([]);
-        setSessionFloors([]);
       } catch (err) {
-        console.error("Erreur lors de l'extraction des quêtes depuis l'arbre :", err);
-        setSessionQuests([]);
-        setSessionFloors([]);
+        console.error("Erreur extraction quêtes :", err);
       }
     };
 
     fetchCohortContext();
   }, [currentSessionSafe?.id, currentSessionSafe?.session_code, currentSessionSafe?.tree_id]);
 
-  // PROTECTION DE CHARGEMENT DE SÉCURITÉ
   if (loading) {
     return <div className="max-w-7xl mx-auto px-8 py-8 text-center text-xs font-mono text-slate-400">Chargement de l'espace de pilotage...</div>;
   }
 
-  // 3. LOGIQUE DES FILTRES ET DES CALCULS KPI
+  // 3. LOGIQUE KPI & CALCULS EN TEMPS RÉEL (CORRIGÉS)
   const studentIdsInCurrentSession = sessionStudents.map(s => s.uid);
   const sessionQuestIdsOnly = sessionQuests.map(q => String(q.id));
 
   const activeSelectedStudents = selectedStudents.filter(s => studentIdsInCurrentSession.includes(s.uid));
   const activeSelectedQuests = selectedQuests.filter(q => sessionQuestIdsOnly.includes(String(q.id)));
 
-  // FILTRAGE DES LIVRABLES (En utilisant les bonnes clés de la base de données !)
+  // Filtrage des livrables
   const filteredProductions = allProductions.filter(p => {
     if (!p || !currentSessionSafe) return false;
-
-    // Correction ici : student_id et quest_id au lieu de studentId/questId
     const isStudentInSession = studentIdsInCurrentSession.includes(p.student_id);
     const matchesSessionCode = p.session_code === currentSessionSafe.session_code;
-
     if (!isStudentInSession || !matchesSessionCode) return false;
+    if (activeSelectedStudents.length === 0 || activeSelectedQuests.length === 0) return false;
 
-    // Si l'utilisateur décoche tout volontairement, on n'affiche aucun livrable
-    if (activeSelectedStudents.length === 0 || activeSelectedQuests.length === 0) {
-      return false;
-    }
-
-    const matchesStudentFilter = activeSelectedStudents.some(s => s.uid === p.student_id);
-    const matchesQuestFilter = activeSelectedQuests.some(q => String(q.id) === String(p.quest_id));
-
-    return matchesStudentFilter && matchesQuestFilter;
+    return activeSelectedStudents.some(s => s.uid === p.student_id) && 
+           activeSelectedQuests.some(q => String(q.id) === String(p.quest_id));
   });
 
   const uniqueProductionsGlobal = filteredProductions.filter(p => !p.content?.startsWith("[Importé"));
-  
-  const getPointsByDifficulty = (diff) => {
-    const d = parseInt(diff, 10);
-    if (d === 3) return 500;
-    if (d === 2) return 250;
-    return 100;
-  };
 
-  // CALCULS STATISTIQUES DES ETUDIANTS
+  // XP cumulée
   let totalXP = 0;
   const studentsProgress = sessionStudents.map(student => {
-    // Correction ici : p.student_id et p.quest_id
     const studentProds = allProductions.filter(p => 
       p.student_id === student.uid && 
       p.session_code === currentSessionSafe.session_code &&
@@ -292,7 +248,10 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
     const studentPoints = studentProds.reduce((sum, prod) => {
       const originalQuest = sessionQuests.find(q => String(q.id) === String(prod.quest_id));
-      if (originalQuest) return sum + getPointsByDifficulty(originalQuest.difficulty);
+      if (originalQuest) {
+        const d = parseInt(originalQuest.difficulty, 10);
+        return sum + (d === 3 ? 500 : d === 2 ? 250 : 100);
+      }
       return sum + 100;
     }, 0);
 
@@ -300,23 +259,17 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
       totalXP += studentPoints;
     }
 
-    return {
-      ...student,
-      xp: studentPoints,
-      livrablesCount: studentUniqueProds.length
-    };
+    return { ...student, xp: studentPoints, livrablesCount: studentUniqueProds.length };
   });
 
-  // CALCULS DU MINI-GRAPHE PAR PALIER
+  // Calcul du mini-graphe par palier (Moyenne de complétion)
   const floorsWithProgress = sessionFloors.map(floor => {
     const questIds = floor.questIds;
     if (questIds.length === 0 || sessionStudents.length === 0) {
       return { ...floor, progress: 0, questCount: 0 };
     }
 
-    let completedResolutionsCount = 0;
-
-    // Pour chaque quête du palier, on compte combien d'étudiants ont soumis au moins un livrable
+    let completedCount = 0;
     questIds.forEach(qId => {
       sessionStudents.forEach(student => {
         const hasSubmitted = allProductions.some(p => 
@@ -324,18 +277,14 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           String(p.quest_id) === String(qId) && 
           p.session_code === currentSessionSafe.session_code
         );
-        if (hasSubmitted) {
-          completedResolutionsCount++;
-        }
+        if (hasSubmitted) completedCount++;
       });
     });
 
-    const totalPossibleResolutions = sessionStudents.length * questIds.length;
-    const progressPct = Math.round((completedResolutionsCount / totalPossibleResolutions) * 100);
-
+    const totalPossible = sessionStudents.length * questIds.length;
     return {
       ...floor,
-      progress: progressPct,
+      progress: Math.round((completedCount / totalPossible) * 100),
       questCount: questIds.length
     };
   });
@@ -346,6 +295,125 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
   const availableStudents = [...sessionStudents].filter(st => !activeSelectedStudents.some(sel => sel.uid === st.uid));
   const availableQuests = [...sessionQuests].filter(q => !activeSelectedQuests.some(sel => String(sel.id) === String(q.id)));
+
+  // 4. LOGIQUE EXPORT STYLE "GOOGLE SLIDE"
+  const handleDownloadSlide = (kpiTitle) => {
+    const originalContent = slideRef.current.innerHTML;
+    
+    // Création d'une fenêtre temporaire formatée en 16:9 pour impression PDF / Impression d'image
+    const printWindow = window.open('', '_blank', 'width=1280,height=720');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Export Slide - ${kpiTitle}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+            body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background-color: #0f172a; color: white; }
+            .slide-canvas {
+              width: 1280px; height: 720px;
+              box-sizing: border-box;
+              display: flex; flex-col; justify-content: space-between;
+              padding: 60px; position: relative;
+              background: radial-gradient(circle at 80% 20%, #1e1b4b 0%, #0f172a 100%);
+            }
+          </style>
+        </head>
+        <body>
+          <div class="slide-canvas">
+            <div>
+              <div class="text-indigo-400 font-mono text-xs uppercase tracking-widest mb-1">EcoLearn - Dashboard Audit</div>
+              <h1 class="text-4xl font-black text-white tracking-tight uppercase">${kpiTitle}</h1>
+              <div class="text-slate-400 text-sm font-mono mt-1">Cohorte : ${currentSessionSafe?.session_code}</div>
+            </div>
+            
+            <div class="my-auto flex justify-center items-center">
+              <div class="scale-150 transform origin-center">
+                ${originalContent}
+              </div>
+            </div>
+
+            <div class="flex justify-between items-center text-xs text-slate-500 font-mono border-t border-slate-800/80 pt-4">
+              <span>Généré le ${new Date().toLocaleDateString()}</span>
+              <span>Propriété Exclusive & Confidentielle</span>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // DONNÉES UTILES POUR LE CARROUSEL DES MODALES
+  const kpiCards = [
+    {
+      title: "👥 Effectif total",
+      subtitle: "Nombre total de collaborateurs actifs enregistrés",
+      value: `${totalStudents} apprenants`,
+      desc: `Tous inscrits sur le code d'accès de session "${currentSessionSafe?.session_code}".`,
+      renderGraphic: () => (
+        <div className="flex flex-col items-center justify-center p-6 bg-slate-900 rounded-3xl border border-slate-800 text-white w-[380px]">
+          <div className="text-6xl mb-2">👥</div>
+          <div className="text-5xl font-black">{totalStudents}</div>
+          <div className="text-xs text-indigo-400 uppercase tracking-widest mt-2 font-mono">Inscrits à la cohorte</div>
+        </div>
+      )
+    },
+    {
+      title: "⚡ Expérience cumulée",
+      subtitle: "Points d'expérience (XP) acquis par l'équipe",
+      value: `${totalXP} XP`,
+      desc: "Représente la somme cumulée de l'effort et de la validation des livrables pour la sélection d'apprenants active.",
+      renderGraphic: () => (
+        <div className="flex flex-col items-center justify-center p-6 bg-slate-900 rounded-3xl border border-slate-800 text-white w-[380px]">
+          <div className="text-6xl mb-2">⚡</div>
+          <div className="text-5xl font-black text-blue-400">{totalXP} XP</div>
+          <div className="text-xs text-slate-400 uppercase tracking-widest mt-2 font-mono">Volume d'apprentissage global</div>
+        </div>
+      )
+    },
+    {
+      title: "🎯 Taux d'Engagement",
+      subtitle: "Ratio de collaborateurs ayant validé au moins un livrable",
+      value: `${engagementRate}%`,
+      desc: `Sur ${totalStudents} personnes inscrites, ${activeStudentsCount} ont déjà soumis des dossiers d'évaluation validés.`,
+      renderGraphic: () => (
+        <div className="flex flex-col items-center justify-center p-6 bg-slate-900 rounded-3xl border border-slate-800 text-white w-[380px] space-y-4">
+          <div className="relative flex items-center justify-center h-28 w-28 rounded-full border-8 border-slate-800">
+            <div className="absolute inset-0 rounded-full border-8 border-emerald-500 border-t-transparent animate-spin-slow" />
+            <span className="text-2xl font-black text-emerald-400">{engagementRate}%</span>
+          </div>
+          <div className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">Implication de la cohorte</div>
+        </div>
+      )
+    },
+    {
+      title: "🏔️ Résolution par Palier",
+      subtitle: "Pourcentage de complétion moyen des quêtes par palier de compétences",
+      value: "Détail par paliers",
+      desc: "Mesure la progression réelle globale. Pour chaque palier, calcul de la complétion effective par rapport au volume total de quêtes attendu.",
+      renderGraphic: () => (
+        <div className="p-6 bg-slate-900 rounded-3xl border border-slate-800 text-white w-[420px] space-y-3">
+          {floorsWithProgress.map(floor => (
+            <div key={floor.id} className="space-y-1">
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-300">{floor.name}</span>
+                <span className="text-indigo-400 font-mono">{floor.progress}%</span>
+              </div>
+              <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${floor.progress}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    }
+  ];
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6 space-y-6 text-slate-800 antialiased">
@@ -387,31 +455,59 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
 
       {currentSessionSafe && (
         <>
-          {/* COMPTEURS ET INDICES DE PERFORMANCE (KPI) */}
+          {/* COMPTEURS ET INDICES DE PERFORMANCE (KPI) CLIQUABLES */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden flex flex-col justify-center">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">👥 Effectif total</div>
+            
+            {/* KPI 1 : Effectif */}
+            <div 
+              onClick={() => setActiveKpiIndex(0)}
+              className="bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-slate-300 cursor-pointer transition-all duration-200 space-y-1 relative overflow-hidden flex flex-col justify-center group"
+            >
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider group-hover:text-slate-600">👥 Effectif total</div>
               <div className="text-2xl font-black text-slate-900">{totalStudents} <span className="text-[11px] font-mono text-slate-400 font-normal">collaborateurs</span></div>
-              <div className="text-[9px] font-mono text-slate-400">Inscrits sur le code {currentSessionSafe.session_code}</div>
-            </div>
-
-            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden flex flex-col justify-center">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">⚡ Expérience cumulée</div>
-              <div className="text-2xl font-black text-blue-600">{totalXP} <span className="text-[11px] font-mono text-slate-400 font-normal">XP</span></div>
-              <div className="text-[9px] font-mono text-slate-400">Total pour la sélection active</div>
-            </div>
-
-            <div className="bg-white border rounded-2xl p-4 shadow-sm space-y-1 relative overflow-hidden flex flex-col justify-center">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">🎯 Taux d'Engagement</div>
-              <div className="text-2xl font-black text-emerald-600">{engagementRate}%</div>
-              <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden mt-1">
-                <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${engagementRate}%` }} />
+              <div className="text-[9px] font-mono text-slate-400 flex justify-between">
+                <span>Inscrits sur le code {currentSessionSafe.session_code}</span>
+                <span className="text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Zoom 🔍</span>
               </div>
             </div>
 
-            {/* GRAPHE DE PROGRESSION PAR PALIER (Remplace l'ancien rectangle fixe) */}
-            <div className="bg-white border rounded-2xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">🏔️ Résolution par Palier</div>
+            {/* KPI 2 : XP */}
+            <div 
+              onClick={() => setActiveKpiIndex(1)}
+              className="bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-slate-300 cursor-pointer transition-all duration-200 space-y-1 relative overflow-hidden flex flex-col justify-center group"
+            >
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider group-hover:text-slate-600">⚡ Expérience cumulée</div>
+              <div className="text-2xl font-black text-blue-600">{totalXP} <span className="text-[11px] font-mono text-slate-400 font-normal">XP</span></div>
+              <div className="text-[9px] font-mono text-slate-400 flex justify-between">
+                <span>Total pour la sélection active</span>
+                <span className="text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Zoom 🔍</span>
+              </div>
+            </div>
+
+            {/* KPI 3 : Engagement */}
+            <div 
+              onClick={() => setActiveKpiIndex(2)}
+              className="bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-slate-300 cursor-pointer transition-all duration-200 space-y-1 relative overflow-hidden flex flex-col justify-center group"
+            >
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider group-hover:text-slate-600">🎯 Taux d'Engagement</div>
+              <div className="text-2xl font-black text-emerald-600">{engagementRate}%</div>
+              <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden mt-1 relative">
+                <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${engagementRate}%` }} />
+              </div>
+              <div className="text-[9px] font-mono text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity text-right">
+                Zoom 🔍
+              </div>
+            </div>
+
+            {/* KPI 4 : Résolution par Palier */}
+            <div 
+              onClick={() => setActiveKpiIndex(3)}
+              className="bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-indigo-300 cursor-pointer transition-all duration-200 relative overflow-hidden flex flex-col justify-between min-h-[110px] group"
+            >
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex justify-between">
+                <span>🏔️ Résolution par Palier</span>
+                <span className="text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Zoom 🔍</span>
+              </div>
               <div className="space-y-2 overflow-y-auto max-h-[85px] pr-1">
                 {floorsWithProgress.length === 0 ? (
                   <div className="text-[10px] italic text-slate-400 font-mono">Aucun palier disponible</div>
@@ -615,6 +711,81 @@ export default function ClientDashboardScreen({ trees = [], quests = [] }) {
           </div>
         </>
       )}
+
+      {/* MODALE POP-UP KPI INTERACTIVE AVEC OPTION EXPORT GOOGLE SLIDES */}
+      {activeKpiIndex !== null && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-all duration-300">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full shadow-2xl text-white overflow-hidden flex flex-col">
+            
+            {/* Header */}
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+              <div>
+                <h2 className="text-lg font-black tracking-tight text-white uppercase">{kpiCards[activeKpiIndex].title}</h2>
+                <p className="text-xs text-slate-400 mt-1">{kpiCards[activeKpiIndex].subtitle}</p>
+              </div>
+              <button 
+                onClick={() => setActiveKpiIndex(null)}
+                className="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors text-xs font-mono font-bold"
+              >
+                🅇 Fermer
+              </button>
+            </div>
+
+            {/* Contenu Interactif (Slide Canvas) */}
+            <div className="p-10 flex flex-col items-center justify-center space-y-8 bg-gradient-to-b from-slate-900 to-slate-950 min-h-[350px]">
+              
+              {/* Conteneur de rendu du graphique/compteur */}
+              <div ref={slideRef} className="flex justify-center w-full">
+                {kpiCards[activeKpiIndex].renderGraphic()}
+              </div>
+
+              {/* Zone d'explication de l'analyse */}
+              <div className="text-center max-w-md">
+                <div className="text-3xl font-black mb-1">{kpiCards[activeKpiIndex].value}</div>
+                <p className="text-xs text-slate-400 font-medium leading-relaxed">
+                  {kpiCards[activeKpiIndex].desc}
+                </p>
+              </div>
+            </div>
+
+            {/* Footer Navigation + Export */}
+            <div className="p-6 border-t border-slate-800 bg-slate-950/50 flex justify-between items-center">
+              
+              {/* Bouton Export Google Slide */}
+              <button
+                type="button"
+                onClick={() => handleDownloadSlide(kpiCards[activeKpiIndex].title)}
+                className="bg-indigo-600 hover:bg-indigo-500 text-xs font-black tracking-wide uppercase px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 text-white"
+              >
+                <span>📊</span> Générer Slide (16:9)
+              </button>
+
+              {/* Navigation Carrousel */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={activeKpiIndex === 0}
+                  onClick={() => setActiveKpiIndex(prev => prev - 1)}
+                  className="bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none px-3.5 py-2 rounded-xl text-sm font-black transition-colors"
+                >
+                  ◀ Précédent
+                </button>
+                <button
+                  type="button"
+                  disabled={activeKpiIndex === kpiCards.length - 1}
+                  onClick={() => setActiveKpiIndex(prev => prev + 1)}
+                  className="bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none px-3.5 py-2 rounded-xl text-sm font-black transition-colors"
+                >
+                  Suivant ▶
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
