@@ -63,10 +63,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [newSessionCode, setNewSessionCode] = useState('');
   const [newSessionDate, setNewSessionDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Recherche RH & Cache d'emails local
-  const [drhSearchQuery, setDrhSearchQuery] = useState('');
-  const [drhSuggestions, setDrhSuggestions] = useState([]);
-  const [drhEmailsCache, setDrhEmailsCache] = useState({});
+  // Recherche Superviseurs & Cache d'emails local
+  const [supervisorSearchQuery, setSupervisorSearchQuery] = useState('');
+  const [supervisorSuggestions, setSupervisorSuggestions] = useState([]);
+  const [supervisorEmailsCache, setSupervisorEmailsCache] = useState({});
 
   // Config des blocs personnalisés
   const [customBlockConfig, setCustomBlockConfig] = useState({
@@ -93,19 +93,19 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   }, []);
 
   // Charger le dictionnaire des profils pour résoudre ID -> Email
-  const loadDrhEmailsCache = async (drhIds) => {
-    if (!drhIds || drhIds.length === 0) return;
+  const loadSupervisorEmailsCache = async (supervisorIds) => {
+    if (!supervisorIds || supervisorIds.length === 0) return;
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, email')
-      .in('id', drhIds);
+      .in('id', supervisorIds);
     
     if (profiles && !error) {
-      const newCache = { ...drhEmailsCache };
+      const newCache = { ...supervisorEmailsCache };
       profiles.forEach(p => {
         newCache[p.id] = p.email;
       });
-      setDrhEmailsCache(newCache);
+      setSupervisorEmailsCache(newCache);
     }
   };
 
@@ -128,9 +128,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       }));
       setSessions(mappedSessions);
 
-      const allDrhIds = [...new Set(mappedSessions.flatMap(s => s.drh_ids || []))];
-      if (allDrhIds.length > 0) {
-        await loadDrhEmailsCache(allDrhIds);
+      // drh_ids sert de stockage pour nos superviseurs en BDD
+      const allSupervisorIds = [...new Set(mappedSessions.flatMap(s => s.drh_ids || []))];
+      if (allSupervisorIds.length > 0) {
+        await loadSupervisorEmailsCache(allSupervisorIds);
       }
     }
   };
@@ -152,28 +153,44 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     ? currentSession.planning.filter(b => b.type === 'palier').map(b => b.floorId)
     : [];
 
-  // Recherche dynamique DRH
+  // Recherche dynamique des profils Superviseurs (Correction du bug de recherche)
   useEffect(() => {
-    const searchDRH = async () => {
-      if (drhSearchQuery.trim().length < 2) {
-        setDrhSuggestions([]);
+    const searchSupervisors = async () => {
+      const queryTrimmed = supervisorSearchQuery.trim();
+      if (queryTrimmed.length < 2) {
+        setSupervisorSuggestions([]);
         return;
       }
       try {
-        let query = supabase.from('profiles').select('id, email, role').ilike('email', `%${drhSearchQuery}%`);
-        const currentDrhIds = Array.isArray(currentSession?.drh_ids) ? currentSession.drh_ids.filter(id => id && String(id).trim() !== "") : [];
-        if (currentDrhIds.length > 0) {
-          query = query.not('id', 'in', `(${currentDrhIds.join(',')})`);
+        let query = supabase
+          .from('profiles')
+          .select('id, email, role')
+          .ilike('email', `%${queryTrimmed}%`);
+
+        // Filtrer les superviseurs déjà ajoutés pour éviter les doublons
+        const currentSupervisorIds = Array.isArray(currentSession?.drh_ids) 
+          ? currentSession.drh_ids.filter(id => id && String(id).trim() !== "") 
+          : [];
+
+        if (currentSupervisorIds.length > 0) {
+          query = query.not('id', 'in', `(${currentSupervisorIds.join(',')})`);
         }
-        const { data, error } = query.limit(5);
-        if (data && !error) setDrhSuggestions(data);
+
+        const { data, error } = await query.limit(5);
+        if (!error && data) {
+          setSupervisorSuggestions(data);
+        } else {
+          setSupervisorSuggestions([]);
+        }
       } catch (err) {
-        console.error(err);
+        console.error("Erreur lors de la recherche des profils:", err);
+        setSupervisorSuggestions([]);
       }
     };
-    const delayDebounce = setTimeout(() => searchDRH(), 300);
+
+    const delayDebounce = setTimeout(() => searchSupervisors(), 300);
     return () => clearTimeout(delayDebounce);
-  }, [drhSearchQuery, currentSession?.drh_ids]);
+  }, [supervisorSearchQuery, currentSession?.drh_ids]);
 
   // Sauvegarde en Base de Données
   const handleSaveChanges = async () => {
@@ -183,7 +200,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
       : currentSession.end_time;
 
-    // On nettoie les noms de la timeline avant de sauvegarder pour de bon
     const cleanedPlanning = (currentSession.planning || []).map(block => ({
       ...block,
       name: cleanBlockName(block.name)
@@ -191,7 +207,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
     const { error } = await supabase.from('sessions').update({ 
       tree_id: currentSession.tree_id, 
-      drh_ids: currentSession.drh_ids || [],
+      drh_ids: currentSession.drh_ids || [], // reste stocké sous drh_ids côté Supabase
       planning: cleanedPlanning,
       start_time: currentSession.start_time || '09:00',
       end_time_mode: currentSession.end_time_mode || 'auto',
@@ -204,7 +220,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     } else {
       alert(`🎉 Session "${currentSession.session_code}" enregistrée avec succès !`);
       setViewMode("view");
-      // Rafraîchir les sessions locales
       if (currentUserId) await fetchSessions(currentUserId);
     }
   };
@@ -275,27 +290,26 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     alert(`La session a été dupliquée sous le code "${cleanCode}"`);
   };
 
-  const handleAddDRH = (drhUser) => {
+  const handleAddSupervisor = (user) => {
     if (!currentSession) return;
-    const currentDrhIds = currentSession.drh_ids || [];
-    if (currentDrhIds.includes(drhUser.id)) return;
+    const currentIds = currentSession.drh_ids || [];
+    if (currentIds.includes(user.id)) return;
     
-    setDrhEmailsCache(prev => ({ ...prev, [drhUser.id]: drhUser.email }));
-    updateCurrentSessionInState({ drh_ids: [...currentDrhIds, drhUser.id] });
-    setDrhSearchQuery(''); 
-    setDrhSuggestions([]);
+    setSupervisorEmailsCache(prev => ({ ...prev, [user.id]: user.email }));
+    updateCurrentSessionInState({ drh_ids: [...currentIds, user.id] });
+    setSupervisorSearchQuery(''); 
+    setSupervisorSuggestions([]);
   };
 
-  const handleRemoveDRH = (drhId) => {
+  const handleRemoveSupervisor = (id) => {
     if (!currentSession) return;
-    updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(id => id !== drhId) });
+    updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(item => item !== id) });
   };
 
   const getPlacementValidation = (floorId, targetIndex, timeline, draggedItem) => {
     if (!floorId) return { isValid: true };
     
     let checkTimeline = [...timeline];
-    
     if (draggedItem && draggedItem.source === 'timeline') {
       checkTimeline.splice(draggedItem.index, 1);
     }
@@ -356,7 +370,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         return;
       }
 
-      // Construit proprement le nom sans mention de "Sans nom"
       const cleanedFloorName = floor.name && floor.name.trim() !== "" ? cleanBlockName(floor.name) : "";
       const blockName = cleanedFloorName !== ""
         ? `🎯 Palier ${floor.floorId} : ${cleanedFloorName}`
@@ -429,7 +442,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     const updatedPlanning = (currentSession.planning || []).map(b => 
       b.id === editingBlock.id ? { ...editingBlock, name: cleanBlockName(editingBlock.name) } : b
     );
-    updateCurrentSessionInState({ planning: updatedPlanning });
+    updateCurrentSessionInState({ updatedPlanning });
     setEditingBlock(null);
   };
 
@@ -448,13 +461,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       currentMinutes += parseInt(block.duration || 0, 10);
       return { 
         ...block, 
-        name: cleanBlockName(block.name), // Nettoyage de sécurité à l'affichage
+        name: cleanBlockName(block.name), 
         startTimeFormatted: timeString 
       };
     });
   };
 
-  // Filtrage des sessions selon la date
   const todayStr = new Date().toISOString().split('T')[0];
   const filteredSessions = sessions.filter(s => {
     if (showPastSessions) return true; 
@@ -577,7 +589,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           {currentSession ? (
             <div className="space-y-6">
               
-              {/* ==================== MODE 👁️ VOIR : LECTURE SEULE ==================== */}
+              {/* ==================== MODE 👁️ VOIR ==================== */}
               {viewMode === "view" && (
                 <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
                   <div className="flex justify-between items-center border-b pb-4">
@@ -640,11 +652,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 </div>
               )}
 
-              {/* ==================== MODE ✏️ MODIFIER : ÉDITION ET DRAG & DROP ==================== */}
+              {/* ==================== MODE ✏️ MODIFIER ==================== */}
               {viewMode === "edit" && (
                 <div className="space-y-6">
                   
-                  {/* EN-TÊTE CONFIGURATION */}
                   <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
                       <span className="text-[10px] font-black uppercase text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">Édition en cours</span>
@@ -668,7 +679,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     </div>
                   </div>
 
-                  {/* CONFIGURATION PARAMÈTRES (Date, Heures, Arbre, DRH) */}
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div>
@@ -735,36 +745,37 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </select>
                       </div>
 
+                      {/* SECTION SUPERVISEURS CORRIGÉE */}
                       <div className="space-y-1 relative">
-                        <label className="block font-black text-slate-700 text-[10px] uppercase">DRH Associés :</label>
+                        <label className="block font-black text-slate-700 text-[10px] uppercase">Superviseurs :</label>
                         <input 
                           type="text"
-                          placeholder="Rechercher un e-mail..."
-                          value={drhSearchQuery}
-                          onChange={(e) => setDrhSearchQuery(e.target.value)}
+                          placeholder="Rechercher un e-mail de superviseur..."
+                          value={supervisorSearchQuery}
+                          onChange={(e) => setSupervisorSearchQuery(e.target.value)}
                           className="w-full border rounded-lg p-2 bg-white text-xs shadow-xs"
                         />
-                        {drhSuggestions.length > 0 && (
-                          <div className="absolute z-50 left-0 right-0 top-full bg-white border rounded shadow-md mt-1 max-h-32 overflow-y-auto">
-                            {drhSuggestions.map(s => (
+                        {supervisorSuggestions.length > 0 && (
+                          <div className="absolute z-50 left-0 right-0 top-full bg-white border border-slate-200 rounded-lg shadow-lg mt-1 max-h-32 overflow-y-auto">
+                            {supervisorSuggestions.map(user => (
                               <button 
-                                key={s.id} 
+                                key={user.id} 
                                 type="button"
-                                onClick={() => handleAddDRH(s)} 
-                                className="block w-full text-left p-2 text-xs font-bold hover:bg-slate-100 border-b"
+                                onClick={() => handleAddSupervisor(user)} 
+                                className="block w-full text-left p-2 text-xs font-bold hover:bg-slate-100 border-b border-slate-100 last:border-0"
                               >
-                                {s.email}
+                                {user.email} <span className="text-[10px] text-slate-400 font-normal">({user.role || 'user'})</span>
                               </button>
                             ))}
                           </div>
                         )}
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {(currentSession.drh_ids || []).map(id => {
-                            const matchedEmail = drhEmailsCache[id] || id; 
+                            const matchedEmail = supervisorEmailsCache[id] || id; 
                             return (
                               <div key={id} className="bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1">
                                 <span>{matchedEmail}</span>
-                                <button type="button" onClick={() => handleRemoveDRH(id)} className="text-red-500 font-black">×</button>
+                                <button type="button" onClick={() => handleRemoveSupervisor(id)} className="text-red-500 font-black">×</button>
                               </div>
                             );
                           })}
@@ -773,10 +784,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                     </div>
                   </div>
 
-                  {/* DRAG AND DROP DES ETAPES */}
+                  {/* TIMELINE INTERACTIVE */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
-                    {/* TIMELINE ACTIVE (2/3) */}
                     <div className="md:col-span-2 space-y-3">
                       <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Plan de la journée (Glissez-déposez pour réorganiser)</h4>
                       
@@ -797,7 +807,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         {(currentSession.planning || []).map((block, index) => {
                           let isTargetIndexValid = true;
                           const isBeingDragged = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && draggedPlanningItem.index === index;
-
                           const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
                                                  (index === draggedPlanningItem.index || index === draggedPlanningItem.index + 1);
 
@@ -824,8 +833,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
                           return (
                             <React.Fragment key={block.id}>
-                              
-                              {/* ZONE DE DÉPÔT COHÉRENTE ET SANS DÉCALAGE PHYSIQUE AU DÉMARRAGE */}
                               <div 
                                 onDragOver={(e) => { 
                                   if (draggedPlanningItem && isTargetIndexValid) {
@@ -852,38 +859,25 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 )}
                               </div>
                               
-                              {/* LE BLOC N'EST PLUS DRAGGABLE EN ENTIER (POIGNÉE UNIQUE CI-DESSOUS) */}
                               <div 
                                 className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
-                                  isLocked 
-                                    ? 'opacity-95' 
-                                    : 'hover:border-slate-300 hover:shadow-md'
-                                } ${
-                                  isBeingDragged ? 'opacity-40 border-dashed bg-slate-50 border-slate-300' : ''
-                                }`}
+                                  isLocked ? 'opacity-95' : 'hover:border-slate-300 hover:shadow-md'
+                                } ${isBeingDragged ? 'opacity-40 border-dashed bg-slate-50 border-slate-300' : ''}`}
                                 style={{ borderLeftWidth: '6px', borderLeftColor: block.color || '#94a3b8' }}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
                                   {isLocked ? (
-                                    <span 
-                                      className="text-amber-500 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1"
-                                      title="Ce palier ne peut pas être déplacé à un autre endroit car il est bloqué par les autres paliers."
-                                    >
-                                      🔒
-                                    </span>
+                                    <span className="text-amber-500 font-bold text-sm select-none cursor-not-allowed flex items-center gap-1" title="Palier verrouillé chronologiquement">🔒</span>
                                   ) : (
                                     <span 
                                       draggable={true}
-                                      onDragStart={() => {
-                                        setDraggedPlanningItem({ source: 'timeline', index });
-                                      }}
+                                      onDragStart={() => setDraggedPlanningItem({ source: 'timeline', index })}
                                       onDragEnd={(e) => {
                                         e.preventDefault();
                                         setDraggedPlanningItem(null);
                                         setActiveDropIndex(null);
                                       }}
                                       className="text-slate-400 font-bold text-sm select-none p-1.5 hover:bg-slate-100 rounded-md cursor-grab active:cursor-grabbing hover:text-slate-800"
-                                      title="Faites glisser cette poignée pour réorganiser"
                                     >
                                       ⠿
                                     </span>
@@ -923,8 +917,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   <button
                                     type="button"
                                     onClick={() => openBlockEditor(block)}
-                                    className="text-slate-500 hover:text-slate-800 font-bold text-xs bg-slate-100 hover:bg-slate-200 p-1 rounded-lg animate-none"
-                                    title="Modifier en détail"
+                                    className="text-slate-500 hover:text-slate-800 font-bold text-xs bg-slate-100 hover:bg-slate-200 p-1 rounded-lg"
                                   >
                                     ⚙️
                                   </button>
@@ -941,12 +934,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           );
                         })}
 
-                        {/* DERNIER INDICATEUR DE FIN DE TIMELINE */}
+                        {/* INDICATEUR DE FIN */}
                         {(currentSession.planning || []).length > 0 && (
                           (() => {
                             const lastIndex = currentSession.planning.length;
                             let isTargetIndexValid = true;
-
                             const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
                                                    (lastIndex === draggedPlanningItem.index || lastIndex === draggedPlanningItem.index + 1);
 
@@ -958,7 +950,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                 const sourceBlock = currentSession.planning[draggedPlanningItem.index];
                                 if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
                               }
-
                               if (dragFloorId) {
                                 const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning, draggedPlanningItem);
                                 isTargetIndexValid = validation.isValid;
@@ -1001,16 +992,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       </div>
                     </div>
 
-                    {/* PALETTE D'ACTIVITES (1/3) : BLOC PERSO AU-DESSUS */}
+                    {/* PALETTE D'ACTIVITES */}
                     <div className="space-y-4">
                       <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">🛠️ Palette</h4>
                       
-                      {/* BLOC PERSO */}
                       <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs">
                         <span className="block text-[10px] font-black uppercase text-blue-700">Bloc personnalisé</span>
                         <input 
                           type="text"
-                          placeholder="Ex: Pause Café, Restitution..."
                           value={customBlockConfig.name}
                           onChange={(e) => setCustomBlockConfig({ ...customBlockConfig, name: e.target.value })}
                           className="w-full border rounded p-1.5 bg-slate-50 font-extrabold text-xs"
@@ -1031,12 +1020,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </div>
                       </div>
 
-                      {/* LES PALIERS DE L'ARBRE */}
                       {linkedTree ? (
                         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
                           <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
                           {(linkedTree.floors || [])
-                            .filter(floor => !existingFloorIds.includes(floor.floorId)) // Filtre pour cacher les paliers déjà ajoutés au planning
+                            .filter(floor => !existingFloorIds.includes(floor.floorId))
                             .map(floor => (
                               <div
                                 key={floor.floorId}
@@ -1093,12 +1081,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   <span className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">🔍 Inspecteur de Contenu</span>
                   <h3 className="text-sm font-black text-slate-900 mt-1">Palier {selectedInspectFloor.floorId} : {cleanBlockName(selectedInspectFloor.name) || 'Général'}</h3>
                 </div>
-                <button 
-                  onClick={() => setSelectedInspectFloor(null)} 
-                  className="text-slate-400 hover:text-slate-600 font-black text-xl"
-                >
-                  ×
-                </button>
+                <button onClick={() => setSelectedInspectFloor(null)} className="text-slate-400 hover:text-slate-600 font-black text-xl">×</button>
               </div>
 
               <div className="space-y-4 text-xs">
@@ -1150,17 +1133,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         </div>
       )}
 
-      {/* --- MODALE D'ÉDITION PRÉCISE D'UN BLOC (ENGRENAGE) --- */}
+      {/* --- MODALE CONFIG BLOC --- */}
       {editingBlock && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border border-slate-200">
-            <button 
-              onClick={() => setEditingBlock(null)} 
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg"
-            >
-              ×
-            </button>
-            
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
+            <button onClick={() => setEditingBlock(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg">×</button>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider">⚙️ Configurer l'étape</h3>
             
             <div className="space-y-4 mt-4 text-xs">
@@ -1173,7 +1150,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   className="w-full border rounded-lg p-2 bg-slate-50 font-extrabold text-xs"
                 />
               </div>
-
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Description :</label>
                 <textarea 
@@ -1183,7 +1159,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   className="w-full border rounded-lg p-2 bg-slate-50 font-medium text-xs leading-relaxed"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Durée (minutes) :</label>
@@ -1196,7 +1171,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Couleur d'identification :</label>
+                  <label className="block text-slate-700 font-bold mb-1">Couleur :</label>
                   <input 
                     type="color" 
                     value={editingBlock.color || '#94a3b8'} 
@@ -1205,34 +1180,20 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   />
                 </div>
               </div>
-
               <div className="flex gap-2 pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => setEditingBlock(null)}
-                  className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl uppercase tracking-wider"
-                >
-                  Annuler
-                </button>
-                <button 
-                  type="button" 
-                  onClick={handleSaveBlockEdit}
-                  className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl uppercase tracking-wider"
-                >
-                  Appliquer
-                </button>
+                <button type="button" onClick={() => setEditingBlock(null)} className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl uppercase tracking-wider">Annuler</button>
+                <button type="button" onClick={handleSaveBlockEdit} className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl uppercase tracking-wider">Appliquer</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- MODALE D'INITIALISATION --- */}
+      {/* --- MODALE NOUVELLE SESSION --- */}
       {activeModal === 'session' && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border">
             <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-extrabold text-lg">×</button>
-            
             <h3 className="text-md font-black text-slate-950 uppercase tracking-wide">💡 Créer une Session</h3>
             <form onSubmit={handleCreateSession} className="space-y-4 text-xs mt-4">
               <div>
