@@ -337,7 +337,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
     return `collab_${questId}_${sessionCode}_${filename.replace(/[^a-zA-Z0-9]/g, '')}`.toLowerCase();
   };
 
-  // NAVIGATION DEPUIS LE PORTFOLIO DIRECTEMENT VERS LE BON PALIER
+  // NAVIGATION DEPUIS LE PORTFOLIO ET CATALOGUE DIRECTEMENT VERS LE BON PALIER & LE SÉLECTIONNE
   const navigateToQuestInGame = (questId) => {
     let foundSessionCode = null;
     let foundTreeId = null;
@@ -365,7 +365,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
       setSelectedSessionCode(foundSessionCode);
       setSelectedTreeId(foundTreeId);
       setCurrentFloorIndex(foundFloorIdx);
-      setActiveQuest(foundQuestObj);
+      setActiveQuest(foundQuestObj); // 🎯 Assure la sélection immédiate du module (ouvre l'encart de soumission)
       setActiveTab('parcours'); 
     } else {
       alert("💡 Pour voir ce module, assurez-vous d'avoir rejoint la session de formation correspondante.");
@@ -488,16 +488,6 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                 if (filterMode === 'collab' && q.is_collaborative !== true && q.is_collaborative !== 'true') return false;
                 return true;
               });
-
-              // ANCIENNE MÉCANIQUE BASÉE SUR LES POINTS (GARDÉE EN COMMENTAIRE)
-              // const POINTS_REQUIRED_PER_FLOOR = 300;
-              // const currentFloorPoints = activeFloorQuests.reduce((sum, q) => {
-              //   if (completedQuestIds.has(q.id)) {
-              //     return sum + getPointsByDifficulty(q.difficulty);
-              //   }
-              //   return sum;
-              // }, 0);
-              // const isFloorPassed = currentFloorPoints >= POINTS_REQUIRED_PER_FLOOR;
 
               // NOUVELLE MÉCANIQUE : Tous les modules (quests) du palier actif doivent être validés
               const isFloorPassed = activeFloorQuests.every(q => completedQuestIds.has(q.id));
@@ -665,7 +655,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
         </div>
       )}
 
-      {/* PORTFOLIO DES RENDUS */}
+      {/* PORTFOLIO DES RENDUS & CATALOGUE DES RESTANTS */}
       {activeTab === 'portfolio' && user && (
         <div className="space-y-8">
           <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-wrap justify-between items-center gap-4 shadow-sm">
@@ -751,7 +741,7 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
             </div>
           )}
 
-          {/* ❌ BLOC 3 : MODULES NON ACCESSIBLES / RESTANTS */}
+          {/* ❌ BLOC 3 : MODULES NON ACCESSIBLES / RESTANTS (CATALOGUE DES MISSIONS) */}
           {(portfolioFilter === 'all' || portfolioFilter === 'not_started') && (
             <div className="space-y-3 pt-2">
               <div className="border-b border-slate-200 pb-2">
@@ -794,11 +784,18 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                       }
 
                       return (
-                        <div key={q.id} className={`bg-white border rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-slate-300 transition-all relative ${isQuestLockedInCatalogue ? 'border-slate-100 opacity-60 bg-slate-50/50' : 'border-slate-200'}`}>
+                        <div key={q.id} className={`bg-white border rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-slate-300 transition-all relative overflow-hidden ${isQuestLockedInCatalogue ? 'border-slate-200/60 bg-slate-50/30' : 'border-slate-200'}`}>
+                          
+                          {/* 🔒 CALQUE DE FLOU SUR LES MODULES DU CATALOGUE VERROUILLÉS */}
                           {isQuestLockedInCatalogue && (
-                            <div className="absolute top-3 right-3 text-[9px] font-black tracking-wider text-slate-400 bg-slate-100/80 border border-slate-200 px-2 py-0.5 rounded uppercase">🔒 Palier Verrouillé</div>
+                            <div className="absolute inset-0 bg-slate-50/40 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center p-3 text-center transition-all">
+                              <div className="bg-slate-900/90 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-xl shadow-md border border-slate-700/50">
+                                🔒 Palier Verrouillé
+                              </div>
+                            </div>
                           )}
-                          <div>
+
+                          <div className={isQuestLockedInCatalogue ? 'blur-[1px] select-none pointer-events-none' : ''}>
                             <div className="flex justify-between items-center text-[9px] font-mono font-bold text-slate-400">
                               <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
                               <span className={isQuestCollab ? 'text-teal-600' : 'text-slate-500'}>{isQuestCollab ? '🤝 ÉQUIPE' : '👤 SOLO'}</span>
@@ -807,14 +804,14 @@ export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
                             <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{q.desc}"</p>
                           </div>
                           
-                          <div className={`flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] ${isQuestLockedInCatalogue ? 'opacity-20' : ''}`}>
+                          <div className={`flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] ${isQuestLockedInCatalogue ? 'blur-[1px] select-none pointer-events-none opacity-20' : ''}`}>
                             <span className="font-bold text-slate-400 uppercase tracking-wider text-[9px]">
                               {isStartedButPending ? '⏳ En attente' : '❌ Non initié'}
                             </span>
                             <button 
                               disabled={isQuestLockedInCatalogue}
                               onClick={() => navigateToQuestInGame(q.id)} 
-                              className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded hover:bg-slate-100 disabled:opacity-30"
+                              className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded hover:bg-slate-100"
                             >
                               🚀 Ouvrir le module ➔
                             </button>
