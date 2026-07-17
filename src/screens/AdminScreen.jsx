@@ -8,13 +8,15 @@ export default function AdminScreen({ onImpersonate }) {
   const [treesList, setTreesList] = useState([]); // Stockage des arbres de la BDD
   const [currentUserId, setCurrentUserId] = useState(null);
 
-  // États de recherche
+  // État pour la barre d'infiltration (Impersonate)
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredSuggestions, setFilteredSuggestions] = useState([]);
   
-  // Filtres pour le tableau des sessions
-  const [sessionSearchQuery, setSessionSearchQuery] = useState(''); // Filtre par nom de session
-  const [managerSearchQuery, setManagerSearchQuery] = useState(''); // Filtre par email du manager
+  // 🔍 NOUVEAU : Filtre pour la gestion des rôles d'utilisateurs
+  const [roleSearchQuery, setRoleSearchQuery] = useState('');
+
+  // Filtre pour le tableau des sessions actives (uniquement par code)
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('');
 
   const loadData = async () => {
     // 1. Utilisateur actuel
@@ -36,7 +38,7 @@ export default function AdminScreen({ onImpersonate }) {
 
   useEffect(() => { loadData(); }, []);
 
-  // Filtrage pour la recherche prédictive d'imposture
+  // Filtrage pour la recherche prédictive d'infiltration
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredSuggestions([]);
@@ -75,16 +77,16 @@ export default function AdminScreen({ onImpersonate }) {
     return found ? found.name : `ID: ${treeId.substring(0, 8)}...`;
   };
 
-  // Filtrage combiné local (Nom de session ET Email du superviseur)
-  const filteredSessions = sessions.filter(s => {
-    const matchesSession = s.session_code && s.session_code.toLowerCase().includes(sessionSearchQuery.toLowerCase());
-    
-    const manager = profiles.find(p => p.id === s.manager_id);
-    const managerEmail = manager ? manager.email.toLowerCase() : '';
-    const matchesManager = managerEmail.includes(managerSearchQuery.toLowerCase());
+  // 🔍 Filtrage des profils pour la gestion des rôles
+  const filteredProfiles = profiles.filter(p => 
+    (p.email && p.email.toLowerCase().includes(roleSearchQuery.toLowerCase())) ||
+    (p.full_name && p.full_name.toLowerCase().includes(roleSearchQuery.toLowerCase()))
+  );
 
-    return matchesSession && matchesManager;
-  });
+  // Filtrage local simple de la liste des sessions par code
+  const filteredSessions = sessions.filter(s => 
+    s.session_code && s.session_code.toLowerCase().includes(sessionSearchQuery.toLowerCase())
+  );
 
   return (
     <div className="max-w-6xl mx-auto px-8 py-8 space-y-8 text-slate-800 antialiased">
@@ -147,66 +149,78 @@ export default function AdminScreen({ onImpersonate }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         
-        {/* ROLES GLOBAUX */}
+        {/* ROLES GLOBAUX (AVEC NOUVELLE RECHERCHE INTÉGRÉE) */}
         <div className="lg:col-span-1 bg-white border border-red-100 rounded-2xl p-5 shadow-sm space-y-4">
-          <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">👑 Rôles Système</h3>
-          <p className="text-[11px] text-slate-400">Définissez uniquement la structure technique globale des comptes.</p>
+          <div>
+            <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">👑 Rôles Système</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Définissez uniquement la structure technique globale des comptes.</p>
+          </div>
+
+          {/* 🔍 Champ de recherche d'un utilisateur pour les rôles */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="🔍 Rechercher un e-mail ou nom..."
+              value={roleSearchQuery}
+              onChange={(e) => setRoleSearchQuery(e.target.value)}
+              className="w-full px-3 py-2 border border-red-100 rounded-xl text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10 placeholder:text-red-300"
+            />
+          </div>
           
-          <div className="divide-y divide-red-50 max-h-96 overflow-y-auto pr-1">
-            {profiles.map(p => {
-              const isMe = p.id === currentUserId;
-              return (
-                <div key={p.id} className={`py-3 flex flex-col gap-2 ${isMe ? 'bg-red-50/30 px-2 rounded-xl border border-dashed border-red-200' : ''}`}>
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-800 truncate block max-w-[180px]">{p.email}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                      p.role === 'admin' ? 'bg-red-100 text-red-700' :
-                      p.role === 'formateur' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
-                    }`}>{p.role}</span>
+          <div className="divide-y divide-red-50 max-h-[350px] overflow-y-auto pr-1">
+            {filteredProfiles.length === 0 ? (
+              <p className="text-xs text-slate-400 italic py-4 text-center">Aucun utilisateur trouvé.</p>
+            ) : (
+              filteredProfiles.map(p => {
+                const isMe = p.id === currentUserId;
+                return (
+                  <div key={p.id} className={`py-3 flex flex-col gap-2 ${isMe ? 'bg-red-50/30 px-2 rounded-xl border border-dashed border-red-200' : ''}`}>
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="truncate max-w-[180px]">
+                        <span className="font-mono text-xs font-bold text-slate-800 truncate block">{p.email}</span>
+                        {p.full_name && <span className="text-[10px] text-slate-400 truncate block">{p.full_name}</span>}
+                      </div>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${
+                        p.role === 'admin' ? 'bg-red-100 text-red-700' :
+                        p.role === 'formateur' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                      }`}>{p.role}</span>
+                    </div>
+                    
+                    <div className="flex gap-1 justify-end">
+                      <button disabled={isMe} onClick={() => changeRole(p.id, 'user')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>User</button>
+                      <button disabled={isMe} onClick={() => changeRole(p.id, 'formateur')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'}`}>Formateur</button>
+                      <button disabled={isMe} onClick={() => changeRole(p.id, 'admin')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}>Admin</button>
+                    </div>
                   </div>
-                  
-                  <div className="flex gap-1 justify-end">
-                    <button disabled={isMe} onClick={() => changeRole(p.id, 'user')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>User</button>
-                    <button disabled={isMe} onClick={() => changeRole(p.id, 'formateur')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'}`}>Formateur</button>
-                    <button disabled={isMe} onClick={() => changeRole(p.id, 'admin')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}>Admin</button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* LISTE DES SESSIONS ACTIVES (AVEC BARRES DE RECHERCHE PAR NOM ET EMAIL) */}
+        {/* LISTE DES SESSIONS ACTIVES (FILTRE PAR CODE UNIQUEMENT) */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white border border-red-100 rounded-2xl p-5 shadow-sm space-y-4">
             
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">📋 Sessions Actives</h3>
                 <p className="text-[10px] text-slate-400 mt-0.5">Visualisez et filtrez les accès aux sessions de formation.</p>
               </div>
               
-              {/* Inputs de recherche côte à côte */}
-              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+              <div className="w-full sm:w-64">
                 <input
                   type="text"
                   placeholder="🔍 Filtrer par code (ex: INI PYTHON)..."
                   value={sessionSearchQuery}
                   onChange={(e) => setSessionSearchQuery(e.target.value)}
-                  className="w-full sm:w-48 px-3 py-1.5 border border-red-100 rounded-lg text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10"
-                />
-                <input
-                  type="text"
-                  placeholder="✉️ Filtrer par e-mail superviseur..."
-                  value={managerSearchQuery}
-                  onChange={(e) => setManagerSearchQuery(e.target.value)}
-                  className="w-full sm:w-48 px-3 py-1.5 border border-red-100 rounded-lg text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10"
+                  className="w-full px-3 py-1.5 border border-red-100 rounded-lg text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10"
                 />
               </div>
             </div>
 
             {filteredSessions.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-4 text-center">Aucune session ne correspond à vos filtres.</p>
+              <p className="text-xs text-slate-400 italic py-4 text-center">Aucune session ne correspond à votre filtre.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
