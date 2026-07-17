@@ -9,44 +9,44 @@ import ClientDashboardScreen from './screens/ClientDashboardScreen';
 import AdminScreen from './screens/AdminScreen'; 
 import DocScreen from './screens/DocScreen';
 
-// Définition de la charte de couleurs dynamique (Moderne, Lisible Collégiens & Pros)
+// Définition de la charte de couleurs dynamique (Moderne, Épurée, Professionnelle)
 const themeColors = {
-  apprenant: {
+  apprenant: { // Ma Progression / Suivre
     primary: 'bg-emerald-600',
     text: 'text-emerald-600',
     hover: 'hover:bg-emerald-50',
     border: 'border-emerald-200',
     accent: 'emerald',
   },
-  linker: { // Créer
+  linker: { // Créer les modules
     primary: 'bg-violet-600',
     text: 'text-violet-600',
     hover: 'hover:bg-violet-50',
     border: 'border-violet-200',
     accent: 'violet',
   },
-  formateur: { // Assigner
+  formateur: { // Organiser les parcours
     primary: 'bg-blue-600',
     text: 'text-blue-600',
     hover: 'hover:bg-blue-50',
     border: 'border-blue-200',
     accent: 'blue',
   },
-  client: { // Résultats / Visualiser
+  client: { // Visualiser les résultats
     primary: 'bg-amber-500',
     text: 'text-amber-500',
     hover: 'hover:bg-amber-50',
     border: 'border-amber-200',
     accent: 'amber',
   },
-  admin: { // Admin
+  admin: { // Administration
     primary: 'bg-rose-600',
     text: 'text-rose-600',
     hover: 'hover:bg-rose-50',
     border: 'border-rose-200',
     accent: 'rose',
   },
-  doc: { // Doc
+  doc: { // Guide méthodologique
     primary: 'bg-slate-700',
     text: 'text-slate-700',
     hover: 'hover:bg-slate-100',
@@ -137,7 +137,7 @@ export default function App() {
     }
   };
 
-  // 3. Chargement global initial des parcours et missions réels
+  // 3. Chargement global initial des parcours et modules réels
   const loadSupabaseData = async () => {
     try {
       const { data: dbQuests } = await supabase.from('quests').select('*');
@@ -181,7 +181,7 @@ export default function App() {
   const handleImpersonate = (userProfile) => {
     setImpersonatedUser(userProfile);
     if (userProfile) {
-      alert(`🎭 Mode infiltration activé : Vous naviguez maintenant sous l'identité de ${userProfile.email}`);
+      alert(`🎭 Mode simulation activé : Vous visualisez maintenant l'espace de ${userProfile.email}`);
     }
   };
 
@@ -193,24 +193,24 @@ export default function App() {
     }
   };
 
-  // Logique du sous-titre dynamique dépendante de currentScreen
+  // Logique du sous-titre dynamique dépendante de currentScreen (épurée de l'argot gaming)
   const getDynamicSubtitle = () => {
     switch (currentScreen) {
-      case 'formateur': return "Assigner";
-      case 'linker': return "Créer";
-      case 'apprenant': return "Apprenant";
-      case 'client': return "Résultats";
-      case 'admin': return "Admin";
-      case 'doc': return "Doc";
-      default: return "Assigner";
+      case 'formateur': return "Organiser";
+      case 'linker': return "Concevoir";
+      case 'apprenant': return "Suivre";
+      case 'client': return "Analyses";
+      case 'admin': return "Gestion";
+      case 'doc': return "Guide";
+      default: return "Suivre";
     }
   };
 
   if (loadingProfile) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center font-sans">
-        <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-xs uppercase font-black tracking-widest text-slate-400">Authentification réelle sécurisée...</p>
+        <div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin mb-4" />
+        <p className="text-xs uppercase font-black tracking-widest text-slate-400">Initialisation de votre espace sécurisé...</p>
       </div>
     );
   }
@@ -231,7 +231,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex">
       
       {/* ────────────────────────────────────────────────────────────────────────
-          MENU VERTICAL DE GAUCHE (DÉPLIABLE)
+          MENU VERTICAL DE GAUCHE (ÉPURÉ ET PROFESSIONNEL)
           ──────────────────────────────────────────────────────────────────────── */}
       <aside 
         className={`bg-white border-r border-slate-200 h-screen fixed left-0 top-0 z-40 flex flex-col justify-between transition-all duration-300 shadow-sm ${
@@ -243,7 +243,7 @@ export default function App() {
           <div className="p-4 border-b border-slate-100 flex items-center justify-between overflow-hidden">
             {isSidebarOpen ? (
               <div className="flex items-center gap-2 animate-fade-in">
-                <span className="text-xl">🌳</span>
+                <span className="text-xl">🌿</span>
                 <div>
                   <h1 className="text-sm font-black text-slate-950 uppercase tracking-wide">HOC</h1>
                   <p className={`text-[10px] font-extrabold uppercase tracking-tight transition-colors duration-300 ${currentTheme.text}`}>
@@ -252,7 +252,7 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <span className="text-xl mx-auto">🌳</span>
+              <span className="text-xl mx-auto">🌿</span>
             )}
 
             {/* Bouton pour replier / déplier */}
@@ -267,7 +267,7 @@ export default function App() {
 
           {/* Navigation / Liens */}
           <nav className="p-3 space-y-1.5 flex flex-col">
-            {/* Apprenant (Vert) */}
+            {/* Ma Progression (Ex-Apprenant) - Vert Émeraude */}
             <button 
               onClick={() => setCurrentScreen('apprenant')} 
               className={`flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 transition-all cursor-pointer ${
@@ -275,13 +275,13 @@ export default function App() {
                   ? 'bg-emerald-600 text-white shadow-xs' 
                   : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-600'
               }`}
-              title="Apprenant"
+              title="Ma Progression"
             >
-              <span className="text-sm">🎮</span>
-              {isSidebarOpen && <span className="truncate">Apprenant</span>}
+              <span className="text-sm">🎓</span>
+              {isSidebarOpen && <span className="truncate">Ma Progression</span>}
             </button>
 
-            {/* Créer (Anciennement QuestLinkerScreen / Concepteur) - Violet */}
+            {/* Concevoir (Ex-Créer / QuestLinkerScreen) - Violet */}
             {(userRole === 'formateur' || userRole === 'admin') && (
               <button 
                 onClick={() => setCurrentScreen('linker')} 
@@ -290,14 +290,14 @@ export default function App() {
                     ? 'bg-violet-600 text-white shadow-xs' 
                     : 'text-slate-600 hover:bg-violet-50 hover:text-violet-600'
                 }`}
-                title="Créer"
+                title="Concevoir"
               >
-                <span className="text-sm">🔗</span>
-                {isSidebarOpen && <span className="truncate">Créer</span>}
+                <span className="text-sm">✏️</span>
+                {isSidebarOpen && <span className="truncate">Concevoir</span>}
               </button>
             )}
 
-            {/* Assigner (Anciennement StudioScreen / Éditeur de parcours) - Bleu */}
+            {/* Organiser (Ex-Assigner / StudioScreen) - Bleu */}
             {(userRole === 'formateur' || userRole === 'admin') && (
               <button 
                 onClick={() => setCurrentScreen('formateur')} 
@@ -306,14 +306,14 @@ export default function App() {
                     ? 'bg-blue-600 text-white shadow-xs' 
                     : 'text-slate-600 hover:bg-blue-50 hover:text-blue-600'
                 }`}
-                title="Assigner"
+                title="Organiser"
               >
-                <span className="text-sm">🛠️</span>
-                {isSidebarOpen && <span className="truncate">Assigner</span>}
+                <span className="text-sm">📁</span>
+                {isSidebarOpen && <span className="truncate">Organiser</span>}
               </button>
             )}
 
-            {/* Résultats (Anciennement Client/DRH) - Jaune/Orangé */}
+            {/* Analyses & Résultats (Ex-Client/DRH) - Doré */}
             {(isManager || userRole === 'admin') && (
               <button 
                 onClick={() => setCurrentScreen('client')} 
@@ -322,14 +322,14 @@ export default function App() {
                     ? 'bg-amber-500 text-white shadow-xs' 
                     : 'text-slate-600 hover:bg-amber-50 hover:text-amber-600'
                 }`}
-                title="Résultats"
+                title="Suivi & Analyses"
               >
                 <span className="text-sm">📊</span>
-                {isSidebarOpen && <span className="truncate">Résultats</span>}
+                {isSidebarOpen && <span className="truncate">Suivi & Analyses</span>}
               </button>
             )}
 
-            {/* Admin - Rouge */}
+            {/* Admin (Espace d'administration globale) - Rose */}
             {userRole === 'admin' && (
               <button 
                 onClick={() => setCurrentScreen('admin')} 
@@ -338,19 +338,19 @@ export default function App() {
                     ? 'bg-rose-600 text-white shadow-xs' 
                     : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
                 }`}
-                title="Admin"
+                title="Espace Admin"
               >
-                <span className="text-sm">👑</span>
-                {isSidebarOpen && <span className="truncate">Admin</span>}
+                <span className="text-sm">🛡️</span>
+                {isSidebarOpen && <span className="truncate">Espace Admin</span>}
               </button>
             )}
           </nav>
         </div>
 
-        {/* Section bas de menu : Doc, profil & Déconnexion */}
+        {/* Section bas de menu : Guide, profil & Déconnexion */}
         <div className="p-3 border-t border-slate-100 space-y-1.5 bg-slate-50/50">
           
-          {/* Nouveau bouton Doc (Relocalisé de bas droite à ici) */}
+          {/* Nouveau bouton Doc (Documentation et ressources) */}
           <button 
             onClick={() => setCurrentScreen('doc')} 
             className={`flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 transition-all cursor-pointer ${
@@ -358,10 +358,10 @@ export default function App() {
                 ? 'bg-slate-700 text-white shadow-xs' 
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
-            title="Documentation"
+            title="Guide d'utilisation"
           >
             <span className="text-sm">📄</span>
-            {isSidebarOpen && <span>Documentation</span>}
+            {isSidebarOpen && <span>Guide d'utilisation</span>}
           </button>
 
           {isSidebarOpen && activeUser?.email && (
@@ -372,7 +372,7 @@ export default function App() {
 
           <button 
             onClick={handleSignOutRequest} 
-            className="flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 text-red-500 hover:bg-red-50 transition-all cursor-pointer"
+            className="flex items-center gap-3 w-full rounded-xl text-xs font-black p-3 text-red-600 hover:bg-red-50 transition-all cursor-pointer"
             title="Se déconnecter"
           >
             <span className="text-sm">🚪</span>
@@ -388,20 +388,20 @@ export default function App() {
         className="flex-1 flex flex-col transition-all duration-300"
         style={{ marginLeft: isSidebarOpen ? '16rem' : '4rem' }}
       >
-        {/* Bandeau d'alerte en cas d'infiltration */}
+        {/* Bandeau d'alerte en cas de simulation d'identité */}
         {impersonatedUser && (
-          <div className="bg-amber-500 text-slate-950 px-6 py-2.5 text-center text-xs font-black uppercase tracking-wider flex justify-between items-center z-30 sticky top-0 shadow-md">
-            <span className="flex items-center gap-1.5">⚠️ INFILTRATION EN COURS : Vous agissez à la place de <strong className="underline font-black font-mono">{impersonatedUser.email}</strong></span>
+          <div className="bg-amber-500 text-slate-950 px-6 py-2.5 text-center text-xs font-black uppercase tracking-wider flex justify-between items-center z-30 sticky top-0 shadow-md animate-fade-in">
+            <span className="flex items-center gap-1.5">⚠️ SIMULATION DE PROFIL EN COURS : Vous agissez pour le compte de <strong className="underline font-black font-mono">{impersonatedUser.email}</strong></span>
             <button 
               onClick={() => handleImpersonate(null)} 
               className="bg-slate-950 hover:bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider transition-all cursor-pointer"
             >
-              Quitter l'infiltration
+              Quitter la simulation
             </button>
           </div>
         )}
 
-        {/* ZONE D'AFFICHAGE DE L'ÉCRAN ACTIF (Avec variables de thèmes transmises au besoin) */}
+        {/* ZONE D'AFFICHAGE DE L'ÉCRAN ACTIF (Avec variables de thèmes transmises) */}
         <main className="p-8 transition-all duration-200">
           {currentScreen === 'formateur' && (
             <StudioScreen 
@@ -409,7 +409,7 @@ export default function App() {
               setTrees={setTrees} 
               quests={quests} 
               setQuests={setQuests} 
-              theme={currentTheme} // Permet de propager la charte de couleurs
+              theme={currentTheme}
             />
           )}
           {currentScreen === 'linker' && (
