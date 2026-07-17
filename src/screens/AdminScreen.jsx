@@ -11,7 +11,10 @@ export default function AdminScreen({ onImpersonate }) {
   // États de recherche
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredSuggestions, setFilteredSuggestions] = useState([]);
+  
+  // Filtres pour le tableau des sessions
   const [sessionSearchQuery, setSessionSearchQuery] = useState(''); // Filtre par nom de session
+  const [managerSearchQuery, setManagerSearchQuery] = useState(''); // Filtre par email du manager
 
   const loadData = async () => {
     // 1. Utilisateur actuel
@@ -72,10 +75,16 @@ export default function AdminScreen({ onImpersonate }) {
     return found ? found.name : `ID: ${treeId.substring(0, 8)}...`;
   };
 
-  // Filtrage local de la liste des sessions selon la saisie de l'administrateur
-  const filteredSessions = sessions.filter(s => 
-    s.session_code && s.session_code.toLowerCase().includes(sessionSearchQuery.toLowerCase())
-  );
+  // Filtrage combiné local (Nom de session ET Email du superviseur)
+  const filteredSessions = sessions.filter(s => {
+    const matchesSession = s.session_code && s.session_code.toLowerCase().includes(sessionSearchQuery.toLowerCase());
+    
+    const manager = profiles.find(p => p.id === s.manager_id);
+    const managerEmail = manager ? manager.email.toLowerCase() : '';
+    const matchesManager = managerEmail.includes(managerSearchQuery.toLowerCase());
+
+    return matchesSession && matchesManager;
+  });
 
   return (
     <div className="max-w-6xl mx-auto px-8 py-8 space-y-8 text-slate-800 antialiased">
@@ -167,30 +176,37 @@ export default function AdminScreen({ onImpersonate }) {
           </div>
         </div>
 
-        {/* LISTE DES SESSIONS ACTIVES (AVEC BARRE DE RECHERCHE PAR NOM) */}
+        {/* LISTE DES SESSIONS ACTIVES (AVEC BARRES DE RECHERCHE PAR NOM ET EMAIL) */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white border border-red-100 rounded-2xl p-5 shadow-sm space-y-4">
             
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
                 <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">📋 Sessions Actives</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">Visualisez et révoquez les accès aux sessions de formation.</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Visualisez et filtrez les accès aux sessions de formation.</p>
               </div>
               
-              {/* input de recherche par code de session */}
-              <div className="w-full sm:w-64">
+              {/* Inputs de recherche côte à côte */}
+              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
                 <input
                   type="text"
                   placeholder="🔍 Filtrer par code (ex: INI PYTHON)..."
                   value={sessionSearchQuery}
                   onChange={(e) => setSessionSearchQuery(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-red-100 rounded-lg text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10"
+                  className="w-full sm:w-48 px-3 py-1.5 border border-red-100 rounded-lg text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10"
+                />
+                <input
+                  type="text"
+                  placeholder="✉️ Filtrer par e-mail superviseur..."
+                  value={managerSearchQuery}
+                  onChange={(e) => setManagerSearchQuery(e.target.value)}
+                  className="w-full sm:w-48 px-3 py-1.5 border border-red-100 rounded-lg text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10"
                 />
               </div>
             </div>
 
             {filteredSessions.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-4 text-center">Aucune session trouvée.</p>
+              <p className="text-xs text-slate-400 italic py-4 text-center">Aucune session ne correspond à vos filtres.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
