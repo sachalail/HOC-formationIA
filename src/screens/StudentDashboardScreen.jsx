@@ -2,12 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function StudentDashboardScreen({ formations = {}, modules = [] }) {
+export default function StudentDashboardScreen({ trees = {}, quests = [] }) {
   const [user, setUser] = useState(null);
   const [sessionCodesList, setSessionCodesList] = useState([]); 
   const [mySessionsData, setMySessionsData] = useState([]); 
   const [selectedSessionCode, setSelectedSessionCode] = useState(null); 
-  const [selectedFormationId, setSelectedFormationId] = useState(null); 
+  const [selectedTreeId, setSelectedTreeId] = useState(null); 
   
   const [accessCode, setAccessCode] = useState('');
   const [activeTab, setActiveTab] = useState('parcours'); 
@@ -23,13 +23,13 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
   const [triggerDropAnimation, setTriggerDropAnimation] = useState(false); 
   
   // 🛡️ ÉTAT ANTI-SPAM
-  const [completedModuleIds, setCompletedModuleIds] = useState(new Set());
-  const [pendingCollabModuleIds, setPendingCollabModuleIds] = useState(new Set());
+  const [completedQuestIds, setCompletedQuestIds] = useState(new Set());
+  const [pendingCollabQuestIds, setPendingCollabQuestIds] = useState(new Set());
 
   // PORTFOLIO EN DIRECT DEPUIS SUPABASE
   const [productions, setProductions] = useState([]);
 
-  const [activeModule, setActiveModule] = useState(null); 
+  const [activeQuest, setActiveQuest] = useState(null); 
   const [livrableContent, setLivrableContent] = useState(''); 
   const [attachedFile, setAttachedFile] = useState(null);
 
@@ -90,20 +90,20 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
 
       prods.forEach(p => {
         if (p.content.includes('[EN_ATTENTE_COLLAB]')) {
-          pending.add(p.quest_id); // correspond techniquement à module_id
+          pending.add(p.quest_id); 
         } else {
           validated.add(p.quest_id);
         }
       });
 
-      setCompletedModuleIds(validated);
-      setPendingCollabModuleIds(pending);
+      setCompletedQuestIds(validated);
+      setPendingCollabQuestIds(pending);
       
       const formattedProds = prods.map(p => ({
         id: p.id,
         studentId: p.student_id,
-        moduleId: p.quest_id,
-        moduleName: p.quest_name,
+        questId: p.quest_id,
+        questName: p.quest_name,
         content: p.content,
         date: new Date(p.created_at).toLocaleDateString('fr-FR'),
         file_url: p.file_url
@@ -121,7 +121,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
   // PERSISTANCE DES ÉTAGES VIA LE JSONB REQUIS DANS LES RÈGLES
   useEffect(() => {
     const syncFloorToSupabase = async () => {
-      if (selectedFormationId && user) {
+      if (selectedTreeId && user) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('unlocked_floors')
@@ -129,7 +129,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
           .single();
 
         const currentFloorsObj = profile?.unlocked_floors || {};
-        currentFloorsObj[selectedFormationId] = unlockedFloorIndex;
+        currentFloorsObj[selectedTreeId] = unlockedFloorIndex;
 
         await supabase
           .from('profiles')
@@ -140,11 +140,11 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
       }
     };
     syncFloorToSupabase();
-  }, [unlockedFloorIndex, user, selectedFormationId]);
+  }, [unlockedFloorIndex, user, selectedTreeId]);
 
   useEffect(() => {
     const loadFloorFromSupabase = async () => {
-      if (selectedFormationId && user) {
+      if (selectedTreeId && user) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('unlocked_floors')
@@ -152,16 +152,16 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
           .single();
 
         const currentFloorsObj = profile?.unlocked_floors || {};
-        const savedFloor = currentFloorsObj[selectedFormationId];
+        const savedFloor = currentFloorsObj[selectedTreeId];
         const floorIdx = savedFloor ? parseInt(savedFloor, 10) : 0;
         
         setUnlockedFloorIndex(floorIdx);
         setCurrentFloorIndex(floorIdx); // Se positionner directement sur le dernier palier débloqué à la sélection
-        setActiveModule(null);
+        setActiveQuest(null);
       }
     };
     loadFloorFromSupabase();
-  }, [user, selectedFormationId]);
+  }, [user, selectedTreeId]);
 
   const handleJoinSession = async (e) => {
     e.preventDefault();
@@ -201,7 +201,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
       setSessionCodesList(updatedSessionCodes);
       setMySessionsData([...mySessionsData, { id: targetSession.id, session_code: targetSession.session_code, tree_id: targetSession.tree_id }]);
       setSelectedSessionCode(targetSession.session_code);
-      setSelectedFormationId(targetSession.tree_id);
+      setSelectedTreeId(targetSession.tree_id);
       setCurrentFloorIndex(0);
       setAccessCode('');
       alert(`🎉 Session "${targetSession.session_code}" ajoutée !`);
@@ -230,37 +230,37 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
     reader.readAsDataURL(file);
   };
 
-  const globalCompletedModuleIds = productions
+  const globalCompletedQuestIds = productions
     .filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]'))
-    .map(p => p.moduleId);
+    .map(p => p.questId);
 
   const studentPoints = productions.reduce((sum, prod) => { 
     if (prod.content.includes('[EN_ATTENTE_COLLAB]')) return sum;
-    const originalModule = modules.find(m => m.id === prod.moduleId);
-    return originalModule ? sum + getPointsByDifficulty(originalModule.difficulty) : sum + 100; 
+    const originalQuest = quests.find(q => q.id === prod.questId);
+    return originalQuest ? sum + getPointsByDifficulty(originalQuest.difficulty) : sum + 100; 
   }, 0);
 
   const handleSubmitLivrable = async (e) => {
     e.preventDefault();
     if (!livrableContent.trim()) return;
-    if (completedModuleIds.has(activeModule.id)) return;
+    if (completedQuestIds.has(activeQuest.id)) return;
     if (!user) return;
 
-    const isModuleCollab = activeModule.is_collaborative === true || activeModule.is_collaborative === 'true';
+    const isQuestCollab = activeQuest.is_collaborative === true || activeQuest.is_collaborative === 'true';
     let finalContent = livrableContent;
 
-    if (isModuleCollab) {
+    if (isQuestCollab) {
       if (!attachedFile) {
         alert("⚠️ Un livrable (fichier joint) est obligatoire pour soumettre un module en équipe.");
         return;
       }
 
-      const currentHash = generateLivrableHash(activeModule.id, selectedSessionCode, attachedFile.name);
+      const currentHash = generateLivrableHash(activeQuest.id, selectedSessionCode, attachedFile.name);
 
       const { data: matchingPartners, error: checkError } = await supabase
         .from('productions')
         .select('id, student_email, content')
-        .eq('quest_id', activeModule.id)
+        .eq('quest_id', activeQuest.id)
         .ilike('content', `%${currentHash}%`);
 
       if (checkError) {
@@ -292,8 +292,8 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
         {
           student_id: user.id,          
           student_email: user.email,    
-          quest_id: activeModule.id,     
-          quest_name: activeModule.name,
+          quest_id: activeQuest.id,     
+          quest_name: activeQuest.name,
           content: finalContent,     
           file_url: attachedFile ? attachedFile.data : null 
         }
@@ -307,10 +307,10 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
   };
 
   const handleImportPreviousProduction = async () => {
-    if (completedModuleIds.has(activeModule.id)) return;
+    if (completedQuestIds.has(activeQuest.id)) return;
     if (!user) return;
 
-    const previousSubmission = productions.find(p => p.moduleId === activeModule.id && !p.content.includes('[EN_ATTENTE_COLLAB]'));
+    const previousSubmission = productions.find(p => p.questId === activeQuest.id && !p.content.includes('[EN_ATTENTE_COLLAB]'));
     if (!previousSubmission) return;
 
     const { error } = await supabase
@@ -319,8 +319,8 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
         {
           student_id: user.id,
           student_email: user.email,
-          quest_id: activeModule.id,
-          quest_name: activeModule.name,
+          quest_id: activeQuest.id,
+          quest_name: activeQuest.name,
           content: `[Importé de l'historique] ${previousSubmission.content}`,
           file_url: previousSubmission.file_url || null
         }
@@ -333,42 +333,39 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
   };
 
   // UNIQUE HASH GENERATOR
-  const generateLivrableHash = (moduleId, sessionCode, filename = '') => {
-    return `collab_${moduleId}_${sessionCode}_${filename.replace(/[^a-zA-Z0-9]/g, '')}`.toLowerCase();
+  const generateLivrableHash = (questId, sessionCode, filename = '') => {
+    return `collab_${questId}_${sessionCode}_${filename.replace(/[^a-zA-Z0-9]/g, '')}`.toLowerCase();
   };
 
   // NAVIGATION DEPUIS LE PORTFOLIO DIRECTEMENT VERS LE BON PALIER
-  const navigateToModuleInGame = (moduleId) => {
+  const navigateToQuestInGame = (questId) => {
     let foundSessionCode = null;
-    let foundFormationId = null;
+    let foundTreeId = null;
     let foundFloorIdx = -1;
-    let foundModuleObj = modules.find(m => m.id === moduleId);
+    let foundQuestObj = quests.find(q => q.id === questId);
 
-    if (!foundModuleObj) return;
+    if (!foundQuestObj) return;
 
-    // Rechercher dans toutes les sessions de l'utilisateur où ce module est localisé
     for (const sessionItem of mySessionsData) {
-      const associatedFormation = formations[sessionItem.tree_id];
-      if (associatedFormation && associatedFormation.floors) {
-        const floorIndex = associatedFormation.floors.findIndex(floor => 
-          (floor.quests || []).map(id => String(id)).includes(String(moduleId))
+      const associatedTree = trees[sessionItem.tree_id];
+      if (associatedTree && associatedTree.floors) {
+        const floorIndex = associatedTree.floors.findIndex(floor => 
+          (floor.quests || []).map(id => String(id)).includes(String(questId))
         );
         if (floorIndex !== -1) {
           foundSessionCode = sessionItem.session_code;
-          foundFormationId = sessionItem.tree_id;
+          foundTreeId = sessionItem.tree_id;
           foundFloorIdx = floorIndex;
           break;
         }
       }
     }
 
-    if (foundSessionCode && foundFormationId && foundFloorIdx !== -1) {
+    if (foundSessionCode && foundTreeId && foundFloorIdx !== -1) {
       setSelectedSessionCode(foundSessionCode);
-      setSelectedFormationId(foundFormationId);
-      
-      // On s'assure d'abord de mettre à jour l'étage pour que la vue s'ajuste
+      setSelectedTreeId(foundTreeId);
       setCurrentFloorIndex(foundFloorIdx);
-      setActiveModule(foundModuleObj);
+      setActiveQuest(foundQuestObj);
       setActiveTab('parcours'); 
     } else {
       alert("💡 Pour voir ce module, assurez-vous d'avoir rejoint la session de formation correspondante.");
@@ -403,8 +400,8 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
 
       {/* TABS */}
       <div className="flex border-b border-slate-200 gap-4">
-        <button onClick={() => { setActiveTab('parcours'); setSelectedSessionCode(null); setSelectedFormationId(null); setActiveModule(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'parcours' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>📚 Mes Sessions & Parcours</button>
-        <button onClick={() => { setActiveTab('portfolio'); setActiveModule(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Mon Portfolio ({uniqueLivrables.length})</button>
+        <button onClick={() => { setActiveTab('parcours'); setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'parcours' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>📚 Mes Sessions & Parcours</button>
+        <button onClick={() => { setActiveTab('portfolio'); setActiveQuest(null); }} className={`pb-3 text-sm font-bold border-b-2 px-2 transition-all cursor-pointer ${activeTab === 'portfolio' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Mon Portfolio ({uniqueLivrables.length})</button>
       </div>
 
       {/* LISTE DES SESSIONS */}
@@ -446,14 +443,14 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {mySessionsData.map(sessionItem => {
-                  const linkedFormation = formations[sessionItem.tree_id];
+                  const linkedTree = trees[sessionItem.tree_id];
                   return (
                     <div key={sessionItem.session_code} className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between gap-6 hover:border-emerald-500 transition-all">
                       <div>
                         <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-2.5 py-1 rounded font-mono font-bold uppercase">CODE : {sessionItem.session_code}</span>
-                        <h4 className="text-sm font-black text-slate-800 mt-3">Formation : {linkedFormation ? linkedFormation.name : `Chargement...`}</h4>
+                        <h4 className="text-sm font-black text-slate-800 mt-3">Formation : {linkedTree ? linkedTree.name : `Chargement...`}</h4>
                       </div>
-                      <button onClick={() => { setSelectedSessionCode(sessionItem.session_code); setSelectedFormationId(sessionItem.tree_id); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition-all cursor-pointer shadow-sm">🚀 Entrer dans la session</button>
+                      <button onClick={() => { setSelectedSessionCode(sessionItem.session_code); setSelectedTreeId(sessionItem.tree_id); }} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition-all cursor-pointer shadow-sm">🚀 Entrer dans la session</button>
                     </div>
                   );
                 })}
@@ -464,11 +461,11 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
       )}
 
       {/* PARCOURS EN COURS */}
-      {activeTab === 'parcours' && selectedSessionCode && selectedFormationId && formations[selectedFormationId] && (
+      {activeTab === 'parcours' && selectedSessionCode && selectedTreeId && trees[selectedTreeId] && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-3 bg-white px-4 py-3 border border-slate-200 rounded-xl shadow-sm">
-              <button onClick={() => { setSelectedSessionCode(null); setSelectedFormationId(null); setActiveModule(null); }} className="text-xs font-bold text-slate-400 hover:text-slate-700 cursor-pointer">⬅️ Retour aux parcours</button>
+              <button onClick={() => { setSelectedSessionCode(null); setSelectedTreeId(null); setActiveQuest(null); }} className="text-xs font-bold text-slate-400 hover:text-slate-700 cursor-pointer">⬅️ Retour aux parcours</button>
               <div className="flex items-center gap-2">
                 <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-700 cursor-pointer focus:outline-none"><option value="all">🌱 Toutes thématiques</option><option value="env">🌍 RSE / Climat</option><option value="tech">⚙️ Outils Digitaux</option></select>
                 <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-bold text-slate-700 cursor-pointer focus:outline-none"><option value="all">👥 Tous formats</option><option value="solo">👤 Solo uniquement</option><option value="collab">🤝 Équipe uniquement</option></select>
@@ -476,34 +473,34 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
             </div>
 
             {(() => {
-              const selectedFormation = formations[selectedFormationId];
-              const allFloors = selectedFormation.floors || [];
-              const safeUnlockedIndex = typeof allUnlockedFloors[selectedFormationId] !== 'undefined' ? parseInt(allUnlockedFloors[selectedFormationId], 10) : unlockedFloorIndex;
+              const selectedTree = trees[selectedTreeId];
+              const allFloors = selectedTree.floors || [];
+              const safeUnlockedIndex = typeof allUnlockedFloors[selectedTreeId] !== 'undefined' ? parseInt(allUnlockedFloors[selectedTreeId], 10) : unlockedFloorIndex;
               const safeCurrentIndex = Math.min(currentFloorIndex, allFloors.length - 1);
               const activeFloor = allFloors[safeCurrentIndex];
 
               if (!activeFloor) return null;
 
-              const activeFloorModules = (activeFloor.quests || []).map(id => modules.find(m => m.id === id)).filter(Boolean);
-              const filteredModulesOnFloor = activeFloorModules.filter(m => {
-                if (filterTheme !== 'all' && m.theme !== filterTheme) return false;
-                if (filterMode === 'solo' && (m.is_collaborative === true || m.is_collaborative === 'true')) return false;
-                if (filterMode === 'collab' && m.is_collaborative !== true && m.is_collaborative !== 'true') return false;
+              const activeFloorQuests = (activeFloor.quests || []).map(id => quests.find(q => q.id === id)).filter(Boolean);
+              const filteredQuestsOnFloor = activeFloorQuests.filter(q => {
+                if (filterTheme !== 'all' && q.theme !== filterTheme) return false;
+                if (filterMode === 'solo' && (q.is_collaborative === true || q.is_collaborative === 'true')) return false;
+                if (filterMode === 'collab' && q.is_collaborative !== true && q.is_collaborative !== 'true') return false;
                 return true;
               });
 
               // ANCIENNE MÉCANIQUE BASÉE SUR LES POINTS (GARDÉE EN COMMENTAIRE)
               // const POINTS_REQUIRED_PER_FLOOR = 300;
-              // const currentFloorPoints = activeFloorModules.reduce((sum, m) => {
-              //   if (completedModuleIds.has(m.id)) {
-              //     return sum + getPointsByDifficulty(m.difficulty);
+              // const currentFloorPoints = activeFloorQuests.reduce((sum, q) => {
+              //   if (completedQuestIds.has(q.id)) {
+              //     return sum + getPointsByDifficulty(q.difficulty);
               //   }
               //   return sum;
               // }, 0);
               // const isFloorPassed = currentFloorPoints >= POINTS_REQUIRED_PER_FLOOR;
 
-              // NOUVELLE MÉCANIQUE : Pour valider un palier, toutes les quêtes (modules) du palier doivent être validées
-              const isFloorPassed = activeFloorModules.every(m => completedModuleIds.has(m.id));
+              // NOUVELLE MÉCANIQUE : Tous les modules (quests) du palier actif doivent être validés
+              const isFloorPassed = activeFloorQuests.every(q => completedQuestIds.has(q.id));
 
               const isFloorViewLocked = safeCurrentIndex > safeUnlockedIndex;
 
@@ -512,7 +509,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                   const nextIdx = safeUnlockedIndex + 1;
                   setUnlockedFloorIndex(nextIdx);
                   setCurrentFloorIndex(nextIdx);
-                  setActiveModule(null);
+                  setActiveQuest(null);
                   setTriggerDropAnimation(true);
                   setTimeout(() => setTriggerDropAnimation(false), 800);
                 }
@@ -526,14 +523,14 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                       const isUnlocked = idx <= safeUnlockedIndex;
                       const isActive = idx === safeCurrentIndex;
                       return (
-                        <button key={floor.floorId} onClick={() => { setCurrentFloorIndex(idx); setActiveModule(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer transition-all ${isActive ? 'bg-emerald-600 text-white shadow-md' : isUnlocked ? 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-slate-100 text-slate-300 opacity-40 cursor-not-allowed'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
+                        <button key={floor.floorId} onClick={() => { setCurrentFloorIndex(idx); setActiveQuest(null); }} className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black cursor-pointer transition-all ${isActive ? 'bg-emerald-600 text-white shadow-md' : isUnlocked ? 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-slate-100 text-slate-300 opacity-40 cursor-not-allowed'}`}>{isUnlocked ? floor.floorId : '🔒'}</button>
                       );
                     })}
                   </div>
 
                   {/* CARTE DE CONTENU DU PALIER */}
                   <div className={`flex-1 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 relative ${triggerDropAnimation ? 'animate-drop-bounce' : ''}`}>
-                    <div className="text-[11px] border-b border-slate-100 pb-2 text-slate-400 font-bold uppercase tracking-wider">Palier {activeFloor.floorId} — {selectedFormation.name}</div>
+                    <div className="text-[11px] border-b border-slate-100 pb-2 text-slate-400 font-bold uppercase tracking-wider">Palier {activeFloor.floorId} — {selectedTree.name}</div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
                       {isFloorViewLocked && (
@@ -544,24 +541,24 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                         </div>
                       )}
 
-                      {filteredModulesOnFloor.map(moduleItem => {
-                        const isSelected = activeModule?.id === moduleItem.id;
-                        const isDoneHere = completedModuleIds.has(moduleItem.id);
-                        const isPendingHere = pendingCollabModuleIds.has(moduleItem.id);
-                        const isDoneElsewhere = globalCompletedModuleIds.includes(moduleItem.id) && !isDoneHere;
-                        const isModuleCollab = moduleItem.is_collaborative === true || moduleItem.is_collaborative === 'true';
+                      {filteredQuestsOnFloor.map(questItem => {
+                        const isSelected = activeQuest?.id === questItem.id;
+                        const isDoneHere = completedQuestIds.has(questItem.id);
+                        const isPendingHere = pendingCollabQuestIds.has(questItem.id);
+                        const isDoneElsewhere = globalCompletedQuestIds.includes(questItem.id) && !isDoneHere;
+                        const isQuestCollab = questItem.is_collaborative === true || questItem.is_collaborative === 'true';
 
                         return (
-                          <button key={moduleItem.id} disabled={isFloorViewLocked} onClick={() => { setActiveModule(moduleItem); setLivrableContent(''); setAttachedFile(null); }} className={`p-4 rounded-xl text-left border transition-all flex flex-col justify-between gap-4 relative overflow-hidden ${isDoneHere ? 'bg-emerald-50/10 border-emerald-100 opacity-80' : isSelected ? 'bg-slate-50/50 border-emerald-500 ring-4 ring-emerald-500/5' : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'}`}>
+                          <button key={questItem.id} disabled={isFloorViewLocked} onClick={() => { setActiveQuest(questItem); setLivrableContent(''); setAttachedFile(null); }} className={`p-4 rounded-xl text-left border transition-all flex flex-col justify-between gap-4 relative overflow-hidden ${isDoneHere ? 'bg-emerald-50/10 border-emerald-100 opacity-80' : isSelected ? 'bg-slate-50/50 border-emerald-500 ring-4 ring-emerald-500/5' : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'}`}>
                             <div>
                               <div className="flex justify-between text-[9px] font-mono font-bold text-slate-400">
-                                <span>{moduleItem.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
-                                <span className={isModuleCollab ? 'text-teal-600' : 'text-slate-500'}>{isModuleCollab ? '👥 EQUIPE' : '👤 SOLO'}</span>
+                                <span>{questItem.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                                <span className={isQuestCollab ? 'text-teal-600' : 'text-slate-500'}>{isQuestCollab ? '👥 EQUIPE' : '👤 SOLO'}</span>
                               </div>
-                              <h4 className="font-bold text-xs text-slate-800 mt-1 leading-snug">{moduleItem.name}</h4>
+                              <h4 className="font-bold text-xs text-slate-800 mt-1 leading-snug">{questItem.name}</h4>
                             </div>
                             <div className="flex justify-between items-center w-full">
-                              <span className="text-[9px] font-black font-mono text-slate-400 bg-slate-50 px-2 py-0.5 rounded">{getPointsByDifficulty(moduleItem.difficulty)} XP</span>
+                              <span className="text-[9px] font-black font-mono text-slate-400 bg-slate-50 px-2 py-0.5 rounded">{getPointsByDifficulty(questItem.difficulty)} XP</span>
                               {isDoneHere ? (
                                 <span className="text-emerald-700 font-mono font-bold text-[9px] bg-emerald-50 px-2 py-0.5 rounded">Validé ✓</span>
                               ) : isPendingHere ? (
@@ -582,11 +579,11 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                       <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div className="w-full sm:w-1/2 space-y-1.5">
                           <div className="flex justify-between text-[10px] font-bold text-slate-500 font-mono">
-                            <span>Modules complétés : {activeFloorModules.filter(m => completedModuleIds.has(m.id)).length} / {activeFloorModules.length}</span>
+                            <span>Modules complétés : {activeFloorQuests.filter(q => completedQuestIds.has(q.id)).length} / {activeFloorQuests.length}</span>
                             <span className={isFloorPassed ? 'text-emerald-600 font-bold' : ''}>{isFloorPassed ? 'Palier validé !' : 'En cours...'}</span>
                           </div>
                           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                            <div className="bg-emerald-600 h-2 rounded-full transition-all duration-300" style={{ width: `${(activeFloorModules.filter(m => completedModuleIds.has(m.id)).length / activeFloorModules.length) * 100}%` }} />
+                            <div className="bg-emerald-600 h-2 rounded-full transition-all duration-300" style={{ width: `${(activeFloorQuests.filter(q => completedQuestIds.has(q.id)).length / activeFloorQuests.length) * 100}%` }} />
                           </div>
                         </div>
 
@@ -603,27 +600,27 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
 
           {/* ZONE DE REMISE DU TRAVAIL */}
           <div className="space-y-4">
-            {activeModule ? (
+            {activeQuest ? (
               <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-4 sticky top-24">
                 {(() => {
-                  const isDoneHere = completedModuleIds.has(activeModule.id);
-                  const isPendingHere = pendingCollabModuleIds.has(activeModule.id);
-                  const isDoneElsewhere = globalCompletedModuleIds.includes(activeModule.id) && !isDoneHere;
-                  const isModuleCollab = activeModule.is_collaborative === true || activeModule.is_collaborative === 'true';
+                  const isDoneHere = completedQuestIds.has(activeQuest.id);
+                  const isPendingHere = pendingCollabQuestIds.has(activeQuest.id);
+                  const isDoneElsewhere = globalCompletedQuestIds.includes(activeQuest.id) && !isDoneHere;
+                  const isQuestCollab = activeQuest.is_collaborative === true || activeQuest.is_collaborative === 'true';
 
                   return (
                     <>
                       <div className="flex justify-between items-start">
                         <div>
-                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : isPendingHere ? 'bg-amber-50 text-amber-800 border border-amber-100' : isModuleCollab ? 'bg-teal-50 text-teal-800 border border-teal-100' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
-                            {isDoneHere ? 'Validé' : isPendingHere ? '⏳ En attente' : isModuleCollab ? '🤝 Travail en Équipe' : '👤 Solo'}
+                          <span className={`font-bold text-[9px] px-2 py-0.5 rounded uppercase ${isDoneHere ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : isPendingHere ? 'bg-amber-50 text-amber-800 border border-amber-100' : isQuestCollab ? 'bg-teal-50 text-teal-800 border border-teal-100' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
+                            {isDoneHere ? 'Validé' : isPendingHere ? '⏳ En attente' : isQuestCollab ? '🤝 Travail en Équipe' : '👤 Solo'}
                           </span>
-                          <h3 className="font-black text-slate-900 text-sm mt-2">{activeModule.name}</h3>
+                          <h3 className="font-black text-slate-900 text-sm mt-2">{activeQuest.name}</h3>
                         </div>
-                        <button onClick={() => setActiveModule(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold font-mono">✕</button>
+                        <button onClick={() => setActiveQuest(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold font-mono">✕</button>
                       </div>
 
-                      {isModuleCollab && !isDoneHere && !isPendingHere && (
+                      {isQuestCollab && !isDoneHere && !isPendingHere && (
                         <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                           <p className="text-[11px] text-slate-600 leading-tight font-medium">
                             🔒 <strong>Consigne d'équipe :</strong> Le premier à déposer enregistre le livrable en attente. Il sera validé automatiquement dès qu'un coéquipier déposera <strong>exactement le même fichier</strong>.
@@ -631,7 +628,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                         </div>
                       )}
 
-                      <p className="text-xs text-slate-600 italic bg-slate-50 border border-slate-100 p-3 rounded-xl">"{activeModule.desc}"</p>
+                      <p className="text-xs text-slate-600 italic bg-slate-50 border border-slate-100 p-3 rounded-xl">"{activeQuest.desc}"</p>
 
                       {isDoneElsewhere ? (
                         <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-3">
@@ -645,16 +642,16 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                       ) : isPendingHere ? (
                         <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-center space-y-2">
                           <p className="text-xs text-amber-900 font-medium">⏳ En attente de synchronisation d'un partenaire d'équipe.</p>
-                          <span className="inline-block text-[10px] bg-white text-slate-400 px-2 py-1 rounded font-mono border border-slate-100">Réf : {activeModule.id}</span>
+                          <span className="inline-block text-[10px] bg-white text-slate-400 px-2 py-1 rounded font-mono border border-slate-100">Réf : {activeQuest.id}</span>
                         </div>
                       ) : (
                         <form onSubmit={handleSubmitLivrable} className="space-y-4">
                           <textarea rows="4" required value={livrableContent} onChange={(e) => setLivrableContent(e.target.value)} placeholder="Saisissez votre réponse ou contribution pédagogique ici..." className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs focus:border-slate-400 focus:ring-1 focus:ring-slate-300 focus:outline-none placeholder:text-slate-300" />
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">📁 Justificatif / Fichier {isModuleCollab && <span className="text-teal-600 font-bold">(Obligatoire)</span>}</label>
-                            <input type="file" required={isModuleCollab} onChange={handleFileChange} className="text-xs text-slate-500 block cursor-pointer" />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">📁 Justificatif / Fichier {isQuestCollab && <span className="text-teal-600 font-bold">(Obligatoire)</span>}</label>
+                            <input type="file" required={isQuestCollab} onChange={handleFileChange} className="text-xs text-slate-500 block cursor-pointer" />
                           </div>
-                          <button type="submit" className={`w-full font-bold py-3 rounded-xl text-xs cursor-pointer text-white shadow-sm transition-all ${isModuleCollab ? 'bg-teal-600 hover:bg-teal-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>💾 Enregistrer le livrable</button>
+                          <button type="submit" className={`w-full font-bold py-3 rounded-xl text-xs cursor-pointer text-white shadow-sm transition-all ${isQuestCollab ? 'bg-teal-600 hover:bg-teal-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>💾 Enregistrer le livrable</button>
                         </form>
                       )}
                     </>
@@ -686,7 +683,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
           {(portfolioFilter === 'all' || portfolioFilter === 'validated') && (
             <div className="space-y-3">
               <div className="border-b border-slate-200 pb-2">
-                <h4 className="font-black text-xs text-slate-600 uppercase tracking-wider flex items-center gap-1.5"> ✅ Validés & Validés ({uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]')).length}) </h4>
+                <h4 className="font-black text-xs text-slate-600 uppercase tracking-wider flex items-center gap-1.5"> ✅ Validés ({uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]')).length}) </h4>
               </div>
               {(() => {
                 const validatedLivrables = uniqueLivrables.filter(p => !p.content.includes('[EN_ATTENTE_COLLAB]'));
@@ -700,15 +697,15 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                         <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-slate-300 transition-all relative">
                           <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">Validé</span>
                           <div className="space-y-2 pr-12">
-                            <h5 className="font-bold text-xs text-slate-800 leading-snug">{p.moduleName}</h5>
+                            <h5 className="font-bold text-xs text-slate-800 leading-snug">{p.questName}</h5>
                             <p className="text-[11px] text-slate-600 line-clamp-3 bg-slate-50 p-2 rounded-lg font-medium leading-relaxed">"{p.content.replace('[VALIDE_COLLAB]', '[COLLAB VALIDÉ]')}"</p>
                             {p.file_url && (
-                              <a href={p.file_url} download={`livrable_${p.moduleId}`} className="inline-flex items-center text-[10px] font-bold text-emerald-600 hover:underline gap-1 mt-1"> 📁 Ouvrir la pièce jointe </a>
+                              <a href={p.file_url} download={`livrable_${p.questId}`} className="inline-flex items-center text-[10px] font-bold text-emerald-600 hover:underline gap-1 mt-1"> 📁 Ouvrir la pièce jointe </a>
                             )}
                           </div>
                           <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] text-slate-400">
                             <span>Soumis le {p.date}</span>
-                            <button onClick={() => navigateToModuleInGame(p.moduleId)} className="text-slate-700 hover:text-slate-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-slate-50 px-2.5 py-1 rounded hover:bg-slate-100">🎯 Voir dans le Parcours ➔</button>
+                            <button onClick={() => navigateToQuestInGame(p.questId)} className="text-slate-700 hover:text-slate-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-slate-50 px-2.5 py-1 rounded hover:bg-slate-100">🎯 Voir dans le Parcours ➔</button>
                           </div>
                         </div>
                       );
@@ -736,7 +733,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                       <div key={p.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm relative">
                         <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100">En attente</span>
                         <div className="space-y-2 pr-16">
-                          <h5 className="font-bold text-xs text-slate-800 leading-snug">{p.moduleName}</h5>
+                          <h5 className="font-bold text-xs text-slate-800 leading-snug">{p.questName}</h5>
                           <p className="text-[11px] text-amber-800 line-clamp-3 bg-amber-50/20 p-2 rounded-lg font-medium leading-relaxed">"{p.content.replace('[EN_ATTENTE_COLLAB]', '')}"</p>
                           {p.file_url && (
                             <div className="text-[10px] text-slate-400 font-medium">📄 Fichier déposé : <strong className="text-slate-600 font-mono font-bold">Inclus</strong></div>
@@ -744,7 +741,7 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] text-slate-400">
                           <span>Déposé le {p.date}</span>
-                          <button onClick={() => navigateToModuleInGame(p.moduleId)} className="text-amber-700 hover:text-amber-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-amber-50 px-2.5 py-1 rounded">🎯 Voir dans le Parcours ➔</button>
+                          <button onClick={() => navigateToQuestInGame(p.questId)} className="text-amber-700 hover:text-amber-900 font-bold uppercase tracking-wider cursor-pointer text-[9px] bg-amber-50 px-2.5 py-1 rounded">🎯 Voir dans le Parcours ➔</button>
                         </div>
                       </div>
                     ))}
@@ -761,62 +758,62 @@ export default function StudentDashboardScreen({ formations = {}, modules = [] }
                 <h4 className="font-black text-xs text-slate-500 uppercase tracking-wider"> ❌ Restants de mes Formations </h4>
               </div>
               {(() => {
-                const joinedFormationIds = mySessionsData.map(s => s.tree_id).filter(Boolean);
-                const pendingModules = modules.filter(m => {
-                  const isNotDone = !completedModuleIds.has(m.id);
-                  const isInJoinedFormations = joinedFormationIds.some(formationId => {
-                    const formation = formations[formationId];
-                    const floors = formation?.floors || [];
-                    return floors.some(floor => (floor.quests || []).map(id => String(id)).includes(String(m.id)));
+                const joinedTreeIds = mySessionsData.map(s => s.tree_id).filter(Boolean);
+                const pendingQuests = quests.filter(q => {
+                  const isNotDone = !completedQuestIds.has(q.id);
+                  const isInJoinedTrees = joinedTreeIds.some(treeId => {
+                    const tree = trees[treeId];
+                    const floors = tree?.floors || [];
+                    return floors.some(floor => (floor.quests || []).map(id => String(id)).includes(String(q.id)));
                   });
-                  return isNotDone && isInJoinedFormations;
+                  return isNotDone && isInJoinedTrees;
                 });
 
-                if (pendingModules.length === 0) {
+                if (pendingQuests.length === 0) {
                   return <div className="bg-emerald-50/10 border border-emerald-100 p-5 rounded-2xl text-center text-xs text-emerald-800 font-bold">🎉 Félicitations ! Vous avez validé tous les modules de vos formations !</div>;
                 }
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {pendingModules.map(m => {
-                      const isModuleCollab = m.is_collaborative === true || m.is_collaborative === 'true';
-                      const isStartedButPending = pendingCollabModuleIds.has(m.id);
+                    {pendingQuests.map(q => {
+                      const isQuestCollab = q.is_collaborative === true || q.is_collaborative === 'true';
+                      const isStartedButPending = pendingCollabQuestIds.has(q.id);
 
-                      let isModuleLockedInCatalogue = true;
+                      let isQuestLockedInCatalogue = true;
                       for (const sItem of mySessionsData) {
-                        const targetFormation = formations[sItem.tree_id];
-                        if (targetFormation && targetFormation.floors) {
+                        const targetTree = trees[sItem.tree_id];
+                        if (targetTree && targetTree.floors) {
                           const currentSavedFloor = allUnlockedFloors[sItem.tree_id];
                           const savedFloorIdx = currentSavedFloor ? parseInt(currentSavedFloor, 10) : 0;
-                          const floorIdxForModule = targetFormation.floors.findIndex(f => (f.quests || []).map(id => String(id)).includes(String(m.id)));
+                          const floorIdxForQuest = targetTree.floors.findIndex(f => (f.quests || []).map(id => String(id)).includes(String(q.id)));
                           
-                          if (floorIdxForModule !== -1 && floorIdxForModule <= savedFloorIdx) {
-                            isModuleLockedInCatalogue = false;
+                          if (floorIdxForQuest !== -1 && floorIdxForQuest <= savedFloorIdx) {
+                            isQuestLockedInCatalogue = false;
                             break;
                           }
                         }
                       }
 
                       return (
-                        <div key={m.id} className={`bg-white border rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-slate-300 transition-all relative ${isModuleLockedInCatalogue ? 'border-slate-100 opacity-60 bg-slate-50/50' : 'border-slate-200'}`}>
-                          {isModuleLockedInCatalogue && (
+                        <div key={q.id} className={`bg-white border rounded-2xl p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-slate-300 transition-all relative ${isQuestLockedInCatalogue ? 'border-slate-100 opacity-60 bg-slate-50/50' : 'border-slate-200'}`}>
+                          {isQuestLockedInCatalogue && (
                             <div className="absolute top-3 right-3 text-[9px] font-black tracking-wider text-slate-400 bg-slate-100/80 border border-slate-200 px-2 py-0.5 rounded uppercase">🔒 Palier Verrouillé</div>
                           )}
                           <div>
                             <div className="flex justify-between items-center text-[9px] font-mono font-bold text-slate-400">
-                              <span>{m.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
-                              <span className={isModuleCollab ? 'text-teal-600' : 'text-slate-500'}>{isModuleCollab ? '🤝 ÉQUIPE' : '👤 SOLO'}</span>
+                              <span>{q.theme === 'env' ? '🌍 RSE' : '⚙️ TECH'}</span>
+                              <span className={isQuestCollab ? 'text-teal-600' : 'text-slate-500'}>{isQuestCollab ? '🤝 ÉQUIPE' : '👤 SOLO'}</span>
                             </div>
-                            <h5 className={`font-black text-xs mt-2 leading-tight ${isModuleCollab ? 'text-slate-800' : 'text-slate-700'}`}>{isModuleCollab && <span className="mr-1">🤝</span>}{m.name}</h5>
-                            <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{m.desc}"</p>
+                            <h5 className={`font-black text-xs mt-2 leading-tight ${isQuestCollab ? 'text-slate-800' : 'text-slate-700'}`}>{isQuestCollab && <span className="mr-1">🤝</span>}{q.name}</h5>
+                            <p className="text-[11px] text-slate-400 line-clamp-2 mt-1.5 italic font-medium">"{q.desc}"</p>
                           </div>
                           
-                          <div className={`flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] ${isModuleLockedInCatalogue ? 'opacity-20' : ''}`}>
+                          <div className={`flex justify-between items-center pt-2 border-t border-slate-100 text-[10px] ${isQuestLockedInCatalogue ? 'opacity-20' : ''}`}>
                             <span className="font-bold text-slate-400 uppercase tracking-wider text-[9px]">
                               {isStartedButPending ? '⏳ En attente' : '❌ Non initié'}
                             </span>
                             <button 
-                              disabled={isModuleLockedInCatalogue}
-                              onClick={() => navigateToModuleInGame(m.id)} 
+                              disabled={isQuestLockedInCatalogue}
+                              onClick={() => navigateToQuestInGame(q.id)} 
                               className="text-slate-600 hover:text-slate-900 font-black uppercase tracking-wider cursor-pointer text-[9px] bg-slate-50 border border-slate-200 px-2.5 py-1 rounded hover:bg-slate-100 disabled:opacity-30"
                             >
                               🚀 Ouvrir le module ➔
