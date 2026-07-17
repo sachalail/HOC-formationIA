@@ -2,29 +2,38 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function AdminScreen({ onImpersonate, trees = {} }) {
+export default function AdminScreen({ onImpersonate }) {
   const [profiles, setProfiles] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [treesList, setTreesList] = useState([]); // Stockage des arbres de la BDD
   const [currentUserId, setCurrentUserId] = useState(null);
 
-  // États pour la recherche d'utilisateurs (Infiltration)
+  // États de recherche
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredSuggestions, setFilteredSuggestions] = useState([]);
+  const [sessionSearchQuery, setSessionSearchQuery] = useState(''); // Filtre par nom de session
 
   const loadData = async () => {
+    // 1. Utilisateur actuel
     const { data: { session } } = await supabase.auth.getSession();
     if (session) setCurrentUserId(session.user.id);
 
+    // 2. Profils
     const { data: pData } = await supabase.from('profiles').select('*');
     if (pData) setProfiles(pData);
 
+    // 3. Sessions
     const { data: sData } = await supabase.from('sessions').select('*');
     if (sData) setSessions(sData);
+
+    // 4. Récupération des arbres directement depuis la base de données
+    const { data: tData } = await supabase.from('trees').select('id, name');
+    if (tData) setTreesList(tData);
   };
 
   useEffect(() => { loadData(); }, []);
 
-  // Effet de filtrage pour les propositions de la barre de recherche
+  // Filtrage pour la recherche prédictive d'imposture
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredSuggestions([]);
@@ -56,6 +65,18 @@ export default function AdminScreen({ onImpersonate, trees = {} }) {
     }
   };
 
+  // Retrouve le nom de l'arbre à l'aide de son ID UUID
+  const findTreeName = (treeId) => {
+    if (!treeId) return "Aucun arbre rattaché";
+    const found = treesList.find(t => String(t.id) === String(treeId));
+    return found ? found.name : `ID: ${treeId.substring(0, 8)}...`;
+  };
+
+  // Filtrage local de la liste des sessions selon la saisie de l'administrateur
+  const filteredSessions = sessions.filter(s => 
+    s.session_code && s.session_code.toLowerCase().includes(sessionSearchQuery.toLowerCase())
+  );
+
   return (
     <div className="max-w-6xl mx-auto px-8 py-8 space-y-8 text-slate-800 antialiased">
       
@@ -81,7 +102,7 @@ export default function AdminScreen({ onImpersonate, trees = {} }) {
             className="w-full px-4 py-2.5 border border-red-100 rounded-xl text-xs font-semibold focus:outline-none focus:border-red-500 bg-red-50/20 placeholder:text-red-300"
           />
 
-          {/* Affichage des suggestions dynamiques */}
+          {/* Affichage des suggestions dynamiques d'infiltration */}
           {filteredSuggestions.length > 0 && (
             <div className="absolute left-0 right-0 mt-1 bg-white border border-red-100 rounded-xl shadow-xl max-h-48 overflow-y-auto z-50 divide-y divide-red-50">
               {filteredSuggestions.map(profile => (
@@ -93,7 +114,7 @@ export default function AdminScreen({ onImpersonate, trees = {} }) {
                   <button
                     onClick={() => {
                       if (onImpersonate) {
-                        onImpersonate(profile); // Active l'usurpation d'identité sur toute l'application
+                        onImpersonate(profile);
                         alert(`👤 Mode Imposture actif : Vous naviguez maintenant en tant que ${profile.email}`);
                       }
                       setSearchQuery('');
@@ -146,12 +167,30 @@ export default function AdminScreen({ onImpersonate, trees = {} }) {
           </div>
         </div>
 
-        {/* LISTE DES SESSIONS ACTIVES */}
+        {/* LISTE DES SESSIONS ACTIVES (AVEC BARRE DE RECHERCHE PAR NOM) */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white border border-red-100 rounded-2xl p-5 shadow-sm space-y-4">
-            <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">📋 Sessions Actives</h3>
-            {sessions.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Aucune session active créée pour le moment.</p>
+            
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">📋 Sessions Actives</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Visualisez et révoquez les accès aux sessions de formation.</p>
+              </div>
+              
+              {/* input de recherche par code de session */}
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  placeholder="🔍 Filtrer par code (ex: INI PYTHON)..."
+                  value={sessionSearchQuery}
+                  onChange={(e) => setSessionSearchQuery(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-red-100 rounded-lg text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10"
+                />
+              </div>
+            </div>
+
+            {filteredSessions.length === 0 ? (
+              <p className="text-xs text-slate-400 italic py-4 text-center">Aucune session trouvée.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -164,18 +203,28 @@ export default function AdminScreen({ onImpersonate, trees = {} }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-red-50/50">
-                    {sessions.map(s => {
+                    {filteredSessions.map(s => {
                       const manager = profiles.find(p => p.id === s.manager_id);
-                      // Affichage direct et exclusif du nom de l'arbre
-                      const treeName = trees[s.tree_id]?.name || s.tree_id;
+                      const treeName = findTreeName(s.tree_id);
 
                       return (
                         <tr key={s.id} className="hover:bg-red-50/20">
-                          <td className="py-3 font-mono font-black text-red-800 bg-red-50/50 px-2.5 rounded-lg inline-block my-1">{s.session_code}</td>
-                          <td className="py-3 text-slate-700 pl-4 font-semibold">{treeName}</td>
-                          <td className="py-3 text-slate-500 truncate max-w-[200px]">{manager ? manager.email : 'Compte introuvable'}</td>
+                          <td className="py-3 font-mono font-black text-red-800 bg-red-50/50 px-2.5 rounded-lg inline-block my-1">
+                            {s.session_code}
+                          </td>
+                          <td className="py-3 text-slate-700 pl-4 font-semibold">
+                            {treeName}
+                          </td>
+                          <td className="py-3 text-slate-500 truncate max-w-[200px]">
+                            {manager ? manager.email : 'Compte introuvable'}
+                          </td>
                           <td className="py-3 text-right">
-                            <button onClick={() => handleDeleteSession(s.id)} className="text-red-500 hover:bg-red-50 px-2 py-1 rounded font-bold cursor-pointer">Révoquer</button>
+                            <button 
+                              onClick={() => handleDeleteSession(s.id)} 
+                              className="text-red-500 hover:bg-red-50 px-2 py-1 rounded font-bold cursor-pointer"
+                            >
+                              Révoquer
+                            </button>
                           </td>
                         </tr>
                       );
