@@ -87,6 +87,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     const fetchInitialData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
+        currentUserId && setCurrentUserId(session.user.id); // Guard construct
         setCurrentUserId(session.user.id);
         await fetchSessions(session.user.id);
         await fetchTrees();
@@ -198,10 +199,8 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const persistSessionChanges = async (sessionId, fieldsToUpdate) => {
     setSaveStatus("Enregistrement... ⏳");
 
-    // Copie locale des champs à modifier
     let finalFields = { ...fieldsToUpdate };
 
-    // Si on met à jour le planning, on nettoie les noms de blocs et on recalcule l'heure de fin à la volée
     if (fieldsToUpdate.planning || fieldsToUpdate.start_time || fieldsToUpdate.end_time_mode) {
       const activeSessionObj = sessions.find(s => String(s.id) === String(sessionId));
       
@@ -221,14 +220,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       }
     }
 
-    // Update Supabase
     const { error } = await supabase
       .from('sessions')
       .update(finalFields)
       .eq('id', sessionId);
 
     if (!error) {
-      // Mise à jour de l'état local immédiatement
       setSessions(prevSessions => 
         prevSessions.map(s => {
           if (String(s.id) !== String(sessionId)) return s;
@@ -423,7 +420,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     setActiveDropIndex(null);
     setDraggedPlanningItem(null);
 
-    // Sauvegarde en BDD instantanée
     await persistSessionChanges(currentSession.id, { planning: timeline });
   };
 
@@ -941,61 +937,66 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           );
                         })}
 
-                        {/* INDICATEUR DE FIN */}
-                        {(currentSession.planning || []).length > 0 && (
-                          (() => {
-                            const lastIndex = currentSession.planning.length;
-                            let isTargetIndexValid = true;
-                            const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
-                                                   (lastIndex === draggedPlanningItem.index || lastIndex === draggedPlanningItem.index + 1);
+                        {/* INDICATEUR DE FIN STABILISÉ SANS CLIGNOTEMENT */}
+                        {(() => {
+                          const lastIndex = (currentSession.planning || []).length;
+                          if (lastIndex === 0) return null;
 
-                            if (draggedPlanningItem && !isImmediateSpot) {
-                              let dragFloorId = null;
-                              if (draggedPlanningItem.source === 'palette-palier') {
-                                dragFloorId = draggedPlanningItem.data?.floorId;
-                              } else if (draggedPlanningItem.source === 'timeline') {
-                                const sourceBlock = currentSession.planning[draggedPlanningItem.index];
-                                if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
-                              }
-                              if (dragFloorId) {
-                                const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning, draggedPlanningItem);
-                                isTargetIndexValid = validation.isValid;
-                              }
-                            } else {
-                              isTargetIndexValid = false;
+                          let isTargetIndexValid = true;
+                          const isImmediateSpot = draggedPlanningItem && draggedPlanningItem.source === 'timeline' && 
+                                                 (lastIndex === draggedPlanningItem.index || lastIndex === draggedPlanningItem.index + 1);
+
+                          if (draggedPlanningItem && !isImmediateSpot) {
+                            let dragFloorId = null;
+                            if (draggedPlanningItem.source === 'palette-palier') {
+                              dragFloorId = draggedPlanningItem.data?.floorId;
+                            } else if (draggedPlanningItem.source === 'timeline') {
+                              const sourceBlock = currentSession.planning[draggedPlanningItem.index];
+                              if (sourceBlock?.type === 'palier') dragFloorId = sourceBlock.floorId;
                             }
+                            if (dragFloorId) {
+                              const validation = getPlacementValidation(dragFloorId, lastIndex, currentSession.planning, draggedPlanningItem);
+                              isTargetIndexValid = validation.isValid;
+                            }
+                          } else {
+                            isTargetIndexValid = false;
+                          }
 
-                            if (!isTargetIndexValid) return null;
-
-                            return (
-                              <div 
-                                onDragOver={(e) => { 
-                                  if (draggedPlanningItem && isTargetIndexValid) {
-                                    e.preventDefault(); 
-                                    setActiveDropIndex(lastIndex); 
-                                  }
-                                }}
-                                onDragLeave={() => setActiveDropIndex(null)}
-                                onDrop={() => {
-                                  if (draggedPlanningItem && isTargetIndexValid) {
-                                    handleTimelineDrop(lastIndex);
-                                  }
-                                }}
-                                className={`transition-all duration-200 rounded-xl border-dashed flex items-center justify-center font-bold text-[11px] ${
-                                  draggedPlanningItem && isTargetIndexValid
-                                    ? activeDropIndex === lastIndex 
-                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2 border-2'
-                                      : 'border-slate-300/40 bg-slate-50/10 h-6 my-1 border text-slate-400/50 hover:bg-slate-100'
-                                    : 'h-0 overflow-hidden border-0 my-0'
-                                }`}
-                              >
-                                {draggedPlanningItem && isTargetIndexValid && activeDropIndex === lastIndex && (
-                                  <span>🟢 Déposer en fin de planning (Valide)</span>
-                                )}
-                              </div>
-                            );
-                          })()
-                        )}
+                          // Afin d'éviter l'effet clignotant provoqué par une zone qui passe brutalement de h-0 à h-14, 
+                          // on maintient une boîte de réception permanente de h-6 invisible dès qu'un élément compatible est en cours de drag.
+                          return (
+                            <div 
+                              onDragOver={(e) => { 
+                                if (draggedPlanningItem && isTargetIndexValid) {
+                                  e.preventDefault(); 
+                                  setActiveDropIndex(lastIndex); 
+                                }
+                              }}
+                              onDragLeave={() => setActiveDropIndex(null)}
+                              onDrop={() => {
+                                if (draggedPlanningItem && isTargetIndexValid) {
+                                  handleTimelineDrop(lastIndex);
+                                }
+                              }}
+                              className={`transition-all duration-200 rounded-xl border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                draggedPlanningItem && isTargetIndexValid
+                                  ? activeDropIndex === lastIndex 
+                                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2 border-2'
+                                    : 'border-transparent bg-transparent h-6 my-1 border text-transparent'
+                                  : 'h-0 overflow-hidden border-0 my-0'
+                              }`}
+                            >
+                              {draggedPlanningItem && isTargetIndexValid && activeDropIndex === lastIndex && (
+                                <span>🟢 Déposer en fin de planning (Valide)</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      
+                      {/* ZONE DE SÉCURITÉ CONFORTS ANTI-BARRE WINDOWS */}
+                      <div className="h-[120px] w-full pointer-events-none select-none flex items-center justify-center text-slate-300 font-medium text-[10px] tracking-wider border-t border-dashed border-slate-200/40 mt-6">
+                        🛡️ Zone de confort d'édition (Empêche l'ouverture de la barre des tâches)
                       </div>
                     </div>
 
