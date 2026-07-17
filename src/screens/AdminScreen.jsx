@@ -166,7 +166,7 @@ export default function AdminScreen({ onImpersonate, trees = {} }) {
                   <tbody className="divide-y divide-red-50/50">
                     {sessions.map(s => {
                       const manager = profiles.find(p => p.id === s.manager_id);
-                      // Remplacement de l'ID par le nom textuel de l'arbre
+                      // Affichage direct et exclusif du nom de l'arbre
                       const treeName = trees[s.tree_id]?.name || s.tree_id;
 
                       return (
