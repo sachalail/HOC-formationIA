@@ -1,4 +1,4 @@
-// src/screens/StudioScreen.jsx
+// src/screens/QuestLinkerScreen.jsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
@@ -6,15 +6,10 @@ const getModuleBadgeStyle = (moduleItem) => {
   if (!moduleItem) return "bg-slate-50 text-slate-700 border-slate-200";
   if (Number(moduleItem.difficulty) === 3) return "bg-red-50 text-red-700 border-red-200"; // Niveau Avancé
   if (Number(moduleItem.difficulty) === 2) return "bg-orange-50 text-orange-700 border-orange-200"; // Niveau Intermédiaire
-  switch (moduleItem.theme) {
-    case 'social': return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    case 'env': return "bg-teal-50 text-teal-700 border-teal-200";
-    case 'tech': return "bg-indigo-50 text-indigo-700 border-indigo-200";
-    default: return "bg-slate-50 text-slate-700 border-slate-200";
-  }
+  return "bg-slate-50 text-slate-700 border-slate-200"; // Niveau Basique
 };
 
-export default function StudioScreen({ trees = {}, setTrees, quests = [], setQuests }) {
+export default function QuestLinkerScreen({ trees = {}, setTrees, quests = [], setQuests }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   
   // États de sélection
@@ -29,7 +24,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   // États des formulaires
   const [newModuleName, setNewModuleName] = useState('');
   const [newModuleDesc, setNewModuleDesc] = useState('');
-  const [newModuleTheme, setNewModuleTheme] = useState('social');
+  const [newModuleCategory, setNewModuleCategory] = useState('Général'); // Classification par domaine de formation
   const [newModuleType, setNewModuleType] = useState('normal'); 
   const [newTreeName, setNewTreeName] = useState('');
   const [newFloorMode, setNewFloorMode] = useState('static');
@@ -40,12 +35,14 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
   // Recherche et filtres pour la modale d'importation globale/locale
   const [importSearchQuery, setImportSearchQuery] = useState('');
-  const [importTheme, setImportTheme] = useState('all');
+  const [importCategory, setImportCategory] = useState('all');
   const [importOrigin, setImportOrigin] = useState('all'); // 'all', 'global', 'local'
+
+  // Filtre par formation dans le catalogue de droite
+  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState('all');
 
   // Gestion et exploration des parcours
   const [treeBrowserTab, setTreeBrowserTab] = useState('local'); // 'local' ou 'shared'
-  const [treeSearchQuery, setTreeSearchQuery] = useState('');
 
   // 1. CHARGEMENT INITIAL
   useEffect(() => {
@@ -290,7 +287,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     });
   };
 
-  // EXCLUSION MUTUELLE STRICTE : Affectation à une seule étape à la fois
+  // Exclusion mutuelle d'attribution de module aux étapes
   const handleToggleModuleInFloor = (floorId, moduleId) => {
     if (!currentTree || !currentTree.floors || !isOwnerOfCurrentTree) return;
     
@@ -309,7 +306,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     });
 
     updateCurrentTreeInState({ floors: updatedFloors });
-    recalculateAndSaveSaveMaxTeamConstraint = recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
+    recalculateAndSaveMaxTeamConstraint(currentTree.id, updatedFloors);
   };
 
   const handleCreateTree = async (e) => {
@@ -346,7 +343,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       .insert([{ 
         name: newModuleName, 
         desc: newModuleDesc, 
-        theme: newModuleTheme, 
+        theme: newModuleCategory, // Stockage du domaine de formation
         difficulty: String(calculatedDifficulty), 
         owner_id: currentUserId, 
         visibility: 'private',
@@ -366,11 +363,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     }
   };
 
-  // Liste filtrée d'importation
+  // Liste filtrée d'importation (Modale)
   const filteredAvailableImports = availableToImportModules.filter(q => {
     const matchesSearch = q.name.toLowerCase().includes(importSearchQuery.toLowerCase()) || 
                           q.desc.toLowerCase().includes(importSearchQuery.toLowerCase());
-    const matchesTheme = importTheme === 'all' || q.theme === importTheme;
+    const matchesCategory = importCategory === 'all' || q.theme === importCategory;
     
     const isLocal = q.owner_id === currentUserId;
     const matchesOrigin = 
@@ -378,13 +375,22 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       (importOrigin === 'local' && isLocal) || 
       (importOrigin === 'global' && !isLocal);
 
-    return matchesSearch && matchesTheme && matchesOrigin;
+    return matchesSearch && matchesCategory && matchesOrigin;
   });
+
+  // Liste filtrée du catalogue de droite (par domaine / filière)
+  const filteredImportedModulesList = importedModulesList.filter(q => {
+    if (catalogCategoryFilter === 'all') return true;
+    return q.theme === catalogCategoryFilter;
+  });
+
+  // Extraction dynamique des domaines existants pour peupler les sélecteurs
+  const uniqueCategories = Array.from(new Set((quests || []).map(q => q.theme).filter(Boolean)));
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pr-16 space-y-6 relative">
       
-      {/* BARRE LATÉRALE D'ACTIONS (ALIGNÉE À DROITE) */}
+      {/* BARRE LATÉRALE D'ACTIONS */}
       <div className="fixed right-4 top-1/2 -translate-y-1/2 z-40 flex items-center group">
         <div className="w-1.5 h-20 bg-slate-300 rounded-l-md group-hover:bg-purple-500 transition-colors shadow-xs"></div>
         <div className="flex flex-col items-center justify-center gap-4 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-r-2xl py-5 px-2.5 shadow-lg transition-all duration-300 translate-x-1 group-hover:translate-x-0 group-hover:bg-white group-hover:border-slate-300">
@@ -402,7 +408,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             <button onClick={() => setActiveModal('import_library')} className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 text-sm flex items-center justify-center shadow-2xs hover:bg-purple-50 hover:border-purple-400 hover:text-purple-600 transition-all cursor-pointer">📥</button>
             <div className="absolute right-12 scale-0 group-hover/btn:scale-100 opacity-0 group-hover/btn:opacity-100 transition-all duration-150 z-50 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap text-right text-white">
               <p className="text-[11px] font-black">Importer des modules</p>
-              <p className="text-[9px] text-slate-400">Piocher dans les modules locaux ou partagés</p>
+              <p className="text-[9px] text-slate-400">Ajouter des modules existants</p>
             </div>
           </div>
 
@@ -478,7 +484,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       <div className="flex items-center gap-3">
                         <span className="bg-purple-700 text-white font-extrabold px-2.5 py-1 text-xs rounded-lg shadow-sm">ÉTAPE {floor.floorId}</span>
                         
-                        {/* Mode de validation (Fixe ou Sélection aléatoire) */}
+                        {/* Mode de validation */}
                         <button 
                           disabled={!isOwnerOfCurrentTree}
                           onClick={() => toggleFloorMode(floor.floorId)}
@@ -510,7 +516,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <div className="flex items-center bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 gap-1" title="Niveaux requis acceptés">
                           {[1, 2, 3].map(level => {
                             const isChecked = allowedDiffs.includes(level);
-                            const label = level === 1 ? 'B' : level === 2 ? 'I' : 'A'; // Basique, Intermédiaire, Avancé
+                            const label = level === 1 ? 'B' : level === 2 ? 'I' : 'A';
                             const fullName = level === 1 ? 'Basique' : level === 2 ? 'Intermédiaire' : 'Avancé';
                             return (
                               <button
@@ -564,7 +570,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   <span className="text-[9px] opacity-60">({diffLabel})</span>
                                 </button>
                                 
-                                {/* Détails rapides */}
                                 <button 
                                   onClick={() => setInspectedModule(moduleItem)}
                                   className={`p-1 rounded border text-[10px] transition-all ${
@@ -605,7 +610,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           )}
         </div>
 
-        {/* COLONNE DROITE : CATALOGUE DES MODULES ATTACHÉS & INSPECTION */}
+        {/* COLONNE DROITE : CATALOGUE FILTRÉ DES MODULES ATTACHÉS & INSPECTION */}
         <div className="lg:col-span-1 space-y-6">
           
           {/* INSPECTION DÉTAILLÉE */}
@@ -619,8 +624,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 <h4 className="text-xs font-black uppercase tracking-wide">{inspectedModule.name}</h4>
                 <div className="flex gap-1.5 items-center mt-1">
                   <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${getModuleBadgeStyle(inspectedModule)}`}>
-                    {inspectedModule.theme} • {Number(inspectedModule.difficulty) === 1 ? 'Basique' : Number(inspectedModule.difficulty) === 2 ? 'Intermédiaire' : 'Avancé'}
+                    {Number(inspectedModule.difficulty) === 1 ? 'Basique' : Number(inspectedModule.difficulty) === 2 ? 'Intermédiaire' : 'Avancé'}
                   </span>
+                  {inspectedModule.theme && (
+                    <span className="text-[8px] bg-emerald-900 text-emerald-100 font-black px-1.5 py-0.5 rounded border border-emerald-800">{inspectedModule.theme}</span>
+                  )}
                   {inspectedModule.is_collaborative && (
                     <span className="text-[8px] bg-purple-800 text-purple-100 font-black px-1.5 py-0.5 rounded border border-purple-700">👥 {inspectedModule.required_partners} pers.</span>
                   )}
@@ -630,28 +638,44 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             </div>
           )}
 
-          {/* LISTING DES MODULES IMPORTÉS */}
+          {/* LISTING FILTRÉ DES MODULES IMPORTÉS */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-              <div>
-                <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">📦 Liste des modules intégrés ({importedModulesList.length})</h3>
-                <p className="text-[9px] text-slate-400 font-bold">Modules configurés pour ce parcours</p>
+            <div className="border-b border-slate-100 pb-3 flex flex-col gap-2">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">📦 Modules intégrés ({filteredImportedModulesList.length})</h3>
+                  <p className="text-[9px] text-slate-400 font-bold">Modules configurés pour ce parcours</p>
+                </div>
+                <button 
+                  onClick={() => setActiveModal('import_library')}
+                  className="bg-purple-100 hover:bg-purple-200 text-purple-800 text-[10px] font-black px-2 py-1 rounded-lg border border-purple-200 cursor-pointer"
+                >
+                  📥 Importer
+                </button>
               </div>
-              <button 
-                onClick={() => setActiveModal('import_library')}
-                className="bg-purple-100 hover:bg-purple-200 text-purple-800 text-[10px] font-black px-2 py-1 rounded-lg border border-purple-200"
-              >
-                📥 Ajouter...
-              </button>
+
+              {/* FILTRE PAR FORMATION / DOMAINE DANS LE CATALOGUE */}
+              <div className="mt-1">
+                <select 
+                  value={catalogCategoryFilter} 
+                  onChange={(e) => setCatalogCategoryFilter(e.target.value)} 
+                  className="w-full border border-slate-200 rounded-lg p-1.5 bg-slate-50 text-[10px] font-bold text-slate-700"
+                >
+                  <option value="all">📁 Filtrer par domaine (Tous)</option>
+                  {uniqueCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-              {importedModulesList.length === 0 ? (
+              {filteredImportedModulesList.length === 0 ? (
                 <div className="text-center py-8 text-xs text-slate-400 font-bold italic">
-                  Aucun module importé.<br />Intégrez des modules existants pour concevoir la formation.
+                  Aucun module correspondant.<br />Importez-en ou changez vos critères de recherche.
                 </div>
               ) : (
-                importedModulesList.map((q) => {
+                filteredImportedModulesList.map((q) => {
                   const isAssigned = assignedModuleIds.includes(q.id);
                   const isInspected = inspectedModule?.id === q.id;
                   const diffLabel = Number(q.difficulty) === 1 ? 'Basique' : Number(q.difficulty) === 2 ? 'Intermédiaire' : 'Avancé';
@@ -669,17 +693,19 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <span className="font-extrabold text-slate-900 text-xs leading-tight">{q.name}</span>
                         <div className="flex flex-col items-end gap-1">
                           <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border whitespace-nowrap ${getModuleBadgeStyle(q)}`}>
-                            {diffLabel} • {q.theme}
+                            {diffLabel}
                           </span>
-                          <span className={`text-[7px] font-black px-1 rounded ${q.owner_id === currentUserId ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-                            {q.owner_id === currentUserId ? '🏠 personnel' : '🌍 public'}
-                          </span>
+                          {q.theme && (
+                            <span className="text-[8px] bg-slate-100 border text-slate-600 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
+                              {q.theme}
+                            </span>
+                          )}
                         </div>
                       </div>
                       
                       <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold pt-1 border-t border-slate-100">
                         <span className={isAssigned ? 'text-emerald-600' : 'text-amber-600'}>
-                          {isAssigned ? '✅ Planifié dans une étape' : '⏳ Non attribué'}
+                          {isAssigned ? '✅ Planifié' : '⏳ Non attribué'}
                         </span>
                         
                         {isOwnerOfCurrentTree && (
@@ -705,7 +731,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
 
       </div>
 
-      {/* ==================== MODALES MODIFIÉES ==================== */}
+      {/* ==================== MODALES SÉCURISÉES ==================== */}
 
       {/* MODALE BIBLIOTHÈQUE D'IMPORTATION */}
       {activeModal === 'import_library' && (
@@ -718,7 +744,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               <p className="text-[11px] text-slate-500 font-bold">Sélectionnez les modules disponibles à intégrer à votre plan d'apprentissage</p>
             </div>
 
-            {/* FILTRES */}
+            {/* FILTRES D'IMPORTATION */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <input 
                 type="text" 
@@ -727,11 +753,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 onChange={(e) => setImportSearchQuery(e.target.value)}
                 className="border rounded-lg p-2 bg-slate-50 text-xs font-bold"
               />
-              <select value={importTheme} onChange={(e) => setImportTheme(e.target.value)} className="border rounded-lg p-2 bg-white text-xs font-bold">
-                <option value="all">Toutes les thématiques</option>
-                <option value="social">Social</option>
-                <option value="env">Environnement</option>
-                <option value="tech">Technologie</option>
+              <select value={importCategory} onChange={(e) => setImportCategory(e.target.value)} className="border rounded-lg p-2 bg-white text-xs font-bold">
+                <option value="all">Tous les domaines de formation</option>
+                {uniqueCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
               </select>
               <select value={importOrigin} onChange={(e) => setImportOrigin(e.target.value)} className="border rounded-lg p-2 bg-white text-xs font-bold">
                 <option value="all">Tous les types (Globaux & Personnels)</option>
@@ -754,6 +780,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <div className="flex items-center gap-2">
                           <span className="font-extrabold text-slate-900 text-xs">{q.name}</span>
                           <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${getModuleBadgeStyle(q)}`}>{diffLabel}</span>
+                          {q.theme && (
+                            <span className="text-[8px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded border">{q.theme}</span>
+                          )}
                           <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${isLocal ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-gray-100 text-gray-700'}`}>
                             {isLocal ? '🏠 Personnel' : '🌍 Public'}
                           </span>
@@ -762,7 +791,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       </div>
                       <button 
                         onClick={() => handleImportModuleToTree(q.id)}
-                        className="bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[10px] uppercase tracking-wide px-3 py-1.5 rounded-lg transition-all"
+                        className="bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[10px] uppercase tracking-wide px-3 py-1.5 rounded-lg transition-all cursor-pointer"
                       >
                         Ajouter
                       </button>
@@ -802,7 +831,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           setActiveModal(null);
                         }}
                         disabled={isCurrentlyActive}
-                        className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border ${
+                        className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border cursor-pointer ${
                           isCurrentlyActive ? 'bg-slate-200 text-slate-400 border-transparent' : 'bg-slate-950 text-white'
                         }`}
                       >
@@ -828,7 +857,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 <label className="block text-slate-600 font-bold mb-1">Intitulé du parcours :</label>
                 <input type="text" required placeholder="Ex: Parcours Cybersécurité et Réseaux..." value={newTreeName} onChange={(e) => setNewTreeName(e.target.value)} className="w-full border rounded-lg p-2.5 bg-slate-50 font-bold text-xs" />
               </div>
-              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all">Créer le parcours</button>
+              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl uppercase tracking-wider transition-all cursor-pointer">Créer le parcours</button>
             </form>
           </div>
         </div>
@@ -852,12 +881,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-600 font-bold mb-1">Domaine thématique :</label>
-                  <select value={newModuleTheme} onChange={(e) => setNewModuleTheme(e.target.value)} className="w-full border rounded-lg p-2 bg-slate-50 font-bold text-xs">
-                    <option value="social">Social</option>
-                    <option value="env">Environnement</option>
-                    <option value="tech">Technologie</option>
-                  </select>
+                  <label className="block text-slate-600 font-bold mb-1">Domaine / Filière de formation :</label>
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="Ex: Marketing, IT, RH..." 
+                    value={newModuleCategory} 
+                    onChange={(e) => setNewModuleCategory(e.target.value)} 
+                    className="w-full border rounded-lg p-2 bg-slate-50 font-bold text-xs" 
+                  />
                 </div>
                 <div>
                   <label className="block text-slate-600 font-bold mb-1">Niveau d'exigence :</label>
@@ -885,7 +917,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                 )}
               </div>
 
-              <button type="submit" className="w-full bg-purple-700 hover:bg-purple-800 text-white font-bold py-2.5 rounded-xl mt-2 transition-all">Créer le module</button>
+              <button type="submit" className="w-full bg-purple-700 hover:bg-purple-800 text-white font-bold py-2.5 rounded-xl mt-2 transition-all cursor-pointer">Créer le module</button>
             </form>
           </div>
         </div>
