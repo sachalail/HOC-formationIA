@@ -962,8 +962,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             isTargetIndexValid = false;
                           }
 
-                          // Afin d'éviter l'effet clignotant provoqué par une zone qui passe brutalement de h-0 à h-14, 
-                          // on maintient une boîte de réception permanente de h-6 invisible dès qu'un élément compatible est en cours de drag.
                           return (
                             <div 
                               onDragOver={(e) => { 
@@ -1000,11 +998,12 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       </div>
                     </div>
 
-                    {/* PALETTE D'ACTIVITES */}
-                    <div className="space-y-4">
-                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">🛠️ Palette</h4>
+                    {/* PALETTE D'ACTIVITES - COLONNE FIXE ET SCROLLABLE */}
+                    <div className="space-y-4 flex flex-col max-h-[640px]">
+                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider shrink-0">🛠️ Palette</h4>
                       
-                      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs">
+                      {/* Bloc personnalisé (Reste en haut, ne scrolle pas si voulu ou scrolle avec le tout) */}
+                      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs shrink-0">
                         <span className="block text-[10px] font-black uppercase text-blue-700">Bloc personnalisé</span>
                         <input 
                           type="text"
@@ -1028,35 +1027,61 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </div>
                       </div>
 
+                      {/* SECTION DES PALIERS SCROLLABLE */}
                       {linkedTree ? (
-                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2 shadow-xs">
-                          <span className="block text-[10px] font-black uppercase text-purple-700">Paliers de l'arbre ({linkedTree.name})</span>
-                          {(linkedTree.floors || [])
-                            .filter(floor => !existingFloorIds.includes(floor.floorId))
-                            .map(floor => (
-                              <div
-                                key={floor.floorId}
-                                draggable
-                                onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
-                                onDragEnd={(e) => {
-                                  e.preventDefault();
-                                  setDraggedPlanningItem(null);
-                                  setActiveDropIndex(null);
-                                }}
-                                className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
-                              >
-                                <div className="min-w-0">
-                                  <span className="font-extrabold text-xs text-purple-900 block truncate">
-                                    {floor.name && floor.name.trim() !== "" ? `🎯 Palier ${floor.floorId} : ${cleanBlockName(floor.name)}` : `🎯 Palier ${floor.floorId}`}
-                                  </span>
-                                  <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 flex-1 flex flex-col overflow-hidden shadow-xs min-h-0 relative">
+                          <span className="block text-[10px] font-black uppercase text-purple-700 pb-2 border-b border-slate-100 shrink-0">
+                            Paliers de l'arbre ({linkedTree.name})
+                          </span>
+                          
+                          {/* Conteneur scrollable interne pour les paliers */}
+                          <div className="overflow-y-auto space-y-2 pt-2 pr-1 flex-1 scrollbar-thin">
+                            {(() => {
+                              const availableFloors = (linkedTree.floors || []).filter(floor => !existingFloorIds.includes(floor.floorId));
+                              
+                              if (availableFloors.length === 0) {
+                                return (
+                                  <div className="text-center py-6 text-[11px] font-bold text-slate-400 italic">
+                                    Tous les paliers sont positionnés !
+                                  </div>
+                                );
+                              }
+
+                              return availableFloors.map(floor => (
+                                <div
+                                  key={floor.floorId}
+                                  draggable
+                                  onDragStart={() => setDraggedPlanningItem({ source: 'palette-palier', data: floor })}
+                                  onDragEnd={(e) => {
+                                    e.preventDefault();
+                                    setDraggedPlanningItem(null);
+                                    setActiveDropIndex(null);
+                                  }}
+                                  className="bg-purple-50 border border-purple-200 hover:bg-purple-100 p-2.5 rounded-lg cursor-grab active:cursor-grabbing flex justify-between items-center transition-all select-none"
+                                >
+                                  <div className="min-w-0">
+                                    <span className="font-extrabold text-xs text-purple-900 block truncate">
+                                      {floor.name && floor.name.trim() !== "" ? `🎯 Palier ${floor.floorId} : ${cleanBlockName(floor.name)}` : `🎯 Palier ${floor.floorId}`}
+                                    </span>
+                                    <span className="text-[9px] text-purple-500 font-bold">{(floor.quests || []).length} activités</span>
+                                  </div>
+                                  <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
                                 </div>
-                                <span className="text-[10px] bg-purple-700 text-white font-extrabold px-2 py-0.5 rounded-md">45m</span>
-                              </div>
-                            ))}
+                              ));
+                            })()}
+                          </div>
+
+                          {/* FLÈCHE INDICATIVE DE SCROLL CLIGNOTANTE EN BAS (Affichée s'il y a de nombreux paliers potentiels) */}
+                          {(linkedTree.floors || []).filter(floor => !existingFloorIds.includes(floor.floorId)).length > 3 && (
+                            <div className="absolute bottom-1 left-0 right-0 flex justify-center pointer-events-none bg-gradient-to-t from-white via-white/80 to-transparent pt-4 pb-0.5 shrink-0">
+                              <span className="text-[12px] animate-bounce opacity-70 text-purple-600 bg-purple-50 border border-purple-200 shadow-xs rounded-full px-2 py-0.5 font-bold flex items-center gap-1">
+                                ⬇️ <span className="text-[9px] tracking-tight uppercase font-black">Scroll</span>
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500">
+                        <div className="bg-slate-100 rounded-xl p-4 text-center text-[10px] font-bold text-slate-500 shrink-0">
                           Associez un arbre ci-dessus pour débloquer ses paliers.
                         </div>
                       )}
