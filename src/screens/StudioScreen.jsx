@@ -501,7 +501,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-80 lg:gap-8">
         
         {/* COLONNE GAUCHE : LISTE DES SESSIONS */}
         <div className="lg:col-span-1 space-y-4">
@@ -788,10 +788,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   </div>
 
                   {/* TIMELINE INTERACTIVE */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                     
                     <div className="md:col-span-2 space-y-3">
-                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Plan de la journée (Glissez-déposez pour réorganiser)</h4>
+                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Plan de la journée (Glissez-déposez pour réouvrir)</h4>
                       
                       <div className="space-y-1">
                         {(currentSession.planning || []).length === 0 && (
@@ -998,11 +998,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       </div>
                     </div>
 
-                    {/* PALETTE D'ACTIVITES - COLONNE FIXE ET SCROLLABLE */}
-                    <div className="space-y-4 flex flex-col max-h-[640px]">
+                    {/* PALETTE D'ACTIVITES - ENPLACEMENT FIXE AU SCROLL DE LA PAGE (STICKY) */}
+                    <div className="space-y-4 flex flex-col md:sticky md:top-6 max-h-[calc(100vh-50px)]">
                       <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider shrink-0">🛠️ Palette</h4>
                       
-                      {/* Bloc personnalisé (Reste en haut, ne scrolle pas si voulu ou scrolle avec le tout) */}
+                      {/* Bloc personnalisé */}
                       <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-xs shrink-0">
                         <span className="block text-[10px] font-black uppercase text-blue-700">Bloc personnalisé</span>
                         <input 
@@ -1027,15 +1027,15 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </div>
                       </div>
 
-                      {/* SECTION DES PALIERS SCROLLABLE */}
+                      {/* SECTION DES PALIERS SCROLLABLE EN INTERNE SI COMPACTE */}
                       {linkedTree ? (
-                        <div className="bg-white border border-slate-200 rounded-xl p-4 flex-1 flex flex-col overflow-hidden shadow-xs min-h-0 relative">
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 flex-1 flex flex-col overflow-hidden shadow-xs min-h-[250px] relative">
                           <span className="block text-[10px] font-black uppercase text-purple-700 pb-2 border-b border-slate-100 shrink-0">
                             Paliers de l'arbre ({linkedTree.name})
                           </span>
                           
                           {/* Conteneur scrollable interne pour les paliers */}
-                          <div className="overflow-y-auto space-y-2 pt-2 pr-1 flex-1 scrollbar-thin">
+                          <div className="overflow-y-auto space-y-2 pt-2 pr-1 flex-1 scrollbar-thin max-h-[300px]">
                             {(() => {
                               const availableFloors = (linkedTree.floors || []).filter(floor => !existingFloorIds.includes(floor.floorId));
                               
@@ -1071,10 +1071,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             })()}
                           </div>
 
-                          {/* FLÈCHE INDICATIVE DE SCROLL CLIGNOTANTE EN BAS (Affichée s'il y a de nombreux paliers potentiels) */}
+                          {/* FLÈCHE INDICATIVE DE SCROLL CLIGNOTANTE EN BAS */}
                           {(linkedTree.floors || []).filter(floor => !existingFloorIds.includes(floor.floorId)).length > 3 && (
-                            <div className="absolute bottom-1 left-0 right-0 flex justify-center pointer-events-none bg-gradient-to-t from-white via-white/80 to-transparent pt-4 pb-0.5 shrink-0">
-                              <span className="text-[12px] animate-bounce opacity-70 text-purple-600 bg-purple-50 border border-purple-200 shadow-xs rounded-full px-2 py-0.5 font-bold flex items-center gap-1">
+                            <div className="absolute bottom-1 left-0 right-0 flex justify-center pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent pt-4 pb-0.5 shrink-0">
+                              <span className="text-[12px] animate-bounce opacity-75 text-purple-600 bg-purple-50 border border-purple-200 shadow-xs rounded-full px-2.5 py-0.5 font-bold flex items-center gap-1">
                                 ⬇️ <span className="text-[9px] tracking-tight uppercase font-black">Scroll</span>
                               </span>
                             </div>
