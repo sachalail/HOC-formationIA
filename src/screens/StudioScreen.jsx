@@ -66,6 +66,10 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [newSessionCode, setNewSessionCode] = useState('');
   const [newSessionDate, setNewSessionDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // État pour le renommage en ligne d'une session
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editingSessionCode, setEditingSessionCode] = useState("");
+
   // Recherche Superviseurs & Cache d'emails local
   const [supervisorSearchQuery, setSupervisorSearchQuery] = useState('');
   const [supervisorSuggestions, setSupervisorSuggestions] = useState([]);
@@ -87,7 +91,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     const fetchInitialData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        currentUserId && setCurrentUserId(session.user.id); // Guard construct
         setCurrentUserId(session.user.id);
         await fetchSessions(session.user.id);
         await fetchTrees();
@@ -237,6 +240,23 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       setSaveStatus("❌ Erreur de sauvegarde");
       console.error(error);
     }
+  };
+
+  // Déclenche le renommage d'une session depuis la liste
+  const startRenameSession = (session) => {
+    setEditingSessionId(session.id);
+    setEditingSessionCode(session.session_code);
+  };
+
+  // Enregistre le nouveau nom/code de la session
+  const saveSessionRename = async (sessionId) => {
+    const cleanCode = editingSessionCode.trim().toUpperCase();
+    if (!cleanCode) {
+      setEditingSessionId(null);
+      return;
+    }
+    setEditingSessionId(null);
+    await persistSessionChanges(sessionId, { session_code: cleanCode });
   };
 
 
@@ -523,6 +543,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
               {filteredSessions.map(s => {
                 const isSelected = String(s.id) === String(activeSessionId);
+                const isEditingName = editingSessionId === s.id;
                 const sTree = trees[s.tree_id];
                 const formattedDate = s.formation_date 
                   ? new Date(s.formation_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -537,11 +558,34 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         : 'bg-white hover:bg-slate-50 border-slate-200'
                     }`}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className="font-mono font-black text-xs text-blue-900 bg-blue-100/60 px-2.5 py-1 rounded-md border border-blue-200/50 tracking-wider uppercase">
-                        {s.session_code}
-                      </span>
-                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded border">
+                    <div className="flex justify-between items-center gap-2">
+                      {isEditingName ? (
+                        <input
+                          type="text"
+                          value={editingSessionCode}
+                          onChange={(e) => setEditingSessionCode(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && saveSessionRename(s.id)}
+                          onBlur={() => saveSessionRename(s.id)}
+                          autoFocus
+                          className="font-mono font-black text-xs text-blue-900 bg-white border border-blue-400 px-2 py-1 rounded-md tracking-wider uppercase w-2/3"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono font-black text-xs text-blue-900 bg-blue-100/60 px-2.5 py-1 rounded-md border border-blue-200/50 tracking-wider uppercase truncate">
+                            {s.session_code}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => startRenameSession(s)}
+                            className="text-slate-400 hover:text-slate-700 text-[11px] p-0.5 hover:bg-slate-100 rounded"
+                            title="Renommer la session"
+                          >
+                            ✏️
+                          </button>
+                        </div>
+                      )}
+                      
+                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded border shrink-0">
                         📅 {formattedDate}
                       </span>
                     </div>
@@ -791,9 +835,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                     
                     <div className="md:col-span-2 space-y-3">
-                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Plan de la journée (Glissez-déposez pour réouvrir)</h4>
+                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider">Plan de la journée (Glissez-déposez pour réordonner)</h4>
                       
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         {(currentSession.planning || []).length === 0 && (
                           <div 
                             onDragOver={(e) => { e.preventDefault(); setActiveDropIndex(0); }}
@@ -835,33 +879,11 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           const isLocked = block.type === 'palier' && isFloorLocked(block.id, block.floorId, currentSession.planning);
 
                           return (
-                            <React.Fragment key={block.id}>
-                              <div 
-                                onDragOver={(e) => { 
-                                  if (draggedPlanningItem && isTargetIndexValid) {
-                                    e.preventDefault(); 
-                                    setActiveDropIndex(index); 
-                                  }
-                                }}
-                                onDragLeave={() => setActiveDropIndex(null)}
-                                onDrop={() => {
-                                  if (draggedPlanningItem && isTargetIndexValid) {
-                                    handleTimelineDrop(index);
-                                  }
-                                }}
-                                className={`transition-all duration-200 rounded-xl border-dashed flex items-center justify-center font-bold text-[11px] ${
-                                  draggedPlanningItem && isTargetIndexValid
-                                    ? activeDropIndex === index 
-                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2 border-2'
-                                      : 'border-slate-300/40 bg-slate-50/10 h-6 my-1 border text-slate-400/50 hover:bg-slate-100 hover:border-slate-400'
-                                    : 'h-0 overflow-hidden border-0 my-0'
-                                }`}
-                              >
-                                {draggedPlanningItem && isTargetIndexValid && activeDropIndex === index && (
-                                  <span>🟢 Déposer ici (Valide)</span>
-                                )}
-                              </div>
+                            /* flex-col-reverse inversé sur chaque cellule : la zone de dépôt s'ouvre au-dessus du bloc 
+                               poussant ainsi l'écran vers le haut et stabilisant le curseur par rapport au bas de la page */
+                            <div key={block.id} className="relative flex flex-col-reverse w-full">
                               
+                              {/* BLOC PRINCIPAL */}
                               <div 
                                 className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4 transition-all select-none ${
                                   isLocked ? 'opacity-95' : 'hover:border-slate-300 hover:shadow-md'
@@ -933,11 +955,39 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                                   </button>
                                 </div>
                               </div>
-                            </React.Fragment>
+
+                              {/* INDICATEUR DE DEPOT (S'OUVRE AU DESSUS DU BLOC) */}
+                              <div 
+                                onDragOver={(e) => { 
+                                  if (draggedPlanningItem && isTargetIndexValid) {
+                                    e.preventDefault(); 
+                                    setActiveDropIndex(index); 
+                                  }
+                                }}
+                                onDragLeave={() => setActiveDropIndex(null)}
+                                onDrop={() => {
+                                  if (draggedPlanningItem && isTargetIndexValid) {
+                                    handleTimelineDrop(index);
+                                  }
+                                }}
+                                className={`transition-all duration-200 rounded-xl border-dashed flex items-center justify-center font-bold text-[11px] ${
+                                  draggedPlanningItem && isTargetIndexValid
+                                    ? activeDropIndex === index 
+                                      ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 mb-2 border-2'
+                                      : 'border-slate-300/30 bg-slate-50/5 h-4 mb-1 border text-transparent'
+                                    : 'h-0 overflow-hidden border-0 mb-0'
+                                }`}
+                              >
+                                {draggedPlanningItem && isTargetIndexValid && activeDropIndex === index && (
+                                  <span>🟢 Déposer ici (Valide)</span>
+                                )}
+                              </div>
+
+                            </div>
                           );
                         })}
 
-                        {/* INDICATEUR DE FIN STABILISÉ SANS CLIGNOTEMENT */}
+                        {/* INDICATEUR DE FIN DE TIMELINE */}
                         {(() => {
                           const lastIndex = (currentSession.planning || []).length;
                           if (lastIndex === 0) return null;
@@ -979,9 +1029,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                               className={`transition-all duration-200 rounded-xl border-dashed flex items-center justify-center font-bold text-[11px] ${
                                 draggedPlanningItem && isTargetIndexValid
                                   ? activeDropIndex === lastIndex 
-                                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 my-2 border-2'
-                                    : 'border-transparent bg-transparent h-6 my-1 border text-transparent'
-                                  : 'h-0 overflow-hidden border-0 my-0'
+                                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-700 h-14 mt-1 border-2'
+                                    : 'border-transparent bg-transparent h-4 mt-1 border text-transparent'
+                                  : 'h-0 overflow-hidden border-0 mt-0'
                               }`}
                             >
                               {draggedPlanningItem && isTargetIndexValid && activeDropIndex === lastIndex && (
@@ -992,9 +1042,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         })()}
                       </div>
                       
-                      {/* ZONE DE SÉCURITÉ CONFORTS ANTI-BARRE WINDOWS */}
-                      <div className="h-[120px] w-full pointer-events-none select-none flex items-center justify-center text-slate-300 font-medium text-[10px] tracking-wider border-t border-dashed border-slate-200/40 mt-6">
-                        🛡️ Zone de confort d'édition (Empêche l'ouverture de la barre des tâches)
+                      {/* ZONE DE SECURITE EN BAS DE PAGE AGRANDIE (ANTI BARRE DES TACHES SYSTEME) */}
+                      <div className="h-[200px] w-full pointer-events-none select-none flex items-center justify-center text-slate-300 font-medium text-[10px] tracking-wider border-t border-dashed border-slate-200/40 mt-10">
+                        🛡️ Zone de confort d'édition (Empêche l'ouverture accidentelle de la barre des tâches)
                       </div>
                     </div>
 
@@ -1071,7 +1121,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                             })()}
                           </div>
 
-                          {/* FLÈCHE INDICATIVE DE SCROLL CLIGNOTANTE EN BAS */}
+                          {/* FLÈCHE INDICATIVE DE SCROLL EN BAS */}
                           {(linkedTree.floors || []).filter(floor => !existingFloorIds.includes(floor.floorId)).length > 3 && (
                             <div className="absolute bottom-1 left-0 right-0 flex justify-center pointer-events-none bg-gradient-to-t from-white via-white/90 to-transparent pt-4 pb-0.5 shrink-0">
                               <span className="text-[12px] animate-bounce opacity-75 text-purple-600 bg-purple-50 border border-purple-200 shadow-xs rounded-full px-2.5 py-0.5 font-bold flex items-center gap-1">
@@ -1175,7 +1225,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             
             <div className="space-y-4 mt-4 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Nom de l'activity :</label>
+                <label className="block text-slate-700 font-bold mb-1">Nom de l'activité :</label>
                 <input 
                   type="text" 
                   value={editingBlock.name || ''} 
