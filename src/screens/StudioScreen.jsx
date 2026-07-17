@@ -50,6 +50,9 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   const [viewMode, setViewMode] = useState("view"); // "view" ou "edit"
   const [activeModal, setActiveModal] = useState(null); 
   
+  // Statut pour la sauvegarde automatique
+  const [saveStatus, setSaveStatus] = useState("Modifications enregistrées ✅");
+
   // Filtrage des sessions passées
   const [showPastSessions, setShowPastSessions] = useState(false);
 
@@ -128,7 +131,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       }));
       setSessions(mappedSessions);
 
-      // drh_ids sert de stockage pour nos superviseurs en BDD
       const allSupervisorIds = [...new Set(mappedSessions.flatMap(s => s.drh_ids || []))];
       if (allSupervisorIds.length > 0) {
         await loadSupervisorEmailsCache(allSupervisorIds);
@@ -153,7 +155,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     ? currentSession.planning.filter(b => b.type === 'palier').map(b => b.floorId)
     : [];
 
-  // Recherche dynamique des profils Superviseurs (Correction du bug de recherche)
+  // Recherche dynamique des profils Superviseurs
   useEffect(() => {
     const searchSupervisors = async () => {
       const queryTrimmed = supervisorSearchQuery.trim();
@@ -167,7 +169,6 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
           .select('id, email, role')
           .ilike('email', `%${queryTrimmed}%`);
 
-        // Filtrer les superviseurs déjà ajoutés pour éviter les doublons
         const currentSupervisorIds = Array.isArray(currentSession?.drh_ids) 
           ? currentSession.drh_ids.filter(id => id && String(id).trim() !== "") 
           : [];
@@ -192,53 +193,55 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return () => clearTimeout(delayDebounce);
   }, [supervisorSearchQuery, currentSession?.drh_ids]);
 
-  // Sauvegarde en Base de Données
-  const handleSaveChanges = async () => {
-    if (!currentSession) return;
-    
-    const calculatedEnd = currentSession.end_time_mode === 'auto'
-      ? calculateEndTime(currentSession.start_time || '09:00', currentSession.planning)
-      : currentSession.end_time;
 
-    const cleanedPlanning = (currentSession.planning || []).map(block => ({
-      ...block,
-      name: cleanBlockName(block.name)
-    }));
+  // --- FONCTION CENTRALISÉE DE SAUVEGARDE INSTANTANÉE EN BASE DE DONNÉES ---
+  const persistSessionChanges = async (sessionId, fieldsToUpdate) => {
+    setSaveStatus("Enregistrement... ⏳");
 
-    const { error } = await supabase.from('sessions').update({ 
-      tree_id: currentSession.tree_id, 
-      drh_ids: currentSession.drh_ids || [], // reste stocké sous drh_ids côté Supabase
-      planning: cleanedPlanning,
-      start_time: currentSession.start_time || '09:00',
-      end_time_mode: currentSession.end_time_mode || 'auto',
-      formation_date: currentSession.formation_date || null,
-      end_time: calculatedEnd
-    }).eq('id', currentSession.id);
+    // Copie locale des champs à modifier
+    let finalFields = { ...fieldsToUpdate };
 
-    if (error) {
-      alert(`❌ Erreur : ${error.message}`);
+    // Si on met à jour le planning, on nettoie les noms de blocs et on recalcule l'heure de fin à la volée
+    if (fieldsToUpdate.planning || fieldsToUpdate.start_time || fieldsToUpdate.end_time_mode) {
+      const activeSessionObj = sessions.find(s => String(s.id) === String(sessionId));
+      
+      const targetPlanning = fieldsToUpdate.planning || activeSessionObj?.planning || [];
+      const targetStartTime = fieldsToUpdate.start_time || activeSessionObj?.start_time || '09:00';
+      const targetEndTimeMode = fieldsToUpdate.end_time_mode || activeSessionObj?.end_time_mode || 'auto';
+
+      const cleanedPlanning = targetPlanning.map(block => ({
+        ...block,
+        name: cleanBlockName(block.name)
+      }));
+
+      finalFields.planning = cleanedPlanning;
+
+      if (targetEndTimeMode === 'auto') {
+        finalFields.end_time = calculateEndTime(targetStartTime, cleanedPlanning);
+      }
+    }
+
+    // Update Supabase
+    const { error } = await supabase
+      .from('sessions')
+      .update(finalFields)
+      .eq('id', sessionId);
+
+    if (!error) {
+      // Mise à jour de l'état local immédiatement
+      setSessions(prevSessions => 
+        prevSessions.map(s => {
+          if (String(s.id) !== String(sessionId)) return s;
+          return { ...s, ...finalFields };
+        })
+      );
+      setSaveStatus("Modifications enregistrées ✅");
     } else {
-      alert(`🎉 Session "${currentSession.session_code}" enregistrée avec succès !`);
-      setViewMode("view");
-      if (currentUserId) await fetchSessions(currentUserId);
+      setSaveStatus("❌ Erreur de sauvegarde");
+      console.error(error);
     }
   };
 
-  const updateCurrentSessionInState = (updatedFields) => {
-    setSessions(prevSessions => {
-      return prevSessions.map(s => {
-        if (String(s.id) !== String(activeSessionId)) return s;
-        
-        const merged = { ...s, ...updatedFields };
-        const mode = merged.end_time_mode || 'auto';
-        merged.end_time = mode === 'auto' 
-          ? calculateEndTime(merged.start_time || '09:00', merged.planning || []) 
-          : merged.end_time;
-          
-        return merged;
-      });
-    });
-  };
 
   const handleCreateSession = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -290,20 +293,22 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     alert(`La session a été dupliquée sous le code "${cleanCode}"`);
   };
 
-  const handleAddSupervisor = (user) => {
+  const handleAddSupervisor = async (user) => {
     if (!currentSession) return;
     const currentIds = currentSession.drh_ids || [];
     if (currentIds.includes(user.id)) return;
     
     setSupervisorEmailsCache(prev => ({ ...prev, [user.id]: user.email }));
-    updateCurrentSessionInState({ drh_ids: [...currentIds, user.id] });
     setSupervisorSearchQuery(''); 
     setSupervisorSuggestions([]);
+
+    await persistSessionChanges(currentSession.id, { drh_ids: [...currentIds, user.id] });
   };
 
-  const handleRemoveSupervisor = (id) => {
+  const handleRemoveSupervisor = async (id) => {
     if (!currentSession) return;
-    updateCurrentSessionInState({ drh_ids: (currentSession.drh_ids || []).filter(item => item !== id) });
+    const nextIds = (currentSession.drh_ids || []).filter(item => item !== id);
+    await persistSessionChanges(currentSession.id, { drh_ids: nextIds });
   };
 
   const getPlacementValidation = (floorId, targetIndex, timeline, draggedItem) => {
@@ -355,7 +360,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
     return validPositionsCount === 0;
   };
 
-  const handleTimelineDrop = (targetIndex) => {
+  const handleTimelineDrop = async (targetIndex) => {
     if (!currentSession || !draggedPlanningItem) return;
     const timeline = currentSession.planning ? JSON.parse(JSON.stringify(currentSession.planning)) : [];
 
@@ -415,35 +420,37 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
       timeline.splice(adjustedTargetIndex, 0, movedBlock);
     }
 
-    updateCurrentSessionInState({ planning: timeline });
     setActiveDropIndex(null);
     setDraggedPlanningItem(null);
+
+    // Sauvegarde en BDD instantanée
+    await persistSessionChanges(currentSession.id, { planning: timeline });
   };
 
-  const removePlanningBlock = (blockId) => {
+  const removePlanningBlock = async (blockId) => {
     if (!currentSession) return;
     const filtered = (currentSession.planning || []).filter(b => b.id !== blockId);
-    updateCurrentSessionInState({ planning: filtered });
+    await persistSessionChanges(currentSession.id, { planning: filtered });
   };
 
-  const updatePlanningBlockDuration = (blockId, value) => {
+  const updatePlanningBlockDuration = async (blockId, value) => {
     if (!currentSession) return;
     const mins = Math.max(1, parseInt(value, 10) || 15);
     const updated = (currentSession.planning || []).map(b => b.id === blockId ? { ...b, duration: mins } : b);
-    updateCurrentSessionInState({ planning: updated });
+    await persistSessionChanges(currentSession.id, { planning: updated });
   };
 
   const openBlockEditor = (block) => {
     setEditingBlock({ ...block, name: cleanBlockName(block.name) });
   };
 
-  const handleSaveBlockEdit = () => {
+  const handleSaveBlockEdit = async () => {
     if (!currentSession || !editingBlock) return;
     const updatedPlanning = (currentSession.planning || []).map(b => 
       b.id === editingBlock.id ? { ...editingBlock, name: cleanBlockName(editingBlock.name) } : b
     );
-    updateCurrentSessionInState({ updatedPlanning });
     setEditingBlock(null);
+    await persistSessionChanges(currentSession.id, { planning: updatedPlanning });
   };
 
   const getTimelineWithHours = () => {
@@ -477,11 +484,18 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 pl-24 space-y-6 relative">
       
-      {/* EN-TÊTE PRINCIPAL */}
+      {/* EN-TÊTE PRINCIPAL AVEC STATUT AUTOSAVE */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-xl border border-slate-200 shadow-sm gap-4">
         <div>
-          <h1 className="text-xl font-black text-slate-900 tracking-tight">💼 Espace Formateur</h1>
-          <p className="text-xs text-slate-500 font-bold">Consultez l'agenda de votre journée ou éditez la structure de vos sessions.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">💼 Espace Formateur</h1>
+            {currentSession && viewMode === "edit" && (
+              <span className="text-[10px] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md font-bold text-slate-600 mt-1">
+                {saveStatus}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 font-bold">Consultez l'agenda de votre journée ou éditez la structure de vos sessions en direct.</p>
         </div>
         <button 
           onClick={() => setActiveModal('session')} 
@@ -661,20 +675,13 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                       <span className="text-[10px] font-black uppercase text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">Édition en cours</span>
                       <h2 className="text-lg font-black text-slate-900 mt-1">Éditeur de {currentSession.session_code}</h2>
                     </div>
-                    <div className="flex gap-2">
+                    <div>
                       <button 
                         type="button"
                         onClick={() => setViewMode("view")}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2 px-4 rounded-xl text-xs uppercase"
+                        className="bg-slate-950 hover:bg-slate-800 text-white font-extrabold py-2 px-6 rounded-xl text-xs uppercase tracking-wider shadow-sm cursor-pointer"
                       >
-                        Annuler
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={handleSaveChanges}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs uppercase tracking-wider shadow-sm"
-                      >
-                        💾 Sauvegarder
+                        Quitter le mode édition
                       </button>
                     </div>
                   </div>
@@ -686,7 +693,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <input 
                           type="date" 
                           value={currentSession.formation_date || ''} 
-                          onChange={(e) => updateCurrentSessionInState({ formation_date: e.target.value })}
+                          onChange={(e) => persistSessionChanges(currentSession.id, { formation_date: e.target.value })}
                           className="w-full border rounded-lg p-2 bg-white font-bold text-xs shadow-xs"
                         />
                       </div>
@@ -695,7 +702,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <input 
                           type="time" 
                           value={currentSession.start_time || '09:00'} 
-                          onChange={(e) => updateCurrentSessionInState({ start_time: e.target.value })}
+                          onChange={(e) => persistSessionChanges(currentSession.id, { start_time: e.target.value })}
                           className="w-full border rounded-lg p-2 bg-white font-mono text-xs font-bold shadow-xs"
                         />
                       </div>
@@ -703,7 +710,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <label className="block text-[10px] uppercase font-black text-slate-500 mb-1">Calcul Fin</label>
                         <select 
                           value={currentSession.end_time_mode || 'auto'} 
-                          onChange={(e) => updateCurrentSessionInState({ end_time_mode: e.target.value })}
+                          onChange={(e) => persistSessionChanges(currentSession.id, { end_time_mode: e.target.value })}
                           className="w-full border rounded-lg p-2 bg-white text-xs font-bold shadow-xs"
                         >
                           <option value="auto">🔄 Auto</option>
@@ -722,7 +729,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                           } 
                           onChange={(e) => {
                             if (currentSession.end_time_mode === 'lock') {
-                              updateCurrentSessionInState({ end_time: e.target.value });
+                              persistSessionChanges(currentSession.id, { end_time: e.target.value });
                             }
                           }}
                           className="w-full border rounded-lg p-2 font-mono text-xs font-bold bg-white disabled:bg-slate-100 disabled:text-slate-400 shadow-xs"
@@ -735,7 +742,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         <label className="block font-black text-slate-700 text-[10px] uppercase">🌲 Associer un Arbre :</label>
                         <select 
                           value={currentSession.tree_id || ''}
-                          onChange={(e) => updateCurrentSessionInState({ tree_id: e.target.value || null })}
+                          onChange={(e) => persistSessionChanges(currentSession.id, { tree_id: e.target.value || null })}
                           className="w-full border rounded-lg p-2 bg-white text-xs font-bold shadow-xs"
                         >
                           <option value="">-- Aucun arbre lié --</option>
@@ -745,7 +752,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
                         </select>
                       </div>
 
-                      {/* SECTION SUPERVISEURS CORRIGÉE */}
+                      {/* SECTION SUPERVISEURS */}
                       <div className="space-y-1 relative">
                         <label className="block font-black text-slate-700 text-[10px] uppercase">Superviseurs :</label>
                         <input 
@@ -1142,7 +1149,7 @@ export default function StudioScreen({ trees = {}, setTrees, quests = [], setQue
             
             <div className="space-y-4 mt-4 text-xs">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Nom de l'activité :</label>
+                <label className="block text-slate-700 font-bold mb-1">Nom de l'activity :</label>
                 <input 
                   type="text" 
                   value={editingBlock.name || ''} 
