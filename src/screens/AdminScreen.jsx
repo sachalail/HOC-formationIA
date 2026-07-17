@@ -12,7 +12,7 @@ export default function AdminScreen({ onImpersonate }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredSuggestions, setFilteredSuggestions] = useState([]);
   
-  // 🔍 NOUVEAU : Filtre pour la gestion des rôles d'utilisateurs
+  // Filtre pour la gestion des rôles d'utilisateurs
   const [roleSearchQuery, setRoleSearchQuery] = useState('');
 
   // Filtre pour le tableau des sessions actives (uniquement par code)
@@ -77,7 +77,7 @@ export default function AdminScreen({ onImpersonate }) {
     return found ? found.name : `ID: ${treeId.substring(0, 8)}...`;
   };
 
-  // 🔍 Filtrage des profils pour la gestion des rôles
+  // Filtrage des profils pour la gestion des rôles
   const filteredProfiles = profiles.filter(p => 
     (p.email && p.email.toLowerCase().includes(roleSearchQuery.toLowerCase())) ||
     (p.full_name && p.full_name.toLowerCase().includes(roleSearchQuery.toLowerCase()))
@@ -147,49 +147,56 @@ export default function AdminScreen({ onImpersonate }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+      {/* GRILLE PRINCIPALE - HAUTEUR STRICTEMENT IDENTIQUE ET HARMONISÉE (`h-[520px]`) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
         
-        {/* ROLES GLOBAUX (AVEC NOUVELLE RECHERCHE INTÉGRÉE) */}
-        <div className="lg:col-span-1 bg-white border border-red-100 rounded-2xl p-5 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">👑 Rôles Système</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">Définissez uniquement la structure technique globale des comptes.</p>
-          </div>
+        {/* ROLES GLOBAUX */}
+        <div className="lg:col-span-1 bg-white border border-red-100 rounded-2xl p-5 shadow-sm flex flex-col h-[520px]">
+          <div className="space-y-4 pb-4">
+            <div>
+              <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">👑 Rôles Système</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">Définissez la structure technique globale des comptes.</p>
+            </div>
 
-          {/* 🔍 Champ de recherche d'un utilisateur pour les rôles */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="🔍 Rechercher un e-mail ou nom..."
-              value={roleSearchQuery}
-              onChange={(e) => setRoleSearchQuery(e.target.value)}
-              className="w-full px-3 py-2 border border-red-100 rounded-xl text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10 placeholder:text-red-300"
-            />
+            {/* Barre de recherche des utilisateurs */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="🔍 Rechercher un e-mail ou nom..."
+                value={roleSearchQuery}
+                onChange={(e) => setRoleSearchQuery(e.target.value)}
+                className="w-full px-3 py-2 border border-red-100 rounded-xl text-xs font-semibold focus:outline-none focus:border-red-400 bg-red-50/10 placeholder:text-red-300"
+              />
+            </div>
           </div>
           
-          <div className="divide-y divide-red-50 max-h-[350px] overflow-y-auto pr-1">
+          {/* Liste déroulante des utilisateurs */}
+          <div className="flex-1 divide-y divide-red-50 overflow-y-auto pr-1">
             {filteredProfiles.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-4 text-center">Aucun utilisateur trouvé.</p>
+              <p className="text-xs text-slate-400 italic py-8 text-center">Aucun utilisateur trouvé.</p>
             ) : (
               filteredProfiles.map(p => {
                 const isMe = p.id === currentUserId;
                 return (
                   <div key={p.id} className={`py-3 flex flex-col gap-2 ${isMe ? 'bg-red-50/30 px-2 rounded-xl border border-dashed border-red-200' : ''}`}>
                     <div className="flex justify-between items-start gap-2">
-                      <div className="truncate max-w-[180px]">
+                      <div className="truncate max-w-[170px]">
                         <span className="font-mono text-xs font-bold text-slate-800 truncate block">{p.email}</span>
                         {p.full_name && <span className="text-[10px] text-slate-400 truncate block">{p.full_name}</span>}
                       </div>
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${
-                        p.role === 'admin' ? 'bg-red-100 text-red-700' :
-                        p.role === 'formateur' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                      
+                      {/* NOUVELLES COULEURS VARIATION ROUGE/TERRACOTTA */}
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 border ${
+                        p.role === 'admin' ? 'bg-red-100 text-red-800 border-red-200' :
+                        p.role === 'formateur' ? 'bg-orange-50 text-orange-800 border-orange-200' : 
+                        'bg-rose-50 text-rose-800 border-rose-100'
                       }`}>{p.role}</span>
                     </div>
                     
                     <div className="flex gap-1 justify-end">
-                      <button disabled={isMe} onClick={() => changeRole(p.id, 'user')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>User</button>
-                      <button disabled={isMe} onClick={() => changeRole(p.id, 'formateur')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'}`}>Formateur</button>
-                      <button disabled={isMe} onClick={() => changeRole(p.id, 'admin')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}>Admin</button>
+                      <button disabled={isMe} onClick={() => changeRole(p.id, 'user')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-100'}`}>User</button>
+                      <button disabled={isMe} onClick={() => changeRole(p.id, 'formateur')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-100'}`}>Formateur</button>
+                      <button disabled={isMe} onClick={() => changeRole(p.id, 'admin')} className={`text-[9px] px-2 py-1 rounded font-bold ${isMe ? 'text-slate-300 bg-slate-50' : 'bg-red-100 text-red-800 hover:bg-red-200 border border-red-200'}`}>Admin</button>
                     </div>
                   </div>
                 );
@@ -198,17 +205,16 @@ export default function AdminScreen({ onImpersonate }) {
           </div>
         </div>
 
-        {/* LISTE DES SESSIONS ACTIVES (FILTRE PAR CODE UNIQUEMENT) */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white border border-red-100 rounded-2xl p-5 shadow-sm space-y-4">
-            
+        {/* LISTE DES SESSIONS ACTIVES */}
+        <div className="lg:col-span-2 bg-white border border-red-100 rounded-2xl p-5 shadow-sm flex flex-col h-[520px]">
+          <div className="space-y-4 pb-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h3 className="text-xs font-black text-red-900 uppercase tracking-widest">📋 Sessions Actives</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">Visualisez et filtrez les accès aux sessions de formation.</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Visualisez et révoquez les accès aux sessions.</p>
               </div>
               
-              <div className="w-full sm:w-64">
+              <div className="w-full sm:w-60">
                 <input
                   type="text"
                   placeholder="🔍 Filtrer par code (ex: INI PYTHON)..."
@@ -218,14 +224,17 @@ export default function AdminScreen({ onImpersonate }) {
                 />
               </div>
             </div>
+          </div>
 
+          {/* Tableau déroulable des sessions */}
+          <div className="flex-1 overflow-y-auto pr-1">
             {filteredSessions.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-4 text-center">Aucune session ne correspond à votre filtre.</p>
+              <p className="text-xs text-slate-400 italic py-8 text-center">Aucune session ne correspond à votre filtre.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="text-slate-400 font-bold border-b border-red-50 pb-2 uppercase text-[10px]">
+                    <tr className="text-slate-400 font-bold border-b border-red-50 pb-2 uppercase text-[10px] sticky top-0 bg-white z-10">
                       <th className="pb-2">Code d'accès</th>
                       <th className="pb-2 pl-4">Arbre rattaché</th>
                       <th className="pb-2">Superviseur assigné</th>
