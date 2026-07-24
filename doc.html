@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation — HUB House of Codesign</title>
+    
+    <!-- Import du CSS centralisé -->
+    <link rel="stylesheet" href="css/main.css">
+    
+    <style>
+        .doc-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .doc-section {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 1.75rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .doc-section h2 {
+            margin-top: 0;
+            color: var(--text-primary);
+            font-size: 1.35rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }
+
+        .file-tree {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+
+        .file-tree .folder { color: var(--primary); font-weight: bold; }
+        .file-tree .file { color: var(--text-secondary); }
+        .file-tree .comment { color: var(--text-muted); font-style: italic; }
+
+        .steps-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .steps-list li {
+            position: relative;
+            padding-left: 2.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .steps-list li:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-number {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1.75rem;
+            height: 1.75rem;
+            background: var(--primary-light);
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.85rem;
+        }
+
+        .code-inline {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85em;
+            color: var(--primary);
+        }
+
+        .github-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(135deg, var(--card-bg) 0%, var(--card-bg-hover) 100%);
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--primary);
+            border-radius: var(--radius-lg);
+            padding: 1.25rem 1.75rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .btn-github {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--primary);
+            color: #ffffff;
+            padding: 0.6rem 1.25rem;
+            border-radius: var(--radius-pill);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: var(--transition);
+        }
+
+        .btn-github:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 94, 58, 0.3);
+        }
+
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+        }
+
+        .btn-back:hover {
+            text-decoration: underline;
+        }
+    </style>
+
+    <!-- Auto-Theme Script -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'light') {
+                document.documentElement.classList.add('light-theme');
+            } else {
+                document.documentElement.classList.remove('light-theme');
+            }
+        })();
+    </script>
+</head>
+<body>
+
+    <div class="doc-container">
+        
+        <a href="index.html" class="btn-back">&larr; RETOUR AU HUB PRINCIPAL</a>
+
+        <div class="header" style="text-align: left; margin-bottom: 1.5rem;">
+            <h1>Guide & Documentation Technique</h1>
+            <p>Retrouvez ici la structure du projet et la marche à suivre pour éditer ou ajouter de nouvelles ressources.</p>
+        </div>
+
+        <!-- BANNIÈRE GITHUB -->
+        <div class="github-banner">
+            <div>
+                <strong style="font-size: 1.1rem; color: var(--text-primary); display: block; margin-bottom: 0.25rem;">
+                    📦 Dépôt GitHub du Projet
+                </strong>
+                <span style="font-size: 0.875rem; color: var(--text-secondary);">
+                    Accédez aux fichiers sources, gérez les versions ou ajoutez du contenu directement en ligne.
+                </span>
+            </div>
+            <a href="https://github.com/devabeille/Catalogue-projets-stagesIA" target="_blank" rel="noopener" class="btn-github">
+                <span> Voir sur GitHub</span> &rarr;
+            </a>
+        </div>
+
+        <!-- ARBORESCENCE DES FICHIERS -->
+        <div class="doc-section">
+            <h2>📁 Arborescence & Emplacement des fichiers</h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                Voici comment sont organisés les dossiers sur le serveur GitHub Pages :
+            </p>
+
+            <div class="file-tree">
+                <span class="folder">Catalogue-projets-stagesIA/</span><br>
+                ├── <span class="file">index.html</span> <span class="comment">← Page d'accueil / Hub principal</span><br>
+                ├── <span class="file">doc.html</span> <span class="comment">← La présente documentation</span><br>
+                ├── <span class="folder">css/</span><br>
+                │   └── <span class="file">main.css</span> <span class="comment">← Feuillets de styles centralisés (HOC)</span><br>
+                └── <span class="folder">documents/</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;└── <span class="folder">journees-formation/</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── <span class="folder">niv1 et 2/</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│   └── <span class="file">index.html</span> <span class="comment">← Dashboard Planning Niv 1 & 2</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="folder">niv3 et 4/</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── <span class="file">index.html</span> <span class="comment">← Dashboard Planning Niv 3 & 4</span>
+            </div>
+        </div>
+
+        <!-- COMMENT AJOUTER UNE RESSOURCE -->
+        <div class="doc-section">
+            <h2>✍️ Comment ajouter ou modifier du contenu ?</h2>
+            
+            <ul class="steps-list">
+                <li>
+                    <span class="step-number">1</span>
+                    <strong style="color: var(--text-primary);">Ouvrir le dépôt GitHub</strong><br>
+                    <span style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Rendez-vous sur le dépôt via le bouton en haut de page ou directement depuis <a href="https://github.com/devabeille/Catalogue-projets-stagesIA" target="_blank" style="color: var(--primary);">GitHub</a>.
+                    </span>
+                </li>
+
+                <li>
+                    <span class="step-number">2</span>
+                    <strong style="color: var(--text-primary);">Pour ajouter un nouveau fichier / tableau de bord</strong><br>
+                    <span style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Allez dans le dossier <span class="code-inline">documents/journees-formation/</span>, créez un nouveau dossier (ex: <span class="code-inline">niv5/</span>) puis un fichier <span class="code-inline">index.html</span> à l'intérieur.
+                    </span>
+                </li>
+
+                <li>
+                    <span class="step-number">3</span>
+                    <strong style="color: var(--text-primary);">Lier le CSS centralisé</strong><br>
+                    <span style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Assurez-vous que votre nouveau fichier HTML importe correctement le CSS commun en ajustant le chemin relatif dans le <span class="code-inline">&lt;head&gt;</span> :<br>
+                        <span class="code-inline">&lt;link rel="stylesheet" href="../../../css/main.css"&gt;</span>
+                    </span>
+                </li>
+
+                <li>
+                    <span class="step-number">4</span>
+                    <strong style="color: var(--text-primary);">Mettre à jour le Hub principal</strong><br>
+                    <span style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Pour que la nouvelle page soit accessible, éditez <span class="code-inline">index.html</span> à la racine et ajoutez une nouvelle carte (<span class="code-inline">&lt;a class="card" href="..."&gt;</span>) pointant vers votre nouveau fichier.
+                    </span>
+                </li>
+
+                <li>
+                    <span class="step-number">5</span>
+                    <strong style="color: var(--text-primary);">Valider (Commit)</strong><br>
+                    <span style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Cliquez sur <strong>Commit changes...</strong> en haut à droite sur GitHub. La modification sera déployée en 1 à 2 minutes sur le site en ligne !
+                    </span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- CONSEILS & BONNES PRATIQUES -->
+        <div class="doc-section">
+            <h2>💡 Astuces & Styles des Badges</h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+                Pour garder une uniformité visuelle dans vos tableaux de bord, utilisez les classes CSS prédéfinies :
+            </p>
+
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                <span class="badge badge-outils">Outils / Cyan</span>
+                <span class="badge badge-presentations">Présentation / Violet</span>
+                <span class="badge badge-documents">Documents / Vert</span>
+                <span class="badge badge-pause">Pause / Jaune</span>
+                <span class="badge badge-atelier">Atelier / Orange</span>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
